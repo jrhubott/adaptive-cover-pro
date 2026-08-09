@@ -1785,6 +1785,7 @@ def _endpoint_service(
     inverse_state=False,
     caps=None,
     is_safety=False,
+    outside_window_constraint=False,
     use_my_position=False,
     plan=None,
     dispatch_token=None,

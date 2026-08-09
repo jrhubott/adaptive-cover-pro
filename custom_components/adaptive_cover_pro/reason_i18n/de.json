@@ -75,7 +75,9 @@
     "hold_position_carried": "Neigungsgrenze steuert die Abdeckung — Position bleibt bei {position}% (nicht beim Sollwert {shadow_pos}%)",
     "tilt_bound_active": "Neigungsgrenze {low_label}–{high_label} aktiv durch {label}; wartet auf die aufgelöste Neigung",
     "tilt_bound_inactive": "Neigungsgrenze {low_label}–{high_label} inaktiv durch {label}; aufgelöste Neigung {tilt}% bereits innerhalb",
-    "tilt_clamped": "Neigung begrenzt von {from_tilt}% auf {to_tilt}% durch {label}"
+    "tilt_clamped": "Neigung begrenzt von {from_tilt}% auf {to_tilt}% durch {label}",
+    "constraint_outside_window": "Grenze {low_label}–{high_label} ({axis}) von {label} nicht angewendet — außerhalb des Zeitfensters gelten nur Minimum-/Maximum-Grenzen, die dort aktiv bleiben sollen",
+    "tilt_bound_enforced": "Neigungsgrenze {low_label}–{high_label} durchgesetzt bei {tilt}% durch {label} (in diesem Zyklus wurde keine Neigung ermittelt)"
   },
   "builder": {
     "unknown": "Unbekannt",

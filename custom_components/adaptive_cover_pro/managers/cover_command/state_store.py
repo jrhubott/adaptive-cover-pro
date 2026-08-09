@@ -290,6 +290,27 @@ class PerEntityState:
     # A reconciliation resend RESTATES the recorded value rather than
     # re-deciding it (#1134), because a resend makes no new verdict.
     is_safety: bool = False
+    # Whether ``target`` above was booked under an ADMITTED outside-the-clock-
+    # window constraint (issue #943 item B) — an opted-in Custom Position slot
+    # whose min/max bound actually clamped that cycle. One reader:
+    # ``run_reconciliation_pass`` step 4, which resends a licensed target while
+    # the user's clock window is closed.
+    #
+    # A SEPARATE field from ``is_safety`` above, deliberately. Reusing that one
+    # would hand a constraint dispatch every other licence safety carries —
+    # surviving ``clear_non_safety_targets()``, resending with automatic control
+    # off — and reopening #1165's stale-verdict class in the process. The two
+    # never co-write: ``is_safety`` keeps the writers documented above, and this
+    # field has exactly one writer of its own (``_prepare_service_call``, from
+    # ``PositionContext.outside_window_constraint``) and one sweeper
+    # (``clear_outside_window_targets``, on the coordinator's non-admitted
+    # outside-window cycle). ``discard_target`` drops both with the whole row on
+    # the manual-override edge.
+    #
+    # Never restored after a reload: ``restore_target`` rehydrates the number
+    # without the licence, because the licence is a live-cycle verdict and the
+    # first-refresh admission re-establishes it from a fresh result.
+    outside_window_constraint: bool = False
     last_reconcile_at: dt.datetime | None = None
     # Display-only assumed position (issue #888). Set on covers with no native
     # position axis (Somfy-RTS-style open/close-only) when ACP drives them — an
@@ -322,6 +343,26 @@ class PerEntityState:
     # value differs from the new target.
     forced_endpoint: int | None = None
 
+    @property
+    def acts_outside_clock_window(self) -> bool:
+        """Whether this booked target may be resent outside the clock window.
+
+        The per-entity half of the shared admission rule. It reaches the SAME
+        predicate ``PipelineResult.acts_outside_clock_window`` does, which is
+        the point: the live result and the booked record answer the question in
+        different shapes and at different times, but the rule itself exists once
+        (CODING_GUIDELINES § No Duplication).
+        """
+        # Local import keeps this a leaf module at import time.
+        from ...pipeline.axis_constraints import (  # noqa: PLC0415
+            may_act_outside_clock_window,
+        )
+
+        return may_act_outside_clock_window(
+            is_safety=self.is_safety,
+            constraint_admitted=self.outside_window_constraint,
+        )
+
 
 @dataclasses.dataclass
 class PositionContext:
@@ -345,6 +386,13 @@ class PositionContext:
     is_safety: bool = (
         False  # Safety-critical target (persists across window boundaries; bypasses auto_control)
     )
+    # This cycle's outside-the-clock-window constraint admission (issue #943
+    # item B) — set by the coordinator from
+    # ``PipelineResult.outside_window_constraint_active``. Stamped onto
+    # ``PerEntityState.outside_window_constraint`` at the single booking site so
+    # reconciliation may resend the licensed target overnight. Strictly narrower
+    # than ``is_safety``: it grants the clock crossing and nothing else.
+    outside_window_constraint: bool = False
     bypass_auto_control: bool = (
         False  # Sanctioned one-shot bypass of auto_control gate (e.g. switch return-to-default)
     )

@@ -136,6 +136,9 @@ def _make_coordinator(
     )
     coordinator._pipeline_is_safety_handler = False
     coordinator._pipeline_bypasses_auto_control = False
+    # No constraint admission here (#943 item B): a plain SOLAR result never
+    # earns one, and a truthy MagicMock would open the clock-window guard.
+    coordinator._pipeline_acts_outside_clock_window = False
     coordinator.clock_window_open = clock_window_open
     coordinator.state_change = True
     coordinator._last_state_change_entity = None
@@ -342,6 +345,12 @@ async def test_end_time_default_seam_calibrates_the_back_under_interpolation() -
     coord._entity_target = types.MethodType(
         AdaptiveDataUpdateCoordinator._entity_target, coord
     )
+    # Real clamp-then-order seam (#943 item B), with the bound composition —
+    # which has its own tests — stubbed to identity so this stays a curve test.
+    coord._clamp_to_outside_window_bounds = lambda position, _options: position
+    coord._resolve_broadcast_dispatch = types.MethodType(
+        AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
+    )
 
     async def _fire_closed(*, track_end_time, refresh_callback, on_window_open):
         await refresh_callback()
@@ -407,6 +416,15 @@ async def test_sunset_seam_calibrates_the_back_under_interpolation() -> None:
     coord._entity_target = types.MethodType(
         AdaptiveDataUpdateCoordinator._entity_target, coord
     )
+    # Real clamp-then-order seam (#943 item B), with the bound composition —
+    # which has its own tests — stubbed to identity so this stays a curve test.
+    coord._clamp_to_outside_window_bounds = lambda position, _options: position
+    for _name in ("_resolve_sunset_dispatch", "_resolve_broadcast_dispatch"):
+        setattr(
+            coord,
+            _name,
+            types.MethodType(getattr(AdaptiveDataUpdateCoordinator, _name), coord),
+        )
 
     # Seed prior state (no dispatch), then open the sunset window.
     await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)

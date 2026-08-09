@@ -52,6 +52,9 @@ ApplyPositionFn = Callable[..., Awaitable[Any]]
 RefreshFn = Callable[[], Awaitable[Any]]
 IsCoverManualFn = Callable[[str], bool]
 EntityTargetFn = Callable[[str, int], int]
+# (LOGICAL sunset position, entities to fan out over) →
+# (LOGICAL position to send, those same entities in dispatch order).
+ResolveDispatchFn = Callable[[int, list[str]], tuple[int, list[str]]]
 
 
 class WindowTransitionTracker:
@@ -138,6 +141,7 @@ class WindowTransitionTracker:
         apply_position: ApplyPositionFn,
         refresh: RefreshFn,
         entity_target: EntityTargetFn | None = None,
+        resolve_dispatch: ResolveDispatchFn | None = None,
     ) -> None:
         """Detect False→True transition of the astronomical sunset window.
 
@@ -152,6 +156,18 @@ class WindowTransitionTracker:
         False→True edge is deliberately left unresolved so the dispatch fires
         on the first subsequent call where the override is no longer active,
         rather than being lost.
+
+        ``resolve_dispatch`` maps the configured LOGICAL sunset position and
+        ``entities`` onto the pair this broadcast actually needs — the position
+        to send and those same entities in policy-mandated dispatch order — so
+        both come from one derivation and cannot disagree about the direction of
+        travel (#1118). The entity list is passed IN rather than left for the
+        resolver to source, so narrowing ``entities`` at the call site narrows
+        what is ordered too. It is a callable rather than two pre-computed
+        arguments because resolving it costs an off-cycle snapshot build on the
+        coordinator side, while this method runs on every reconciliation tick
+        and the edge it guards fires at most once a night. ``None`` keeps the
+        raw configured position and the ``entities`` list exactly as supplied.
         """
         if not track_end_time:
             return
@@ -181,7 +197,14 @@ class WindowTransitionTracker:
         if not just_opened:
             return
 
-        pos_to_send = flip_if(int(sunset_pos_cfg), inverted=inverse_state_enabled)
+        pos_logical = int(sunset_pos_cfg)
+        if resolve_dispatch is not None:
+            # Handed THIS call's entity list rather than left to reach for the
+            # coordinator's: the two are the same list today, and a resolver
+            # that quietly substituted the whole instance for a subset a caller
+            # had narrowed would be a silent bug the day they diverge.
+            pos_logical, entities = resolve_dispatch(pos_logical, entities)
+        pos_to_send = flip_if(pos_logical, inverted=inverse_state_enabled)
         self._logger.info(
             "Sunset window opened after end_time — dispatching sunset position %s%% "
             "to %s cover(s) (issue #266)",

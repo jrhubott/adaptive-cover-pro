@@ -607,6 +607,12 @@ FIELD_VALIDATORS: dict[str, Any] = {
         for slot_keys in CUSTOM_POSITION_SLOTS.values()
         for sub in ("position_max", "tilt_min", "tilt_max")
     },
+    # Outside-window constraint opt-in (issue #943 item B) — a plain boolean,
+    # so no OPTION_RANGES entry.
+    **{
+        slot_keys["outside_window"]: _bool_v()
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
+    },
     **{slot_keys["enabled"]: _bool_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()},
     # Glare zones 1–4 — name is free-form text; x/y/radius/z pull ranges from
     # OPTION_RANGES (bounds mirror config_flow._build_glare_zones_schema).
@@ -1335,6 +1341,7 @@ async def _handle_set_custom_position(hass: HomeAssistant, call: ServiceCall) ->
         "position_max": slot_keys["position_max"],
         "tilt_min": slot_keys["tilt_min"],
         "tilt_max": slot_keys["tilt_max"],
+        "outside_window": slot_keys["outside_window"],
     }
 
     # Build patch: only include fields that were supplied in the call

@@ -775,6 +775,7 @@ class TestPositionContextControlMethod:
             control_method=ControlMethod.CUSTOM_POSITION,
             use_my_position=False,
             bypass_auto_control=False,
+            outside_window_constraint_active=False,
         )
         ctx = coord._build_position_context("cover.x", {})
         assert ctx.control_method is ControlMethod.CUSTOM_POSITION

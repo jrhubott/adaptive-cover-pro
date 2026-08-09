@@ -1201,6 +1201,19 @@ def _custom_position_base_specs() -> list[FieldSpec]:
                 make_selector=_const(position_slider),
             )
         )
+        # Keep this slot's min/max claims binding outside the user's start/end
+        # clock window (issue #943 item B). Deliberately in the ALWAYS-rendered
+        # spec list, not the venetian-only tilt one: it governs `min_mode` and
+        # `position_max` too, which every cover type has.
+        specs.append(
+            FieldSpec(
+                slot["outside_window"],
+                SECTION_CUSTOM_POSITION,
+                ValidatorKind.BOOL,
+                default=False,
+                make_selector=_bool(),
+            )
+        )
     return specs
 
 
@@ -1299,6 +1312,12 @@ def _custom_position_slot_fields(
     # tilt bounds ride the same `include_tilt` gate as `tilt` / `tilt_only`,
     # which the caller derives from the policy — never from a cover-type string.
     schema[vol.Optional(keys["position_max"])] = position_slider()
+    # Outside-window opt-in (issue #943 item B) — UNGATED by `include_tilt`: it
+    # governs the position floor and ceiling as well as the tilt bounds, so it
+    # is as relevant to a plain blind as to a venetian.
+    schema[vol.Optional(keys["outside_window"], default=False)] = (
+        selector.BooleanSelector()
+    )
     if include_tilt:
         schema[vol.Optional(keys["tilt"])] = position_slider()
         schema[vol.Optional(keys["tilt_only"], default=False)] = (

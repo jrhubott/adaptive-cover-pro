@@ -698,13 +698,32 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         The base predicate derives its answer from three hooks, and this policy
         trips one of them: it overrides ``post_pipeline_resolve``. That hook's
         only write to ``PipelineResult.position`` is
-        :meth:`_pin_tilt_only_carriage`, and that pin is skipped for every
-        control method in ``_EXPLICIT_USER_POSITION_METHODS`` — which contains
-        both ``MANUAL`` and ``GROUP_LOCK``, the only two winners that ever set
-        ``held_position`` and so the only two the registry ever judges per
-        cover. Under a hold this hook resolves a tilt and leaves the position
+        :meth:`_pin_tilt_only_carriage`, and the pin is skipped for every winner
+        the registry can hand per-cover verdicts. That is SIX control methods,
+        not the two real holds:
+
+        * ``MANUAL`` and ``GROUP_LOCK`` set ``held_position`` themselves — both
+          are in ``_EXPLICIT_USER_POSITION_METHODS``;
+        * since #943 item B, ``_as_outside_window_pseudo_hold`` sets it on
+          whichever non-safety handler computed a closed-clock cycle, which is
+          reachable for ``DEFAULT``, ``CUSTOM_POSITION``, ``MOTION`` and
+          ``GROUP_SCENE``. Those four are the whole set, derived from the
+          handlers rather than counted: every windowed handler (solar, climate,
+          cloud suppression, glare zone) returns ``None`` out there, ``WEATHER``
+          is declined as ``is_safety``, and the two real holds never reach the
+          conversion. ``MOTION`` qualifies because only its hold_position branch
+          reads ``in_time_window`` — outside the window it falls through to the
+          ungated return-to-default branch, which sets no ``held_position``.
+          ``CUSTOM_POSITION``, ``MOTION`` and ``GROUP_SCENE`` are in the exempt
+          set; ``DEFAULT`` is skipped by its own separate condition (#1153
+          finding 2).
+
+        Under any of the six this hook resolves a tilt and leaves the position
         exactly as the registry left it, which is the condition the base
-        predicate is really asking about.
+        predicate is really asking about. The pseudo-hold also strips
+        ``held_position`` back off before the result leaves the registry, so
+        what actually arrives here is an ordinary-looking result — one more
+        reason the premise has to be locked by name rather than inferred.
 
         Nothing else here is per-entity: ``resolve_entity_target`` is the
         identity default (one slat angle and one carriage position per cover),
@@ -714,9 +733,11 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         cover's slats without moving anybody's carriage, which is precisely
         what one shared position cannot express.
 
-        ``tests/test_cover_types/test_venetian_post_pipeline.py`` locks the
-        premise — if the pin ever starts firing under a hold, that test fails
-        rather than this silently becoming wrong.
+        ``tests/test_cover_types/test_venetian_post_pipeline.py``
+        ``::test_tilt_only_pin_skips_every_per_cover_judged_winner`` locks the
+        premise as a set — if the pin ever starts firing under one of them, or a
+        seventh method becomes per-cover judgable, that test fails rather than
+        this silently becoming wrong.
         """
         return True
 

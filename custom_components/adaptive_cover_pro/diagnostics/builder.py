@@ -621,6 +621,17 @@ class DiagnosticsBuilder:
                 "before_end_time": ctx.before_end_time,
                 "start_time": ctx.start_time,
                 "end_time": ctx.end_time,
+                # Issue #943 item B — whether an opted-in slot's min/max
+                # constraint was ADMITTED to act outside the clock window this
+                # cycle. The single most useful field for triaging "my
+                # ventilation clamp did / did not hold at 3 a.m.": False with a
+                # closed clock means the pipeline saw nothing to clamp (or the
+                # slot never opted in), not that dispatch was lost downstream.
+                "outside_window_constraint_active": (
+                    result.outside_window_constraint_active
+                    if result is not None
+                    else False
+                ),
             },
             "default_position": {
                 # The effective default used this cycle by all pipeline handlers.

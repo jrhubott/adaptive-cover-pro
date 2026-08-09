@@ -83,6 +83,7 @@ def make_snapshot(
     glare_zones=None,
     active_zone_names: set[str] | frozenset[str] | None = None,
     in_time_window: bool = True,
+    clock_window_open: bool = True,
     motion_control_enabled: bool = True,
     custom_position_sensors: list[CustomPositionSensorState] | None = None,
     my_position_value: int | None = None,
@@ -163,6 +164,7 @@ def make_snapshot(
             else frozenset()
         ),
         in_time_window=in_time_window,
+        clock_window_open=clock_window_open,
         motion_control_enabled=motion_control_enabled,
         custom_position_sensors=(
             custom_position_sensors if custom_position_sensors is not None else []

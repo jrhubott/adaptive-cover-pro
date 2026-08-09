@@ -909,6 +909,10 @@ class CoverCommandService:
             "last_command_sent_at": s.sent_at.isoformat() if s.sent_at else None,
             "in_manual_override_set": entity_id in self._manual_override_entities,
             "safety_target": s.is_safety,
+            # The narrower outside-window licence (issue #943 item B), beside
+            # the safety verdict rather than folded into it — a diagnostics
+            # reader has to be able to tell which one authorised a resend.
+            "outside_window_constraint": s.outside_window_constraint,
             "last_reconcile_time": (
                 s.last_reconcile_at.isoformat() if s.last_reconcile_at else None
             ),
@@ -940,6 +944,43 @@ class CoverCommandService:
         if stale:
             self._logger.debug(
                 "Cleared %d stale non-safety target(s) on window close: %s",
+                len(stale),
+                stale,
+            )
+
+    def clear_outside_window_targets(self) -> None:
+        """Revoke the outside-window licence, and the number it licensed.
+
+        Called by the coordinator on the one path that proves the licence is
+        spent: an update cycle OUTSIDE the user's clock window that admitted
+        nothing (the slot released, or the cover already satisfies the bound).
+        The target and its licence die together — a booked number nobody is
+        allowed to resend is a trap waiting for the next code change to spring,
+        and the licence is the only thing that let it be booked out here at all.
+
+        Safety rows are spared entirely, target and flag alike: they answer to
+        ``clear_non_safety_targets`` and to ``is_safety``'s own one-writer
+        lifetime (#1226/#1165), which this sweeper must never reach into. That
+        separation is the whole reason the two flags are separate fields.
+
+        The constraint self-heals if it starts binding again: the next cycle
+        that finds the cover in violation admits afresh and books a new target.
+        """
+        stale = [
+            eid
+            for eid, s in self._state.items()
+            if s.outside_window_constraint and not s.is_safety
+        ]
+        for eid in stale:
+            self.set_target(eid, None)
+            s = self._state[eid]
+            s.outside_window_constraint = False
+            self._clear_waiting(s)
+            s.retry_count = 0
+            s.gave_up = False
+        if stale:
+            self._logger.debug(
+                "Revoked %d outside-window constraint target(s): %s",
                 len(stale),
                 stale,
             )
@@ -2233,6 +2274,7 @@ class CoverCommandService:
                 caps=_caps_for_plan,
                 plan=_plan,
                 is_safety=context.is_safety,
+                outside_window_constraint=context.outside_window_constraint,
                 use_my_position=context.use_my_position,
                 dispatch_token=dispatch_token,
             )
@@ -2683,27 +2725,37 @@ class CoverCommandService:
         Runs every ``check_interval_minutes``. Calls the optional ``on_tick``
         callback first (used by coordinator for time window transition checks).
 
-        For each tracked entity:
+        For each tracked entity — the numbering below is the ONE the inline
+        ``# N.`` comments in the loop body use, so every "step N" cross-reference
+        in this file, ``state_store.py`` and ``coordinator.py`` names the same
+        gate:
 
         1. If ``wait_for_target`` has been True for >30 s → force-clear it
-           (timeout fallback for covers that never report final position).
-        2. If ``wait_for_target`` is still True → cover is moving, skip.
-        3. If entity is in ``_manual_override_entities`` → skip resend so
+           (timeout fallback for covers that never report final position); if it
+           is still True and inside that window → the cover is moving, skip.
+        2. If entity is in ``_manual_override_entities`` → skip resend so
            reconciliation does not fight the user's intentional move.
            Safety handlers (force override, weather) overwrite ``target_call``
            via ``apply_position(is_safety=True)`` so they are always protected.
-        4. If ``_auto_control_enabled`` is False and ``PerEntityState.is_safety``
+        3. If ``_auto_control_enabled`` is False and ``PerEntityState.is_safety``
            is False → skip.  Safety targets (set via
            ``apply_position(is_safety=True)``) are still resent so covers reach
            a safe position regardless of the automatic control toggle.
-        5. If ``_in_time_window`` is False and ``PerEntityState.is_safety`` is
-           False → skip.  Prevents stale daytime targets from being resent
-           overnight.
-        6. Compare actual position to ``target_call`` within tolerance.
-        7. If match → reset retry count, done.
-        8. If mismatch → ask the cover-type policy whether the entity is
-           physically clear to move; withhold if not.
-        9. Resend the same target (up to ``max_retries``).
+        4. If ``_in_time_window`` is False and the entity carries no licence to
+           act out there (``PerEntityState.acts_outside_clock_window`` — a
+           safety target, or one booked under an admitted outside-window
+           constraint, issue #943 item B) → skip.  Prevents stale daytime
+           targets from being resent overnight.
+        5. If the cover is in transit → skip; HA's reported position lags a
+           physical move, and the state change when it stops runs this path
+           again.
+        6. Read the actual position; skip when it is unreadable.
+        7. Compare it to ``target_call`` within tolerance; on a match reset the
+           retry count and stop.
+        8. On a mismatch, resend only when position matching is enabled
+           (issue #591), and only while ``retry_count`` is under ``max_retries``.
+        9. Ask the cover-type policy whether the entity is physically clear to
+           move; withhold if not, otherwise resend the same target.
 
         Note: reconciliation does *not* go through the ``apply_position`` gate
         checks — the target was already validated when ``apply_position`` was
@@ -2788,15 +2840,37 @@ class CoverCommandService:
                 )
                 continue
 
-            # 4. Skip non-safety targets outside the operational time window.
-            # Prevents stale daytime targets from being resent overnight.
-            # Safety targets (force override, weather) are always resent
-            # regardless of the time window. The end-of-window return-to-default
-            # is NOT one of them: ``_on_window_closed`` builds its context with
-            # is_safety=False on purpose, because safety-tagging that send lets
-            # reconciliation resurrect it hours later once a manual override
-            # expires (issues #215/#216).
-            if not self._in_time_window and not s.is_safety:
+            # 4. Skip targets outside the operational time window unless they
+            # are licensed to act out there. Prevents stale daytime targets from
+            # being resent overnight. Two licences, and the OR between them is
+            # ``axis_constraints.may_act_outside_clock_window`` — the same rule
+            # the coordinator's three dispatch guards consume, reached here
+            # through ``PerEntityState.acts_outside_clock_window`` because by now
+            # the result that produced the booking is long gone:
+            #   * ``is_safety`` — force override, weather.
+            #   * ``outside_window_constraint`` — an opted-in Custom Position
+            #     slot's min/max bound that was admitted when this target was
+            #     booked (#943 item B).
+            # The end-of-window return-to-default carries NEITHER licence on an
+            # ordinary night, and that is the point: safety-tagging that send
+            # lets reconciliation resurrect it hours later once a manual
+            # override expires (issues #215/#216). It gets there by passing
+            # ``force=False`` and no ``is_safety``, not by suppressing anything
+            # — ``_build_position_context`` derives ``outside_window_constraint``
+            # from the LIVE pipeline result rather than from its caller, so on a
+            # cycle the registry actually admitted, both night broadcasts
+            # (``_on_window_closed`` and the sunset seam) do book with it set.
+            # That is consistent rather than a leak: the constraint really is
+            # live, the bound really did clamp the number being sent, and
+            # resending it overnight is what the opt-in asked for. It ends when
+            # the next closed-clock cycle finds nothing admitted and calls
+            # ``clear_outside_window_targets``. A result outlives its cycle —
+            # ``_pipeline_result`` still says "admitted" between the clock
+            # reopening and ``_on_window_open``'s refresh landing — but a stale
+            # licence is inert while ``_in_time_window`` is True, and the first
+            # closed-clock cycle after it either re-earns or clears it, so
+            # nothing here reads it wrong.
+            if not self._in_time_window and not s.acts_outside_clock_window:
                 self._logger.debug(
                     "Reconcile: %s skipped — outside time window", entity_id
                 )
@@ -2945,6 +3019,10 @@ class CoverCommandService:
             # just used to authorise it, and the next pass would skip it with
             # auto_control off or outside the window (issue #1134).
             resend_is_safety = s.is_safety
+            # Same reasoning, same read, for the outside-window licence (#943
+            # item B): step 4 authorised this resend on it, and an unrestated
+            # booking would revoke it on its own first retry.
+            resend_outside_window = s.outside_window_constraint
             if resend_target is None:
                 # Cleared out from under the pass (time-window close, reload).
                 # There is no longer a target to restate.
@@ -3017,6 +3095,7 @@ class CoverCommandService:
                 resend_target,
                 dispatch_token=resend_token,
                 is_safety=resend_is_safety,
+                outside_window_constraint=resend_outside_window,
                 queue_budget=wait_allowance,
             ):
                 self._logger.debug(
@@ -3272,6 +3351,7 @@ class CoverCommandService:
         caps: dict[str, bool] | None = None,
         reset_retries: bool = True,
         is_safety: bool = False,
+        outside_window_constraint: bool = False,
         use_my_position: bool = False,  # noqa: FBT001
         plan: ServiceCallPlan | None = None,
         dispatch_token: Any = None,
@@ -3299,6 +3379,16 @@ class CoverCommandService:
                 ``_execute_command`` passes the flag its caller read alongside
                 the target it is restating, because a resend re-states the
                 record rather than making a new verdict (issue #1134).
+            outside_window_constraint: Whether the target being booked was
+                admitted by an opted-in Custom Position slot's min/max
+                constraint outside the user's clock window (issue #943 item B).
+                THE single writer of ``PerEntityState.outside_window_constraint``
+                — reconciliation step 4 reads it to decide whether to resend
+                overnight. Restated on a resend for exactly the reason
+                ``is_safety`` is: a resend puts the same number back on the wire
+                and makes no new verdict, and leaving it at the default would
+                un-licence the very target that authorised the resend (#1134's
+                shape).
             use_my_position: If True and the cover lacks set_cover_position,
                 send cover.stop_cover to trigger the hardware My preset instead
                 of falling back to open/close threshold routing.
@@ -3429,6 +3519,10 @@ class CoverCommandService:
         # Track whether this target was set by a safety override so
         # reconciliation knows whether to resend it when auto_control is off.
         s.is_safety = is_safety
+        # The narrower, separate licence: whether this target was admitted by an
+        # opted-in constraint outside the clock window (#943 item B). Written
+        # here and nowhere else, beside — never onto — the safety verdict.
+        s.outside_window_constraint = outside_window_constraint
         self._grace_mgr.start_command_grace_period(entity)
         if self._on_command_sent is not None:
             self._on_command_sent(entity)
@@ -3442,6 +3536,7 @@ class CoverCommandService:
         *,
         dispatch_token: Any = None,
         is_safety: bool = False,
+        outside_window_constraint: bool = False,
         queue_budget: float = COMMAND_QUEUE_MAX_WAIT_SECONDS,
     ) -> bool:
         """Send command directly, bypassing gate checks (reconciliation use only).
@@ -3479,6 +3574,11 @@ class CoverCommandService:
         caller-passed keyword rather than an internal ``self.state()`` read so
         the second caller, ``TravelCalibrationManager``, is byte-identical: a
         calibration sweep must never invent or preserve a safety target.
+
+        ``outside_window_constraint`` (issue #943 item B) is handled the same
+        way and for the same reason — step 4 authorised this resend on it, and a
+        booking that dropped it would revoke the licence on the first retry.
+        Calibration likewise never invents one.
 
         ``use_my_position`` is NOT passed by callers — it is DERIVED here from
         the booked number via :func:`is_my_preset_target`, against capabilities
@@ -3559,6 +3659,7 @@ class CoverCommandService:
                 caps=caps,
                 reset_retries=False,
                 is_safety=is_safety,
+                outside_window_constraint=outside_window_constraint,
                 use_my_position=is_my_preset_target(caps, axis, target),
                 dispatch_token=dispatch_token,
             )

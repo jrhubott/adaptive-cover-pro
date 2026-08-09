@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import logging
 from collections.abc import Mapping
 
 from ..const import AxisConstraintMode, ReasonCode
@@ -17,8 +18,8 @@ from .axis_constraints import (
     clamp_to_bounds,
     compose_bounds,
     constraint_label,
-    gather_axis_constraints,
     outranking,
+    partition_axis_constraints,
     tilt_clamp_step,
 )
 from .handler import OverrideHandler
@@ -30,6 +31,46 @@ from .types import (
     PipelineSnapshot,
     PositionAxisJudgment,
 )
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def _axis_fragment(axis: str) -> Reason:
+    """Name an axis for a trace reason — the one mapping, used by two steps."""
+    return Reason(
+        ReasonCode.FRAGMENT_AXIS_POSITION
+        if axis == AXIS_NAME_POSITION
+        else ReasonCode.FRAGMENT_AXIS_TILT
+    )
+
+
+def _window_dropped_steps(dropped: list) -> list[DecisionStep]:
+    """Explain every active claim the closed clock window did not admit.
+
+    A dropped claim's handler DEFERRED, so the deferral sweep has already taken
+    its ``describe_skip`` entry — without a step of its own the slot vanishes
+    from the trace entirely and the user is left guessing why their bound did
+    nothing at 03:00. Distinct from ``floor_inactive`` / ``tilt_bound_inactive``
+    on purpose: those claim the winner was already on the satisfied side, which
+    is not what happened here.
+    """
+    return [
+        DecisionStep(
+            handler=c.source,
+            matched=False,
+            reason_payload=Reason(
+                ReasonCode.REGISTRY_CONSTRAINT_OUTSIDE_WINDOW,
+                {
+                    "low_label": bound_label(c.low),
+                    "high_label": bound_label(c.high),
+                    "label": c.label,
+                    "axis": _axis_fragment(c.axis),
+                },
+            ),
+            position=None,
+        )
+        for c in dropped
+    ]
 
 
 def _normalize_reason(value: str | Reason) -> tuple[str, Reason | None]:
@@ -379,6 +420,13 @@ def _release_hold_for_tilt_clamp(
     tilt bound forcing the dispatch while the position axis stayed inert — or
     yielded to the hold (#1170) — would otherwise send that shadow and move a
     cover the user had just placed by hand.
+
+    Since #943 item B the "hold" may be a PSEUDO one
+    (:func:`_as_outside_window_pseudo_hold`): outside the clock window a
+    computed winner is judged as if it held the cover's current read, precisely
+    so this function's rule applies to it. The shadow it then suppresses is the
+    DEFAULT winner's own position — ``default_percentage`` / ``sunset_position``
+    — which is the value issues #215/#216/#223 are about.
     """
     winner = dataclasses.replace(winner, skip_command=False)
     if position_clamped or winner.held_position is None:
@@ -403,6 +451,91 @@ def _release_hold_for_tilt_clamp(
         )
     )
     return dataclasses.replace(winner, position=effective_winner_pos)
+
+
+def _as_outside_window_pseudo_hold(
+    winner, snapshot: PipelineSnapshot, constraints: list
+):
+    """Judge a computed winner as if it were holding the cover's current read.
+
+    Returns ``(winner, active)`` — the winner to compose against, and whether
+    the pseudo-hold engaged.
+
+    **Why a hold and not a lifted gate** (issue #943 item B). Dispatch is
+    whole-target: outside the user's clock window the winner is normally
+    ``DefaultHandler`` at ``default_percentage`` / ``sunset_position``, and
+    letting an admitted tilt clamp carry that position to the hardware would
+    fling the cover open at 06:00 — issues #215/#216/#223, exactly. The
+    codebase already owns the right mechanism for "get the constrained axis to
+    the hardware without moving anything else": :func:`_judge_position_axis`'s
+    hold path plus :func:`_release_hold_for_tilt_clamp`, both keyed on
+    ``held_position``. Borrowing it is what makes the new capability a
+    restatement of an existing rule rather than a second one.
+
+    The holder priority stays ``winning_handler.priority`` at the call site,
+    which has a consequence worth stating plainly. A REAL hold (manual override
+    at 80, a group lock at 100) never reaches here at all — ``held_position`` is
+    already set — and still beats a 77 slot through the unchanged
+    :func:`outranking` gate. But a pseudo-hold inherits its winner's priority as
+    if that winner were holding the cover, and :func:`outranking` is
+    strictly-greater. Against ``DefaultHandler`` at 0 that is inert: every
+    constraint outranks it. Against a **FIXED custom-position slot** winning at
+    the default 77, a second slot's opted-in bound at 77 does NOT outrank it and
+    is filed as ``yielded_to_hold`` — so on that configuration the opt-in is
+    inert and the user sees a ``bound_yielded_to_hold`` trace step naming a
+    holder that is not holding anything.
+
+    That is today's behaviour and it is pinned by
+    ``tests/test_pipeline/test_outside_window_constraints.py``
+    ``::test_pseudo_hold_ties_are_judged_against_the_winners_own_priority``.
+    Whether it is the RIGHT behaviour is a separate question left open: the
+    pseudo-hold is scaffolding, nobody is holding the cover, and #463's rule for
+    a computed winner is that composition is priority-independent — which argues
+    for handing this call site a below-everything holder priority rather than
+    the winner's own. That is a design change, so it is not made here.
+
+    ``held_position`` is stripped back off before the result is returned: it is
+    a user-facing field (the Target Position sensor, the Model B stash replay in
+    ``DayNightShadePolicy``) and a DEFAULT result must not start claiming to
+    hold anything.
+
+    Withheld when no cover reports a position: there is then no safe value to
+    pin the unconstrained axes to, and the only number left to send would be the
+    winner's own — which is the whole hazard.
+
+    **Withheld for a safety winner**, which is clause (a) of the same invariant
+    the rest of this function serves. Suppressing the winner's own position is
+    only ever right for a result that has no licence to move a cover out here;
+    a weather retraction and a priority-100 slot both do (#563), and their own
+    values are exactly what must reach the hardware. Applied to one, the
+    pseudo-hold would post the cover's current read in place of the storm
+    position — and, because the bounds would then be judged against that read
+    rather than the winner, a ceiling that really binds the retraction would
+    stop binding it too. Declining leaves such a winner on the pre-item-B path,
+    where :func:`_judge_position_axis` clamps ``winner.position`` itself and
+    :func:`_release_hold_for_tilt_clamp` returns early on the absent
+    ``held_position`` — i.e. byte-identical to the clock-open cycle, which is
+    what "acts outside the window" has always meant. It also keeps
+    ``is_safety`` and ``outside_window_constraint_active`` from ever being
+    co-written, preserving the separation #1226/#1165 established.
+    """
+    if (
+        snapshot.clock_window_open
+        or not constraints
+        or winner.held_position is not None
+        or winner.is_safety
+    ):
+        return winner, False
+    if snapshot.current_cover_position is None:
+        _LOGGER.debug(
+            "Outside-window constraint active but no cover position is "
+            "readable — withholding admission for this cycle"
+        )
+        return winner, False
+    return (
+        dataclasses.replace(winner, held_position=snapshot.current_cover_position),
+        True,
+    )
 
 
 def _clamp_step(
@@ -789,7 +922,38 @@ class PipelineRegistry:
         # here so the arithmetic lives in exactly one place
         # (pipeline/axis_constraints.py). One gather serves both axes; the rules
         # differ by constraint *kind*, not by axis.
-        constraints = gather_axis_constraints(snapshot)
+        #
+        # Outside the user's start/end CLOCK window the gather keeps only the
+        # claims ``_window_eligible`` admits (#943 item B); ``window_dropped``
+        # holds the rest purely so the trace can say they were active and
+        # deliberately not applied. With the clock open the split is inert and
+        # ``constraints`` is byte-identical to the pre-item-B gather.
+        constraints, window_dropped = partition_axis_constraints(snapshot)
+        # Unconditional: with the clock open ``window_dropped`` is empty and
+        # this is an identity. A dropped source's ``describe_skip`` step is
+        # swept so the explicit "not applied outside the window" step replaces
+        # it rather than sitting beside it and contradicting it.
+        trace = _drop_trace_steps(trace, {c.source for c in window_dropped})
+        # Built here, appended AFTER both axis sweeps — the same reason
+        # ``yielded_steps`` below is. Those sweeps key on the SOURCE of a kept
+        # claim and spare only ``matched=True`` steps, so a slot with one kept
+        # claim and one dropped claim would have its replacement swept straight
+        # back out and be left with no trace entry at all.
+        #
+        # No slot can be in that shape today: every claim of a slot carries the
+        # same ``priority`` and ``outside_window``, so eligibility can only
+        # differ by ``kind is FIXED``, the only FIXED claim this gather emits is
+        # a tilt one, and a FIXED tilt requires ``tilt_only`` — which makes
+        # ``position_mode`` NONE and leaves the slot with nothing else to keep.
+        # Deferring the append costs nothing and means the explanation does not
+        # depend on that chain staying true.
+        window_dropped_steps = _window_dropped_steps(window_dropped)
+
+        # Outside-window pseudo-hold (issue #943 item B) — see
+        # ``_as_outside_window_pseudo_hold``.
+        winner, outside_window_active = _as_outside_window_pseudo_hold(
+            winner, snapshot, constraints
+        )
 
         # Bounds allowed to move THIS winner. Identical to ``constraints``
         # unless the winner is holding a physical position, in which case a
@@ -915,11 +1079,7 @@ class PipelineRegistry:
                         "holder_priority": winning_handler.priority,
                         # A slot can bound BOTH axes and yield on both; without
                         # the axis the two steps render identically (#1170).
-                        "axis": Reason(
-                            ReasonCode.FRAGMENT_AXIS_POSITION
-                            if c.axis == AXIS_NAME_POSITION
-                            else ReasonCode.FRAGMENT_AXIS_TILT
-                        ),
+                        "axis": _axis_fragment(c.axis),
                     },
                 ),
                 # Same column ``_inactive_position_steps`` fills for the same
@@ -1014,7 +1174,9 @@ class PipelineRegistry:
             },
         )
         # Past every sweep now — safe to state why a position bound yielded
-        # even when the same slot also bounds the tilt (#1170).
+        # even when the same slot also bounds the tilt (#1170), and why an
+        # ineligible claim was not applied at all (#943 item B).
+        trace.extend(window_dropped_steps)
         trace.extend(yielded_steps)
         # The tilt to clamp is, in precedence order: the FIXED overlay we just
         # filled, or the winner's own tilt (see ``_tilt_to_clamp``). #943's
@@ -1067,6 +1229,43 @@ class PipelineRegistry:
                         bound_constraints,
                         final_tilt=bounded_tilt,
                         binding=tilt_binding,
+                    )
+                )
+            elif outside_window_active:
+                # Nothing resolved a tilt AND the clock window is closed, so
+                # carrying the bounds is not an option: ``PipelineSnapshot``
+                # holds no tilt reads, and ``VenetianPolicy.post_pipeline_resolve``
+                # DROPS carried bounds on its engine-suppressed branch — which
+                # is exactly the branch a DEFAULT winner takes. So the registry
+                # resolves the tilt itself, to the bound's OWN edge and never to
+                # any handler's tilt (#1153). The floor edge wins a two-sided
+                # bound for the same reason ``clamp_to_bounds`` applies the
+                # floor last: a floor is the protection commitment.
+                #
+                # Setting ``merged["tilt"]`` mirrors the #514 overlay's
+                # transport, so the policy's "handler tilt honored" path carries
+                # it and the engine-suppressed branch is never reached with live
+                # bounds. Treated as a tilt clamp because it is one: the axis
+                # forced a dispatch and the position must be carried, not
+                # invented.
+                enforced_tilt = tilt_low if tilt_low is not None else tilt_high
+                tilt_clamped = True
+                merged["tilt"] = enforced_tilt
+                trace.append(
+                    DecisionStep(
+                        handler="tilt_clamp",
+                        matched=True,
+                        reason_payload=Reason(
+                            ReasonCode.REGISTRY_TILT_BOUND_ENFORCED,
+                            {
+                                "low_label": bound_label(tilt_low),
+                                "high_label": bound_label(tilt_high),
+                                "label": tilt_label,
+                                "tilt": enforced_tilt,
+                            },
+                        ),
+                        position=None,
+                        tilt=enforced_tilt,
                     )
                 )
             else:
@@ -1133,9 +1332,66 @@ class PipelineRegistry:
         # the transport for a (possibly bound-clamped) tilt-only contribution.
         if tilt_overlay is not None:
             merged["tilt"] = tilt_overlay
+        # ── Outside-window admission (issue #943 item B) ────────────────────
+        # Set ONLY when the clock window is closed AND an eligible constraint
+        # actually bound something this cycle. Deliberately NOT ``is_safety``:
+        # that flag's one-writer lifetime (#1226/#1165) stays untouched, and a
+        # constraint dispatch must not inherit safety's other licences (auto
+        # control off, surviving ``clear_non_safety_targets``).
+        #
+        # Gating on the CLOSED window is what keeps the end-of-window sweep
+        # semantics intact (#215/#216): an in-window booking never carries the
+        # flag, so nothing new survives ``clear_non_safety_targets()``.
+        outside_window_admitted = outside_window_active and (
+            position_clamped or tilt_clamped
+        )
+        if outside_window_active:
+            # The pseudo-hold was scaffolding for the position axis; strip it
+            # before the result leaves. ``held_position`` is user-facing (the
+            # Target Position sensor, the Model B stash replay in
+            # ``DayNightShadePolicy``) and a DEFAULT result must not start
+            # claiming to hold anything.
+            winner = dataclasses.replace(winner, held_position=None)
+            if outside_window_admitted:
+                # ── Axis scoping ─────────────────────────────────────────────
+                # An admitted cycle dispatches, so every field it carries
+                # reaches hardware — and the invariant allows only two kinds of
+                # value out here: what an eligible constraint composed, and
+                # where the cover already is. The position axis gets the second
+                # from the pseudo-hold. These two fields have no such fallback,
+                # so they are emptied instead:
+                #
+                # * ``tilt`` — ``PipelineSnapshot`` carries ``cover_positions``
+                #   but no tilt reads, so "where the slats already are" is not
+                #   knowable. ``merged`` holds a tilt only when the composition
+                #   above wrote one (the bound clamp, the resolved bound edge,
+                #   or the #514 FIXED overlay — every one of them an eligible
+                #   constraint's value), so its ABSENCE is exactly the case
+                #   where the result would otherwise fall through to the
+                #   winner's own ``default_tilt`` / ``sunset_tilt``. None sends
+                #   nothing on that axis: ``position_context_overrides`` omits
+                #   the key, ``PositionContext.tilt`` stays None, and
+                #   ``maybe_update_tilt_only``'s guard never opens — the slats
+                #   stay where the user left them.
+                # * ``use_my_position`` — the winner's own routing. It would
+                #   land a cover without ``set_cover_position`` on its hardware
+                #   My preset instead of the bound edge just resolved.
+                #
+                # A safety winner never reaches here — it is clause (a), and its
+                # own values are precisely what must go out.
+                merged.setdefault("tilt", None)
+                winner = dataclasses.replace(winner, use_my_position=False)
+            else:
+                # Nothing bound ⇒ nothing to dispatch ⇒ the pseudo-hold is
+                # discarded whole, verdicts included: a DEFAULT winner must not
+                # leave the registry carrying per-cover "held, not released"
+                # verdicts nobody asked for. The result is then byte-identical
+                # to its pre-item-B self, diagnostics included.
+                hold_clamp_verdicts = None
         result = dataclasses.replace(
             winner,
             decision_trace=trace,
+            outside_window_constraint_active=outside_window_admitted,
             # Per-cover dispatch verdicts for a hold (#1174) — which covers are
             # commanded and where each one goes. None for a computed winner and
             # for a snapshot without per-entity positions, both of which keep
@@ -1167,6 +1423,9 @@ class PipelineRegistry:
                     "reason": result.reason,
                     "bypass_auto_control": result.bypass_auto_control,
                     "position_constraint_applied": result.position_constraint_applied,
+                    "outside_window_constraint_active": (
+                        result.outside_window_constraint_active
+                    ),
                     "is_sunset_active": result.is_sunset_active,
                 }
             )

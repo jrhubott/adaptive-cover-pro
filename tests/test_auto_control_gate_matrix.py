@@ -496,6 +496,11 @@ async def _trigger_async_apply_user_position(coord):
         ),
         _patch.object(
             AdaptiveDataUpdateCoordinator,
+            "clock_window_open",
+            new_callable=lambda: True,
+        ),
+        _patch.object(
+            AdaptiveDataUpdateCoordinator,
             "_is_glare_zone_enabled",
             new=MagicMock(return_value=False),
         ),

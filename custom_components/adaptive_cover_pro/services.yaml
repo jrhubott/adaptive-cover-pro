@@ -611,6 +611,19 @@ set_custom_position:
           step: 1
           mode: slider
           unit_of_measurement: "%"
+    outside_window:
+      name: Keep constraints active outside time window
+      description: >-
+        If true, this slot's min/max constraints (minimum position, position_max,
+        tilt_min, tilt_max) keep clamping after the start/end time window closes,
+        for as long as the trigger stays active. Only the axis you limited moves:
+        an unconstrained carriage is commanded to where the cover already is, and
+        unconstrained slats are sent no command at all. An exact position never
+        acts outside the window, whatever this is set to. A manual override that
+        is still holding the cover defeats this at any priority — the constraints
+        resume when the window reopens.
+      selector:
+        boolean:
 
 set_motion:
   name: Set occupancy settings (deprecated)

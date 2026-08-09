@@ -2429,3 +2429,128 @@ async def test_stop_all_dry_run_no_send(svc, mock_hass):
         stopped = await svc.stop_all(["cover.test"])
     mock_hass.services.async_call.assert_not_called()
     assert "cover.test" in stopped
+
+
+# ------------------------------------------------------------------ #
+# Outside-window constraint licence (issue #943 item B)
+#
+# A SEPARATE per-entity flag from ``is_safety`` — sharing that one would
+# reopen #1165 (a stale safety verdict surviving clear_non_safety_targets and
+# being re-driven with automatic control off). This one buys exactly one
+# thing: reconciliation step 4 may resend the target it licensed while the
+# user's clock window is closed.
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_flagged_target_resent_outside_window(svc, mock_hass):
+    """A licensed target keeps being chased overnight."""
+    _patch_position(svc, 90)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            50,
+            "constraint",
+            context=_ctx(force=True, outside_window_constraint=True),
+        )
+    assert outcome == "sent"
+    assert svc.state("cover.test").outside_window_constraint is True
+    assert svc.state("cover.test").is_safety is False
+
+    svc._in_time_window = False
+    svc.set_waiting("cover.test", False)
+    _patch_position(svc, 90)
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_called_once()
+    # A resend RESTATES the record; it must not un-licence its own target.
+    assert svc.state("cover.test").outside_window_constraint is True
+
+
+@pytest.mark.asyncio
+async def test_unflagged_target_still_skipped_outside_window(svc, mock_hass):
+    """Positive control: without the licence step 4 still blocks the resend."""
+    _patch_position(svc, 90)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 50, "solar", context=_ctx(force=True)
+        )
+    assert outcome == "sent"
+    assert svc.state("cover.test").outside_window_constraint is False
+
+    svc._in_time_window = False
+    svc.set_waiting("cover.test", False)
+    _patch_position(svc, 90)
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_outside_window_flag_not_written_by_safety_writers(svc):
+    """``is_safety``'s writers keep their own lifetime and never touch this one.
+
+    The two flags have separate writers and separate sweepers on purpose
+    (#1226/#1165). A safety dispatch, and the skip-path verdict recorder that
+    follows it, must leave the outside-window licence exactly as they found it.
+    """
+    _patch_position(svc, 90)
+    with _patch_caps(), _patch_no_prior_command():
+        await svc.apply_position(
+            "cover.test", 50, "weather", context=_ctx(is_safety=True, force=True)
+        )
+    assert svc.state("cover.test").is_safety is True
+    assert svc.state("cover.test").outside_window_constraint is False
+
+    # A skip cycle records a safety verdict through ``_record_safety_verdict``;
+    # that writer owns ``is_safety`` alone.
+    svc.state("cover.test").outside_window_constraint = True
+    _patch_position(svc, 50)
+    with _patch_caps():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 50, "solar", context=_ctx(is_safety=False)
+        )
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.state("cover.test").is_safety is False
+    assert svc.state("cover.test").outside_window_constraint is True
+
+
+@pytest.mark.asyncio
+async def test_clear_outside_window_targets_spares_safety_targets(svc):
+    """The sweeper revokes only non-safety licences, target and flag together."""
+    svc.set_target("cover.licensed", 40)
+    svc.state("cover.licensed").outside_window_constraint = True
+    svc.set_target("cover.safety", 60)
+    svc.state("cover.safety").is_safety = True
+    svc.state("cover.safety").outside_window_constraint = True
+    svc.set_target("cover.plain", 70)
+
+    svc.clear_outside_window_targets()
+
+    assert svc.get_target("cover.licensed") is None
+    assert svc.state("cover.licensed").outside_window_constraint is False
+    # Safety rows answer to clear_non_safety_targets and to is_safety's own
+    # lifetime — this sweeper must not reach into either.
+    assert svc.get_target("cover.safety") == 60
+    assert svc.state("cover.safety").outside_window_constraint is True
+    # An unlicensed target is none of this sweeper's business.
+    assert svc.get_target("cover.plain") == 70
+
+
+@pytest.mark.asyncio
+async def test_outside_window_licence_is_not_restored_after_a_reload(svc):
+    """Rehydration books the number without the licence (#943 item B).
+
+    The licence is a live-cycle verdict, not persisted state: first-refresh
+    admission re-establishes it from a freshly evaluated result, and inheriting
+    it across a restart would let a stale number move a cover at 03:00 with no
+    pipeline behind it.
+    """
+    _patch_position(svc, 40)
+    svc.restore_target("cover.test", 40)
+    assert svc.get_target("cover.test") == 40
+    assert svc.state("cover.test").outside_window_constraint is False
