@@ -2843,10 +2843,25 @@ class CoverCommandService:
             #   * ``outside_window_constraint`` — an opted-in Custom Position
             #     slot's min/max bound that was admitted when this target was
             #     booked (#943 item B).
-            # The end-of-window return-to-default is NEITHER:
-            # ``_on_window_closed`` builds its context with both flags False on
-            # purpose, because tagging that send lets reconciliation resurrect it
-            # hours later once a manual override expires (issues #215/#216).
+            # The end-of-window return-to-default carries NEITHER licence on an
+            # ordinary night, and that is the point: safety-tagging that send
+            # lets reconciliation resurrect it hours later once a manual
+            # override expires (issues #215/#216). It gets there by passing
+            # ``force=False`` and no ``is_safety``, not by suppressing anything
+            # — ``_build_position_context`` derives ``outside_window_constraint``
+            # from the LIVE pipeline result rather than from its caller, so on a
+            # cycle the registry actually admitted, both night broadcasts
+            # (``_on_window_closed`` and the sunset seam) do book with it set.
+            # That is consistent rather than a leak: the constraint really is
+            # live, the bound really did clamp the number being sent, and
+            # resending it overnight is what the opt-in asked for. It ends when
+            # the next closed-clock cycle finds nothing admitted and calls
+            # ``clear_outside_window_targets``. A result outlives its cycle —
+            # ``_pipeline_result`` still says "admitted" between the clock
+            # reopening and ``_on_window_open``'s refresh landing — but a stale
+            # licence is inert while ``_in_time_window`` is True, and the first
+            # closed-clock cycle after it either re-earns or clears it, so
+            # nothing here reads it wrong.
             if not self._in_time_window and not s.acts_outside_clock_window:
                 self._logger.debug(
                     "Reconcile: %s skipped — outside time window", entity_id
@@ -2997,7 +3012,7 @@ class CoverCommandService:
             # auto_control off or outside the window (issue #1134).
             resend_is_safety = s.is_safety
             # Same reasoning, same read, for the outside-window licence (#943
-            # item B): step 5 authorised this resend on it, and an unrestated
+            # item B): step 4 authorised this resend on it, and an unrestated
             # booking would revoke it on its own first retry.
             resend_outside_window = s.outside_window_constraint
             if resend_target is None:
@@ -3360,7 +3375,7 @@ class CoverCommandService:
                 admitted by an opted-in Custom Position slot's min/max
                 constraint outside the user's clock window (issue #943 item B).
                 THE single writer of ``PerEntityState.outside_window_constraint``
-                — reconciliation step 5 reads it to decide whether to resend
+                — reconciliation step 4 reads it to decide whether to resend
                 overnight. Restated on a resend for exactly the reason
                 ``is_safety`` is: a resend puts the same number back on the wire
                 and makes no new verdict, and leaving it at the default would
@@ -3553,7 +3568,7 @@ class CoverCommandService:
         calibration sweep must never invent or preserve a safety target.
 
         ``outside_window_constraint`` (issue #943 item B) is handled the same
-        way and for the same reason — step 5 authorised this resend on it, and a
+        way and for the same reason — step 4 authorised this resend on it, and a
         booking that dropped it would revoke the licence on the first retry.
         Calibration likewise never invents one.
 

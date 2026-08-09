@@ -377,7 +377,7 @@ from .pipeline.handlers import (  # noqa: E402
     HANDLER_PRIORITY_CONF,
     resolve_handler_priority,
 )
-from .pipeline.types import has_fixed_tilt  # noqa: E402
+from .pipeline.types import CustomPositionSensorState, has_fixed_tilt  # noqa: E402
 from .priority_chain import build_priority_chain  # noqa: E402
 from .managers.cover_command.queue import normalize_queue_name  # noqa: E402
 from .profile_link import (  # noqa: E402
@@ -2719,33 +2719,30 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             # Outside-window constraints (issue #943 item B). Rendered as its own
             # sub-line rather than folded into the rule template so the flag can
             # be surfaced on BOTH branches above without either template gaining
-            # a placeholder. The effective claims are what decide whether it
-            # does anything, so read them post-normalization: a real fixed tilt
-            # wiped the tilt bounds, and tilt_only / use_my wiped the ceiling
-            # (issue #1215), which is exactly when the flag is inert.
+            # a placeholder. Whether it does anything depends on the EFFECTIVE
+            # claims, so the question goes to the same derivation the pipeline
+            # reads — ``CustomPositionSensorState.has_bounded_claim``, which is
+            # ``position_mode`` / ``tilt_mode`` and therefore already knows that
+            # a real fixed tilt wipes the tilt bounds, that tilt_only disclaims
+            # the position axis, and that use_my is hardware-pinned (#514 /
+            # #1215). Re-deriving it from the raw wire format here is what let
+            # this warning drift out of step with the gather.
             if config.get(_keys["outside_window"]):
-                # A real fixed tilt wipes the tilt bounds; tilt_only / use_my
-                # wipe the ceiling; a floor needs min_mode AND a stored
-                # position. Mirror all three so the "no effect" warning fires on
-                # exactly the configurations where nothing survives to clamp.
-                _fixed_tilt = has_fixed_tilt(tilt_only=_tilt_only, tilt=_slot_tilt)
-                _raw_pos = config.get(_keys["position"])
-                _floor_live = (
-                    not _tilt_only
-                    and bool(config.get(_keys["min_mode"]))
-                    and _raw_pos is not None
+                _claims = CustomPositionSensorState(
+                    entity_ids=(),
+                    is_on=True,
+                    position=config.get(_keys["position"]),
+                    priority=_pri,
+                    min_mode=bool(config.get(_keys["min_mode"])),
+                    use_my=_use_my,
+                    tilt=_slot_tilt,
+                    tilt_only=_tilt_only,
+                    slot=_slot,
+                    position_max=config.get(_keys["position_max"]),
+                    tilt_min=_t_min,
+                    tilt_max=_t_max,
                 )
-                _ceiling_live = (
-                    not _tilt_only
-                    and not _use_my
-                    and config.get(_keys["position_max"]) is not None
-                    and (_floor_live or _raw_pos is None)
-                )
-                _has_bounds = (
-                    _floor_live
-                    or _ceiling_live
-                    or (not _fixed_tilt and (_t_min is not None or _t_max is not None))
-                )
+                _has_bounds = _claims.has_bounded_claim
                 if _pri >= CUSTOM_POSITION_SAFETY_PRIORITY:
                     # Priority 100 already commands outside the window (#563),
                     # so the checkbox buys nothing and reads as if it did.

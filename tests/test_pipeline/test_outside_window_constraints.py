@@ -19,13 +19,20 @@ rather than simply lifting a dispatch gate.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_INTERP,
+    CONF_INVERSE_STATE,
     CUSTOM_POSITION_SAFETY_PRIORITY,
     AxisConstraintMode,
     ControlMethod,
     ReasonCode,
+)
+from custom_components.adaptive_cover_pro.coordinator import (
+    AdaptiveDataUpdateCoordinator,
 )
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import (
@@ -35,7 +42,7 @@ from custom_components.adaptive_cover_pro.cover_types.base import (
 from custom_components.adaptive_cover_pro.pipeline.axis_constraints import (
     gather_axis_constraints,
     may_act_outside_clock_window,
-    window_ineligible_constraints,
+    partition_axis_constraints,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     CustomPositionHandler,
@@ -45,6 +52,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
+    DecisionStep,
     PipelineResult,
 )
 
@@ -92,6 +100,11 @@ def _snapshot(*, sensors=None, clock_open=True, **kwargs):
     )
 
 
+def _dropped(snap):
+    """Return the active claims a closed clock window did not admit this cycle."""
+    return partition_axis_constraints(snap)[1]
+
+
 # ---------------------------------------------------------------------------
 # Gather filter (step 3)
 # ---------------------------------------------------------------------------
@@ -102,7 +115,7 @@ def test_gather_drops_unflagged_constraints_when_clock_closed():
     """A slot that did not opt in stops contributing once the clock closes."""
     snap = _snapshot(sensors=[_slot(tilt_min=50)], clock_open=False)
     assert gather_axis_constraints(snap) == []
-    dropped = window_ineligible_constraints(snap)
+    dropped = _dropped(snap)
     assert [c.axis for c in dropped] == [AXIS_NAME_TILT]
 
 
@@ -125,7 +138,7 @@ def test_gather_keeps_flagged_min_max_claims_when_clock_closed():
     kept = gather_axis_constraints(snap)
     assert {c.axis for c in kept} == {AXIS_NAME_POSITION, AXIS_NAME_TILT}
     assert all(c.kind is AxisConstraintMode.RANGE for c in kept)
-    assert window_ineligible_constraints(snap) == []
+    assert _dropped(snap) == []
 
 
 @pytest.mark.unit
@@ -144,13 +157,21 @@ def test_gather_drops_fixed_claims_of_flagged_slot_when_clock_closed():
         clock_open=False,
     )
     assert gather_axis_constraints(snap) == []
-    dropped = window_ineligible_constraints(snap)
+    dropped = _dropped(snap)
     assert {c.kind for c in dropped} == {AxisConstraintMode.FIXED}
 
 
 @pytest.mark.unit
 def test_gather_keeps_weather_floor_and_safety_slots_when_clock_closed():
-    """Weather and priority-100 slots were already window-blind — unchanged."""
+    """Weather and priority-100 slots keep binding without opting in.
+
+    Both are widenings rather than preservations, and deliberate — see
+    ``_window_eligible``. A min-mode weather floor makes its handler DEFER, so
+    no result ever carried ``is_safety`` for it and the pre-item-B dispatch gate
+    stopped it like any other bound; a priority-100 slot contributing only a
+    bound never produced a result either. What #563 documented is a WINNING
+    safety result, which is not what either of these is.
+    """
     snap = _snapshot(
         sensors=[
             _slot(
@@ -166,7 +187,7 @@ def test_gather_keeps_weather_floor_and_safety_slots_when_clock_closed():
     )
     kept = gather_axis_constraints(snap)
     assert sorted(c.source for c in kept) == ["custom_position_1", "weather"]
-    assert window_ineligible_constraints(snap) == []
+    assert _dropped(snap) == []
 
 
 @pytest.mark.unit
@@ -185,7 +206,7 @@ def test_gather_window_open_is_byte_identical_to_today():
     ]
     baseline = gather_axis_constraints(_snapshot(sensors=unflagged, clock_open=True))
     assert opened == baseline
-    assert window_ineligible_constraints(_snapshot(sensors=sensors)) == []
+    assert partition_axis_constraints(_snapshot(sensors=sensors))[1] == []
 
 
 @pytest.mark.unit
@@ -221,6 +242,143 @@ def test_user_move_clamp_ignores_unflagged_floor_at_night_but_honors_weather():
         "custom_position_1",
         "weather",
     ]
+
+
+# The clamp end to end, from the service call down to the dispatched number.
+# The gather test above proves the FILTER; this proves the whole chain actually
+# carries it — ``clock_window_open`` → ``_build_user_command_snapshot`` →
+# ``gather_active_floors`` → ``outranking`` → ``_clamp_to_active_floor`` →
+# ``async_apply_user_position``. Without it the decided behaviour rests on a
+# property nothing asserts against a real command, and every other end-to-end
+# harness leaves ``clock_window_open`` a truthy ``MagicMock``.
+
+_USER_FLOOR = 60
+_USER_REQUEST = 10
+
+
+def _user_move_coordinator(*, priority: int, clock_open: bool, opted_in: bool):
+    """Coordinator-shaped harness that runs the real user-move clamp.
+
+    Only the snapshot BUILDER is faked, and it is faked to forward the clock
+    state it is handed — so the assertion covers the coordinator passing
+    ``clock_window_open`` down as much as the filter reading it. Everything
+    between the service call and ``apply_position`` is production code.
+    """
+    from tests.ha_helpers import bind_user_position_seam, wire_dispatch_frame
+
+    sensors = [
+        _slot(
+            position=_USER_FLOOR,
+            min_mode=True,
+            priority=priority,
+            outside_window=opted_in,
+        )
+    ]
+    coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = {}
+    wire_dispatch_frame(coord, {})
+    coord._resolved_options = {}
+    # The clock is closed; the daytime gate cannot re-open it
+    # (``not clock_window_open ⇒ not in_time_window``).
+    coord.clock_window_open = clock_open
+    coord.check_adaptive_time = clock_open
+    coord._cover_data = MagicMock(name="cover_data")
+    coord._cover_type = "cover_blind"
+    coord._weather_readings = None
+    coord._cloud_mgr = MagicMock()
+    coord._climate_smoothing_mgr = MagicMock()
+    coord._climate_smoothing_mgr.resolved_flags = None
+
+    def _build(_opts, **kwargs):
+        return _snapshot(
+            sensors=sensors,
+            clock_open=kwargs["clock_window_open"],
+            in_time_window=kwargs["in_time_window"],
+        )
+
+    coord._snapshot_builder = MagicMock()
+    coord._snapshot_builder.build = _build
+    coord._build_position_context.return_value = MagicMock(name="ctx")
+    coord._cmd_svc = MagicMock()
+    coord._cmd_svc.apply_position = AsyncMock(
+        return_value=("sent", "set_cover_position")
+    )
+    # A DEFAULT winner at priority 0 never preempts a user move, so the clamp is
+    # the only thing between the request and the wire.
+    coord._pipeline = MagicMock()
+    coord._pipeline.evaluate.return_value = PipelineResult(
+        position=0,
+        control_method=ControlMethod.DEFAULT,
+        decision_trace=[DecisionStep(handler="default", matched=True, position=0)],
+    )
+    coord._handler_by_name = {}
+    coord.manager = MagicMock()
+    bind_user_position_seam(coord)
+    return coord
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("opted_in", [False, True])
+@pytest.mark.parametrize(
+    ("priority", "clock_open", "expected"),
+    [
+        # A default-priority floor yields to a manual move at any hour (#472).
+        (77, True, _USER_REQUEST),
+        (77, False, _USER_REQUEST),
+        # Above manual override, the floor clamps inside the window.
+        (85, True, _USER_FLOOR),
+        # A safety slot clamps whatever the clock and the flag say (#563).
+        (CUSTOM_POSITION_SAFETY_PRIORITY, True, _USER_FLOOR),
+        (CUSTOM_POSITION_SAFETY_PRIORITY, False, _USER_FLOOR),
+    ],
+)
+async def test_user_move_clamp_end_to_end_unaffected_by_the_opt_in(
+    priority, clock_open, opted_in, expected
+):
+    """The rows where the #943 flag changes nothing, whichever way it is set."""
+    coord = _user_move_coordinator(
+        priority=priority, clock_open=clock_open, opted_in=opted_in
+    )
+
+    await coord.async_apply_user_position(
+        "cover.a", _USER_REQUEST, trigger="set_position"
+    )
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.a", expected, "set_position", coord._build_position_context.return_value
+    )
+    assert coord.user_dispatch_position(_USER_REQUEST) == expected
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("opted_in", "expected"),
+    [
+        # DECIDED (issue #943): an outranking floor that did NOT opt in stops
+        # clamping a user's service-call position once the clock closes. That is
+        # deliberate — the clamp is window-aware, and the direction it moves in
+        # is the #215/#216 one, hands off outside the user's hours. Flipping this
+        # row back to _USER_FLOOR is a behaviour change, not a bug fix.
+        (False, _USER_REQUEST),
+        # Opting in restores it: the slot asked to keep binding out there.
+        (True, _USER_FLOOR),
+    ],
+)
+async def test_user_move_clamp_outside_window_follows_the_opt_in(opted_in, expected):
+    """The one row the #943 flag decides, pinned end to end."""
+    coord = _user_move_coordinator(priority=85, clock_open=False, opted_in=opted_in)
+
+    await coord.async_apply_user_position(
+        "cover.a", _USER_REQUEST, trigger="set_position"
+    )
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.a", expected, "set_position", coord._build_position_context.return_value
+    )
+    assert coord.user_dispatch_position(_USER_REQUEST) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +580,73 @@ def test_admission_withheld_without_position_reads():
     )
     assert result.outside_window_constraint_active is False
     assert result.acts_outside_clock_window is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("bound_priority", "expect_admitted"),
+    [
+        # Equal priorities: ``outranking`` is strictly-greater, so the bound
+        # loses to a holder that is not actually holding anything.
+        (77, False),
+        # One point above the winner and it binds.
+        (78, True),
+    ],
+)
+def test_pseudo_hold_ties_are_judged_against_the_winners_own_priority(
+    bound_priority, expect_admitted
+):
+    """The pseudo-hold borrows the WINNER's priority, ties included.
+
+    Pinning today's behaviour, not endorsing it. ``_as_outside_window_pseudo_hold``
+    leaves ``holder_priority`` at ``winning_handler.priority``, so when a FIXED
+    Custom Position slot wins outside the window at the default 77, another
+    slot's opted-in bound at that same 77 is filed as ``yielded_to_hold`` and the
+    opt-in does nothing on that configuration — a reachable config, since 77 is
+    the default for every slot. Against ``DefaultHandler`` at 0 (every other test
+    in this file) the gate is inert, which is why nothing else catches it.
+
+    See ``_as_outside_window_pseudo_hold``'s docstring for the open design
+    question this locks the current answer to.
+    """
+    sensors = [
+        # The FIXED winner: an exact position, so its handler produces a result.
+        _slot(1, position=90, priority=77),
+        _slot(2, position_max=30, priority=bound_priority, outside_window=True),
+    ]
+    snap = _snapshot(
+        sensors=sensors,
+        clock_open=False,
+        policy=get_policy("cover_blind"),
+        default_position=100,
+        current_cover_position=80,
+        cover_positions={"cover.a": 80},
+    )
+    registry = PipelineRegistry(
+        [
+            CustomPositionHandler(slot=1, position=90, priority=77),
+            CustomPositionHandler(slot=2, position=None, priority=bound_priority),
+            DefaultHandler(),
+        ]
+    )
+    result = registry.evaluate(snap)
+
+    assert result.control_method is ControlMethod.CUSTOM_POSITION
+    assert result.outside_window_constraint_active is expect_admitted
+    yielded = [
+        step
+        for step in result.decision_trace
+        if step.reason_payload is not None
+        and step.reason_payload.code is ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD
+    ]
+    assert bool(yielded) is not expect_admitted
+    # Either way the FIXED winner's own 90 stays off the wire: a non-safety
+    # result has no licence out here, admitted or not.
+    verdicts = result.hold_clamp_verdicts
+    if expect_admitted:
+        assert verdicts["cover.a"].target == 30
+    else:
+        assert verdicts is None
 
 
 @pytest.mark.unit
@@ -806,3 +1031,115 @@ def test_safety_result_never_also_claims_a_constraint_admission(sensors, weather
     assert result.outside_window_constraint_active is False
     # The licence it does hold is its own, and it is enough.
     assert result.acts_outside_clock_window is True
+
+
+# ---------------------------------------------------------------------------
+# Interpolated installs: a verdict's two halves do not share a frame
+# ---------------------------------------------------------------------------
+#
+# ``HoldClampVerdict.target`` is one of two things — the composed bound edge, a
+# canonical logical value the calibration curve still has to map into the
+# device's range, or this cover's OWN read, which is already a device-frame
+# number that only had the inversion undone on the way in. With interpolation
+# off the two coincide and one transform serves both. With it on they diverge,
+# and running a raw read back through the curve moves a cover no bound touched
+# — at 03:00, through a ``force=True`` dispatch no delta gate can swallow.
+
+
+def _interp_dispatch_coordinator(result, *, start: int = 20, end: int = 80):
+    """Coordinator around a ready-made result, with interpolation configured.
+
+    ``interp 20–80`` is a real calibration: a logical 0–100 request lands on the
+    device's 20–80 travel. ``inverse_state`` is deliberately left off — the
+    position axis suppresses inversion whenever interpolation is on
+    (``cover_types.base.axis_inverted``), so the two transforms are mutually
+    exclusive here and the interpolation half is the whole question.
+    """
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._inverse_state = False
+    coord._use_interpolation = True
+    coord.start_value = start
+    coord.end_value = end
+    coord.normal_list = None
+    coord.new_list = None
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = {CONF_INTERP: True, CONF_INVERSE_STATE: False}
+    coord._policy = get_policy("cover_blind")
+    coord._pipeline_result = result
+    cmd_svc = MagicMock()
+    cmd_svc.apply_position = AsyncMock(return_value=("sent", None))
+    cmd_svc.record_skipped_action = MagicMock()
+    coord._cmd_svc = cmd_svc
+    return coord
+
+
+async def _interp_dispatch_targets(result, covers) -> dict[str, int | None]:
+    """Fan an admitted outside-window result out and report what each cover got.
+
+    ``None`` means a hold-skip record was written instead of a command — the
+    two outcomes ``_dispatch_to_cover`` chooses between.
+    """
+    coord = _interp_dispatch_coordinator(result)
+    state = coord._to_cover_frame(result.position)
+    for cover in covers:
+        await coord._dispatch_to_cover(cover, state, "custom_position_1", None)
+    sent = {c.args[0]: c.args[1] for c in coord._cmd_svc.apply_position.call_args_list}
+    skipped = {c.args[0] for c in coord._cmd_svc.record_skipped_action.call_args_list}
+    assert sent.keys() | skipped == set(covers)
+    assert not sent.keys() & skipped
+    return {cover: sent.get(cover) for cover in covers}
+
+
+_INTERP_POSITIONS = {"cover.high": 80, "cover.low": 10}
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_interpolated_unbound_cover_receives_its_own_read_outside_window():
+    """A tilt bound commands every cover — to where it already is, curve or not.
+
+    The position axis is unbound, so both verdicts carry the cover's own read.
+    Mapping that read through the calibration curve a second time turns 80 into
+    68 and 10 into 26: a 12- and a 16-point move on covers nothing bound, in the
+    middle of the night.
+    """
+    result = _evaluate(
+        sensors=[_slot(tilt_min=50, outside_window=True)],
+        clock_open=False,
+        default_position=100,
+        default_tilt=10,
+        current_cover_position=45,
+        cover_positions=dict(_INTERP_POSITIONS),
+    )
+    assert result.outside_window_constraint_active is True
+
+    targets = await _interp_dispatch_targets(result, _INTERP_POSITIONS)
+
+    assert targets == dict(_INTERP_POSITIONS)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_interpolated_bound_cover_receives_the_calibrated_bound_edge():
+    """Both halves in one cycle, and each one gets the transform it is owed.
+
+    A ceiling of 30 binds the high cover; a tilt floor releases the group so the
+    low cover is commanded too. The bound edge is a configured logical value and
+    is calibrated like any other (#469 / #1036) — 30 lands on the device's 38.
+    The low cover's 10 is not a request, it is a reading, and must come back out
+    as 10.
+    """
+    result = _evaluate(
+        sensors=[_slot(position_max=30, tilt_min=50, outside_window=True)],
+        clock_open=False,
+        default_position=100,
+        default_tilt=10,
+        current_cover_position=45,
+        cover_positions=dict(_INTERP_POSITIONS),
+    )
+    assert result.outside_window_constraint_active is True
+
+    targets = await _interp_dispatch_targets(result, _INTERP_POSITIONS)
+
+    assert targets == {"cover.high": 38, "cover.low": 10}

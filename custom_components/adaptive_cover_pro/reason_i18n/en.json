@@ -76,7 +76,7 @@
     "tilt_bound_active": "tilt bound {low_label}–{high_label} active by {label}; awaiting the resolved tilt",
     "tilt_bound_inactive": "tilt bound {low_label}–{high_label} inactive by {label}; resolved tilt {tilt}% already within",
     "tilt_clamped": "tilt clamped from {from_tilt}% to {to_tilt}% by {label}",
-    "constraint_outside_window": "bound {low_label}–{high_label} ({axis}) from {label} not applied — outside the time window and this slot is not set to stay active",
+    "constraint_outside_window": "bound {low_label}–{high_label} ({axis}) from {label} not applied — outside the time window, where only min/max constraints set to stay active apply",
     "tilt_bound_enforced": "tilt bound {low_label}–{high_label} enforced at {tilt}% by {label} (nothing resolved a tilt this cycle)"
   },
   "builder": {

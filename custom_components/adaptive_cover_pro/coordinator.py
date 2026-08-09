@@ -170,7 +170,12 @@ from .pipeline.axis_constraints import (
 from .pipeline.floors import effective_floor, gather_active_floors, outranking
 from .pipeline.registry import PipelineRegistry
 from .pipeline.snapshot_builder import PipelineSnapshotBuilder
-from .pipeline.types import CustomPositionSensorState, GroupIntent, PipelineSnapshot
+from .pipeline.types import (
+    CustomPositionSensorState,
+    GroupIntent,
+    HoldClampVerdict,
+    PipelineSnapshot,
+)
 from .templates import (
     TemplateResolver,
     build_acp_template_variables,
@@ -2809,6 +2814,45 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             **self._policy.position_context_overrides(self._pipeline_result),
         )
 
+    def _verdict_dispatch_target(self, verdict: HoldClampVerdict) -> int:
+        """Map ONE per-cover hold verdict onto the wire.
+
+        ``HoldClampVerdict.target`` is not one frame, it is two, and they only
+        coincide while no calibration curve is configured:
+
+        * **a composed bound edge**, for a cover a bound actually moved. That is
+          a user-configured LOGICAL value like any other, so it is calibrated
+          and inverted like any other — issue #469 skipped both transforms for a
+          floor and made "minimum 25 % open" drive an inverse cover to 75 %.
+          :meth:`_to_cover_frame` is the whole mapping and stays the whole
+          mapping.
+        * **this cover's own read**, for one nothing moved — which is what makes
+          a command forced by the TILT axis a positional no-op the same-position
+          gate turns into a pure secondary-axis call (#1170 / #1174). That value
+          entered the pipeline as a RAW device-frame number and had exactly one
+          transform applied to it, ``flip_if`` (the #1036 conversion). It owes
+          exactly that one back. Running it through the calibration curve as
+          well re-maps a position nobody asked to change: on a 20–80 curve a
+          shade sitting at 80 was commanded to 68.
+
+        The verdict itself says which case this is, and says it in the frame the
+        comparison has to happen in: the target equals the cover's own logical
+        read precisely when no bound moved it — the same ``fin != eff`` the
+        registry evaluated to set ``released``, before
+        ``_command_every_held_cover`` overwrote that field so a tilt clamp could
+        command the whole group. On the tie where a bound edge lands exactly on
+        the cover's read the two answers are the same command anyway.
+
+        Uncalibrated installs are unaffected: ``_to_cover_frame`` reduces to the
+        same ``flip_if``, so both branches return the same number.
+        """
+        own_read = verdict.held_position
+        if own_read is not None and verdict.target == flip_if(
+            own_read, inverted=self.position_axis_inverted
+        ):
+            return own_read
+        return self._to_cover_frame(verdict.target)
+
     async def _dispatch_to_cover(
         self,
         cover: str,
@@ -2905,11 +2949,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 },
             )
             return None
-        # ``verdict.target`` is logical, exactly like the ``PipelineResult.position``
-        # that produced ``state``, so it crosses to the wire through the same
-        # single seam — no second frame rule, and a cover with no verdict keeps
-        # the value the caller already resolved.
-        target = self._to_cover_frame(verdict.target) if verdict is not None else state
+        # A verdict names its own wire value — see ``_verdict_dispatch_target``
+        # for why the shared ``_to_cover_frame`` seam cannot answer for both
+        # halves of one. A cover with no verdict keeps the value the caller
+        # already resolved.
+        target = (
+            self._verdict_dispatch_target(verdict) if verdict is not None else state
+        )
         return await self._cmd_svc.apply_position(
             cover, self._entity_target(cover, target), reason, context=ctx
         )
@@ -3291,11 +3337,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         #
         # Widening that frozenset is NOT the fix and it was evaluated: it is
         # keyed on ``ControlMethod``, and the pseudo-hold's winner is whichever
-        # non-safety handler computed this cycle — DEFAULT most nights, but
-        # SOLAR or CLIMATE just as legitimately — so no membership set can
-        # express "this cycle was admitted by a constraint".  Adding DEFAULT
-        # would also change the in-window ``honor_holds=True`` press (#1045) for
-        # every ordinary default cycle, which has nothing to do with #943.
+        # non-safety handler computed this cycle.  DEFAULT most nights — but
+        # also CUSTOM_POSITION (a FIXED slot below 100, which wins at 77 and is
+        # not safety) and GROUP_SCENE, the two other methods that neither gate
+        # on ``in_time_window`` nor set ``held_position``.  SOLAR and CLIMATE
+        # are NOT among them: every windowed handler returns None once
+        # ``in_time_window`` is False, and ``not clock_window_open`` implies
+        # that.  So no membership set can express "this cycle was admitted by a
+        # constraint".  Adding DEFAULT would also change the in-window
+        # ``honor_holds=True`` press (#1045) for every ordinary default cycle,
+        # which has nothing to do with #943.
         #
         # ``outside_window_constraint_active`` is only ever set on a CLOSED-clock
         # cycle and is never co-written with ``is_safety``, so the in-window path
@@ -4234,10 +4285,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             cloud_suppression_active=self._cloud_mgr.is_suppression_active,
             climate_temp_flags=self._climate_smoothing_mgr.resolved_flags,
             in_time_window=self.check_adaptive_time,
-            # Same clock/gate split as the update-cycle build. The user-move
-            # clamp reads its floors off this snapshot, so a non-opted-in floor
-            # stops clamping a service-call position once the clock closes —
-            # deliberate, and the same direction as the #215/#216 invariant.
+            # Same clock/gate split as the update-cycle build — and the user-move
+            # clamp is DELIBERATELY WINDOW-AWARE because of it (issue #943 item
+            # B, decided). The clamp reads its floors off this snapshot, so a
+            # floor that outranks manual override but did NOT opt in stops
+            # clamping a service-call position once the clock closes; an
+            # opted-in one, and any safety slot, keeps clamping. That is a
+            # behaviour change to the #472/#1170 clamp, it is intended, and it
+            # moves in the same direction as the #215/#216 invariant: outside
+            # the user's hours ACP stays out of the way unless it was told
+            # otherwise. Pinned end to end by
+            # ``tests/test_pipeline/test_outside_window_constraints.py``
+            # ``::test_user_move_clamp_outside_window_follows_the_opt_in``.
             clock_window_open=self.clock_window_open,
             current_cover_position=self._compute_mean_cover_position(),
             # Same read the mean summarises — see the update-cycle build (#1174).
@@ -5303,29 +5362,68 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
         return clamped
 
-    def _resolve_sunset_dispatch(
-        self, position: int, options: dict
-    ) -> tuple[int, list[str]]:
-        """Clamp the sunset position, then order the fan-out on the clamped number.
+    def _resolve_broadcast_dispatch(
+        self, position: int, options: dict, entities: list[str]
+    ) -> tuple[int, int, list[str]]:
+        """Clamp a pipeline-bypassing broadcast, then order its fan-out on the result.
 
-        The sunset broadcast's half of ``_clamp_to_outside_window_bounds``,
-        called by ``WindowTransitionTracker.check_sunset_window`` only once the
+        **The one statement of the rule both night broadcasts follow** — the
+        end-of-window return-to-default and the astronomical-sunset send. Three
+        steps that only make sense together, so they are written together
+        (CODING_GUIDELINES § No Duplication):
+
+        1. clamp the LOGICAL position through the live bounds
+           (:meth:`_clamp_to_outside_window_bounds`, which owns the arithmetic);
+        2. map it into the frame these two seams dispatch in — inverted iff
+           inverse-state is CONFIGURED, unconditional of interpolation and
+           unlike :meth:`_to_cover_frame` (#993);
+        3. order the fan-out on THAT number.
+
+        Clamp before ordering, not after: a bound that crosses the covers'
+        current position turns a lowering into a raise, and the ordering view
+        has to be told what will really be dispatched (#1115 / #1118). Splitting
+        the pair across the two callers is how they would come to disagree.
+
+        Returns ``(logical, wire, ordered_entities)``. Both numbers are returned
+        because the callers need different halves: the tracker re-applies the
+        inversion itself and wants the logical value, while the end-of-window
+        loop dispatches the wire one.
+
+        ``entities`` is the caller's own list rather than ``self.entities`` —
+        identical today, but a caller that ever passes a subset must have that
+        subset ordered, not silently replaced by the whole instance.
+        """
+        clamped = self._clamp_to_outside_window_bounds(position, options)
+        to_send = flip_if(clamped, inverted=self._inverse_state)
+        return (
+            clamped,
+            to_send,
+            self._policy.order_for_dispatch(
+                entities, position=to_send, inverted=self._inverse_state
+            ),
+        )
+
+    def _resolve_sunset_dispatch(
+        self, position: int, options: dict, entities: list[str]
+    ) -> tuple[int, list[str]]:
+        """Adapt :meth:`_resolve_broadcast_dispatch` to the sunset tracker's callback.
+
+        Called by ``WindowTransitionTracker.check_sunset_window`` only once the
         False→True edge has actually fired — the tracker runs on every
         reconciliation tick, and building the off-cycle snapshot the clamp needs
         on each of them would advance the arm-on-read latches
-        ``_build_user_command_snapshot`` documents.
+        ``_build_user_command_snapshot`` documents. That deferral is the whole
+        reason this is a callback rather than two pre-computed arguments, and
+        the reason it is a method of its own rather than the shared helper
+        inlined at the call site.
 
-        Clamp first, THEN order, exactly as ``_on_window_closed`` does: a bound
-        that crosses the covers' current position turns a lowering into a raise,
-        and the ordering view has to be told the number that will really be
-        dispatched (#1115 / #1118).
+        The tracker applies the inverse-state flip itself, so it gets the
+        LOGICAL number back and the wire value is discarded here.
         """
-        clamped = self._clamp_to_outside_window_bounds(position, options)
-        return clamped, self._policy.order_for_dispatch(
-            self.entities,
-            position=flip_if(clamped, inverted=self._inverse_state),
-            inverted=self._inverse_state,
+        clamped, _wire, ordered = self._resolve_broadcast_dispatch(
+            position, options, entities
         )
+        return clamped, ordered
 
     async def _check_time_window_transition(self, now: dt.datetime) -> None:
         """Check time window transitions — delegates to TimeWindowManager.
@@ -5377,17 +5475,30 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # above does not see it — an opted-in ceiling of 30 would be
             # overwritten by ``default_percentage`` 100 the instant the window
             # closed. Compose the same bounds the registry would, through the
-            # SAME gather (the clock window is closed by now, so it contains
-            # only the eligible claims) and the SAME ``clamp_to_bounds``. No
-            # mirrored arithmetic, and one command rather than a
-            # send-then-correct double move. Slats, if any, are handled by the
-            # ``async_refresh()`` this handler already triggers below.
-            effective_pos = self._clamp_to_outside_window_bounds(effective_pos, options)
-            # Deliberately NOT ``_to_cover_frame``: this seam inverts whenever
-            # inverse-state is configured — unconditional of bypass, floor
-            # clamp, and interpolation — and never interpolates. #993's
-            # middle-rail invariant depends on that divergence.
-            pos_to_send = flip_if(effective_pos, inverted=self._inverse_state)
+            # SAME gather and the SAME ``clamp_to_bounds``. No mirrored
+            # arithmetic, and one command rather than a send-then-correct double
+            # move. Slats, if any, are handled by the ``async_refresh()`` this
+            # handler already triggers below.
+            #
+            # Which claims the gather returns is deliberately NOT assumed here.
+            # This transition fires on ``is_active`` — the clock AND the daytime
+            # gate — so on a gate-dark close the user's clock window is still
+            # open and the gather returns every active claim, unfiltered. That
+            # is the right answer for that case: in-window semantics for an
+            # in-window moment. Asking the shared helper rather than reasoning
+            # about which of the two predicates tripped is what keeps both cases
+            # correct without a branch.
+            #
+            # Clamped, re-framed and ordered in one call, through the helper the
+            # sunset broadcast also uses: the three steps are one rule and the
+            # two seams must not state it apart. Deliberately NOT
+            # ``_to_cover_frame`` — this seam inverts whenever inverse-state is
+            # configured, unconditional of bypass, floor clamp and
+            # interpolation, and never interpolates. #993's middle-rail
+            # invariant depends on that divergence.
+            effective_pos, pos_to_send, ordered_covers = (
+                self._resolve_broadcast_dispatch(effective_pos, options, self.entities)
+            )
             self.logger.info(
                 "End time reached — sending effective default %s%% "
                 "(sunset_active=%s) to %s cover(s)",
@@ -5404,12 +5515,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     "cover_count": len(self.entities),
                 }
             )
-            # Name the number and frame this loop fans out so the ordering view
-            # can tell a raise from a lower (issue #1118) — the same pair
-            # ``_entity_target`` gets below.
-            for cover_entity in self._policy.order_for_dispatch(
-                self.entities, position=pos_to_send, inverted=self._inverse_state
-            ):
+            # Already ordered on ``pos_to_send`` by the resolve above, in the
+            # same frame ``_entity_target`` gets below — one derivation, so the
+            # ordering view and the dispatch cannot disagree about the direction
+            # of travel (issue #1118).
+            for cover_entity in ordered_covers:
                 ctx = self._build_position_context(cover_entity, options, force=False)
                 await self._cmd_svc.apply_position(
                     cover_entity,
@@ -5722,8 +5832,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunset_pos_cfg=sunset_pos_cfg,
             options=options,
             inverse_state_enabled=self._inverse_state,
-            # Fallback only: ``resolve_dispatch`` below replaces this list with
-            # the policy-ordered one the moment the sunset edge actually fires.
+            # The list to fan out over. ``resolve_dispatch`` below is handed
+            # THIS list and returns it in policy order the moment the sunset
+            # edge actually fires; it is used as-is if no resolver is supplied.
             entities=self.entities,
             # Clamp the raw sunset position through the live bounds and order the
             # fan-out on the clamped number, in one derivation (#943 item B,
@@ -5737,8 +5848,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # space. A raising sunset position ordered bottom-first would park
             # the bottom rail's gate on a middle rail nothing has commanded for a
             # whole settle budget.
-            resolve_dispatch=lambda position: self._resolve_sunset_dispatch(
-                position, options
+            resolve_dispatch=lambda position, covers: self._resolve_sunset_dispatch(
+                position, options, covers
             ),
             is_cover_manual=self.manager.is_cover_manual,
             has_active_override=self._pipeline_has_active_override(),

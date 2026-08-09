@@ -60,7 +60,7 @@ from ..const import (
 )
 from ..cover_types.base import AXIS_NAME_POSITION, AXIS_NAME_TILT
 from ..reason_i18n import Reason
-from .types import DecisionStep, PipelineSnapshot
+from .types import DecisionStep, PipelineSnapshot, is_bounded_mode
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,7 +278,7 @@ def _bounded(
     outside_window: bool = False,
 ) -> AxisConstraint | None:
     """Build a bounded constraint, or None when the axis makes no claim."""
-    if mode in (AxisConstraintMode.NONE, AxisConstraintMode.FIXED):
+    if not is_bounded_mode(mode):
         return None
     return AxisConstraint(
         axis=axis,
@@ -299,13 +299,24 @@ def _window_eligible(constraint: AxisConstraint) -> bool:
     **The one statement of outside-window eligibility** (issue #943 item B).
     Two ways in, and only two:
 
-    * a claim at ``CUSTOM_POSITION_SAFETY_PRIORITY`` — a safety slot, the
-      migrated force override, documented since #563 to command outside the
-      window;
-    * a claim whose ``outside_window`` flag is set AND whose kind is bounded.
-      That covers an opted-in custom-position slot and the weather floor, which
-      sets the flag by construction because it has always acted out here
-      (``WeatherOverrideHandler`` sets ``is_safety``). Keying on the field
+    * a claim at ``CUSTOM_POSITION_SAFETY_PRIORITY``. A slot at that priority
+      whose result WINS has commanded outside the window since #563. This
+      branch is wider than that, and deliberately: a priority-100 slot that
+      contributes only a BOUND never produces a result at all, so it never had
+      the licence — before item B its ceiling was composed onto a DEFAULT
+      winner and then dropped by the dispatch gate. Admitting it here is a new
+      capability, granted on the grounds that a slot the user placed at safety
+      priority means it, and that a bound can only ever clamp something already
+      resolved.
+    * a claim whose ``outside_window`` flag is set AND whose kind is bounded —
+      an opted-in custom-position slot, and the weather floor, which sets the
+      flag by construction. Also a widening, and also deliberate: a NON-min-mode
+      weather override wins with ``is_safety`` and has always acted out here,
+      but the MIN-MODE floor this claim represents makes the handler *defer*
+      (``WeatherOverrideHandler.evaluate`` returns ``None`` for it), so no
+      result ever carried ``is_safety`` and the old dispatch gate blocked it
+      exactly like any other bound. A storm floor that stops holding at dusk is
+      not what the option promises, so it is admitted. Keying on the field
       rather than on the source string keeps the handler's own ``name`` the
       single definition of "weather" — nothing here compares identifiers.
 
@@ -365,11 +376,6 @@ def partition_axis_constraints(
     for constraint in constraints:
         (kept if _window_eligible(constraint) else dropped).append(constraint)
     return kept, dropped
-
-
-def window_ineligible_constraints(snapshot: PipelineSnapshot) -> list[AxisConstraint]:
-    """Return the active constraints a closed clock window drops this cycle."""
-    return partition_axis_constraints(snapshot)[1]
 
 
 def gather_axis_constraints(snapshot: PipelineSnapshot) -> list[AxisConstraint]:
@@ -484,10 +490,14 @@ def _gather_all(snapshot: PipelineSnapshot) -> list[AxisConstraint]:
                     else WeatherOverrideHandler.priority
                 ),
                 slot=0,
-                # The weather floor is a SAFETY claim — the handler that owns it
-                # sets ``is_safety``, which has commanded outside the clock
-                # window since long before #943 item B. Set unconditionally so
-                # :func:`_window_eligible` never has to recognise it by source.
+                # A storm floor holds overnight. Set unconditionally so
+                # :func:`_window_eligible` never has to recognise the weather
+                # floor by source — and note this IS a change for it: the
+                # handler defers in min mode, so this claim's cycles never
+                # carried ``is_safety`` and the pre-item-B dispatch gate stopped
+                # them like any other bound. The non-min-mode retraction is the
+                # one that has always acted out here, and it is a winning
+                # result, not a claim in this list.
                 outside_window=True,
             )
         )

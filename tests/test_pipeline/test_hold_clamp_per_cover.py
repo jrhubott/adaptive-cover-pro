@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import CONF_INVERSE_STATE
+from custom_components.adaptive_cover_pro.const import CONF_INTERP, CONF_INVERSE_STATE
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
@@ -380,20 +380,30 @@ _TILT_FLOOR = 60
 _ABOVE_FLOOR_POSITIONS = {"cover.a": 80, "cover.b": 80, "cover.c": 0}
 
 
-def _dispatch_coordinator(result, policy=None):
+def _dispatch_coordinator(result, policy=None, interp: tuple[int, int] | None = None):
     """Minimal coordinator around a ready-made result, for ``_dispatch_to_cover``.
 
     ``policy`` defaults to a venetian one — the cover type these tilt-clamp
     tests are about. A coupled cover type's test passes the SAME policy
     instance whose ``post_pipeline_resolve`` already ran, because that hook is
     where the per-entity dispatch cache is filled.
+
+    ``interp`` configures a calibration curve mapping a logical 0–100 onto that
+    device travel. Off by default: every test written before #943's audit runs
+    uncalibrated, where the verdict's two frames coincide.
     """
     coord = object.__new__(AdaptiveDataUpdateCoordinator)
     coord.logger = MagicMock()
     coord._inverse_state = False
-    coord._use_interpolation = False
+    coord._use_interpolation = interp is not None
+    coord.start_value, coord.end_value = interp if interp is not None else (None, None)
+    coord.normal_list = None
+    coord.new_list = None
     coord.config_entry = MagicMock()
-    coord.config_entry.options = {CONF_INVERSE_STATE: False}
+    coord.config_entry.options = {
+        CONF_INVERSE_STATE: False,
+        CONF_INTERP: interp is not None,
+    }
     coord._policy = policy if policy is not None else get_policy("cover_venetian")
     coord._pipeline_result = result
     cmd_svc = MagicMock()
@@ -404,7 +414,7 @@ def _dispatch_coordinator(result, policy=None):
 
 
 async def _dispatch_targets(
-    result, covers, reason, policy=None
+    result, covers, reason, policy=None, interp: tuple[int, int] | None = None
 ) -> dict[str, int | None]:
     """Fan ``result`` out over ``covers`` and report what each one received.
 
@@ -414,7 +424,7 @@ async def _dispatch_targets(
     computes (``coordinator.state``), so any divergence in the result comes
     from the per-cover verdict and nothing else.
     """
-    coord = _dispatch_coordinator(result, policy=policy)
+    coord = _dispatch_coordinator(result, policy=policy, interp=interp)
     state = coord._to_cover_frame(result.position)
     for cover in covers:
         await coord._dispatch_to_cover(cover, state, reason, None)
@@ -534,6 +544,47 @@ async def test_a_tilt_clamp_does_not_drag_a_compliant_cover_to_the_floor() -> No
     )
 
     assert targets == {"cover.a": 80, "cover.b": 80, "cover.c": _FLOOR}
+
+
+@pytest.mark.asyncio
+async def test_a_tilt_only_clamp_is_a_no_op_on_a_calibrated_install() -> None:
+    """A verdict's two halves stop sharing a frame once a curve is configured.
+
+    ``target`` is the bound edge for a cover a bound moved and the cover's OWN
+    read for one nothing moved. A configured edge is a canonical logical value
+    the calibration curve still owes a mapping (#469); a read is already a
+    device-frame number that only had the inversion undone on the way in
+    (#1036). Sending both through ``_to_cover_frame`` re-maps the reads: on a
+    20–80 curve the three shades at 80/80/0 were commanded to 68/68/20, which
+    is the carriage move this whole path exists to prevent.
+    """
+    result = _tilt_clamp_vs_hold(cover_positions=_ABOVE_FLOOR_POSITIONS)
+
+    targets = await _dispatch_targets(
+        result, _ABOVE_FLOOR_POSITIONS, "manual_override", interp=(20, 80)
+    )
+
+    assert targets == dict(_ABOVE_FLOOR_POSITIONS)
+
+
+@pytest.mark.asyncio
+async def test_a_calibrated_floor_still_reaches_its_own_device_position() -> None:
+    """The other half: a bound edge keeps the calibration it has always had.
+
+    ``cover.c`` violates the 40 floor, so its verdict carries the configured
+    edge — a logical 40, which a 20–80 curve puts at device 44. Suppressing the
+    curve for every verdict would under-close it, which is #469's defect in the
+    opposite direction.
+    """
+    result = _tilt_clamp_vs_hold(
+        cover_positions=_ABOVE_FLOOR_POSITIONS, with_position_floor=True
+    )
+
+    targets = await _dispatch_targets(
+        result, _ABOVE_FLOOR_POSITIONS, "custom_position_3", interp=(20, 80)
+    )
+
+    assert targets == {"cover.a": 80, "cover.b": 80, "cover.c": 44}
 
 
 # ---------------------------------------------------------------------------

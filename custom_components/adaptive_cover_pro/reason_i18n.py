@@ -176,7 +176,8 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ),
     ReasonCode.REGISTRY_CONSTRAINT_OUTSIDE_WINDOW: (
         "bound {low_label}–{high_label} ({axis}) from {label} not applied — "
-        "outside the time window and this slot is not set to stay active"
+        "outside the time window, where only min/max constraints set to stay "
+        "active apply"
     ),
     ReasonCode.REGISTRY_TILT_BOUND_ENFORCED: (
         "tilt bound {low_label}–{high_label} enforced at {tilt}% by {label} "

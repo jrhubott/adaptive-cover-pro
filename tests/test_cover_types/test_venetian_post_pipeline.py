@@ -285,6 +285,55 @@ class TestPostPipelineResolveTiltOnlyMode:
         assert out.tilt is None
         assert "venetian_mode" not in [s.handler for s in out.decision_trace]
 
+    def test_tilt_only_pin_skips_every_per_cover_judged_winner(self):
+        """The premise ``entities_move_independently`` rests on, locked as a SET.
+
+        That override says the venetian policy's only write to
+        ``PipelineResult.position`` — the tilt-only carriage pin — never fires
+        for a winner the registry hands per-cover ``hold_clamp_verdicts``. Its
+        docstring used to justify that with "``MANUAL`` and ``GROUP_LOCK``, the
+        only two winners that ever set ``held_position``", which #943 item B
+        made false: ``_as_outside_window_pseudo_hold`` sets ``held_position`` on
+        whichever non-safety handler computed a closed-clock cycle, and then
+        strips it again before the result leaves the registry — so nothing
+        arriving here even looks like a hold.
+
+        Each method below already has its own test above; none of them tied the
+        set to the premise, so a sixth per-cover-judgable winner could be added
+        with the pin still firing on it and nothing would fail. This is that tie.
+        ``SUMMER`` is the negative control: it is NOT per-cover judgable (a
+        windowed handler cannot win outside the clock window, and it sets no
+        ``held_position`` inside one), and the pin does fire on it.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        # Real holds set ``held_position`` themselves; the other three are the
+        # non-safety, non-windowed winners the outside-window pseudo-hold can
+        # convert (#943 item B).
+        per_cover_judged = (
+            ControlMethod.MANUAL,
+            ControlMethod.GROUP_LOCK,
+            ControlMethod.DEFAULT,
+            ControlMethod.CUSTOM_POSITION,
+            ControlMethod.GROUP_SCENE,
+        )
+        for method in per_cover_judged:
+            policy = _make_policy()
+            policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+            out = policy.post_pipeline_resolve(
+                _make_result(method, position=72), **_non_solar_kwargs()
+            )
+            assert out.position == 72, f"{method} was pinned"
+            assert "venetian_mode" not in [s.handler for s in out.decision_trace]
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        out = policy.post_pipeline_resolve(
+            _make_result(ControlMethod.SUMMER, position=72), **_non_solar_kwargs()
+        )
+        assert out.position == 0
+        assert "venetian_mode" in [s.handler for s in out.decision_trace]
+
     def test_tilt_only_does_not_pin_default_winner_with_handler_tilt(self):
         """Issue #1153 audit finding 1: the DEFAULT exemption on the OTHER exit path.
 

@@ -4594,6 +4594,35 @@ def test_custom_position_outside_window_at_safety_priority_warns_redundant():
     assert "already" in warn_line.lower()
 
 
+def test_custom_position_outside_window_use_my_floor_is_not_a_bound():
+    """The "does this slot bound anything?" question has ONE answer, not two.
+
+    ``use_my`` is hardware-pinned and never participates in constraint
+    semantics: ``axis_constraints._gather_all`` skips the whole position axis
+    for such a slot, so a ``min_mode`` floor beside it emits nothing and the
+    checkbox has nothing to keep alive. The summary re-derived that question
+    from the raw wire format instead of asking the same normalization the
+    snapshot builder does, and its copy did not know about ``use_my`` — so this
+    slot was told its constraints stay active overnight when no constraint
+    exists.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_1": 40,
+        "custom_position_min_mode_1": True,
+        "custom_position_use_my_1": True,
+        "custom_position_priority_1": 77,
+        "custom_position_outside_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "outside the time window" in ln
+    )
+    assert "no minimum or maximum" in warn_line
+
+
 def test_custom_position_outside_window_with_bounds_no_warning():
     """A correctly-configured opt-in warns about nothing."""
     cfg = {

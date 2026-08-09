@@ -124,6 +124,19 @@ def derive_axis_mode(
     return AxisConstraintMode.NONE
 
 
+def is_bounded_mode(mode: AxisConstraintMode) -> bool:
+    """Whether an axis mode names a BOUND (a min, a max, or both).
+
+    The complement of "claims nothing" and "drives an exact value" — the one
+    distinction the whole #943 bound machinery turns on, so it is written once.
+    ``axis_constraints._bounded`` refuses to build a constraint for anything
+    else, ``_window_eligible`` admits nothing else outside the clock window, and
+    the config summary asks it through :attr:`CustomPositionSensorState.has_bounded_claim`
+    to tell a user whether the outside-window checkbox will do anything at all.
+    """
+    return mode not in (AxisConstraintMode.NONE, AxisConstraintMode.FIXED)
+
+
 def has_fixed_tilt(*, tilt_only: bool, tilt: int | None) -> bool:
     """Whether a slot's ``tilt_only`` flag names an actual FIXED tilt claim.
 
@@ -292,6 +305,27 @@ class CustomPositionSensorState:
         if has_fixed_tilt(tilt_only=self.tilt_only, tilt=self.tilt):
             return AxisConstraintMode.FIXED
         return derive_axis_mode(fixed=None, low=self.tilt_min, high=self.tilt_max)
+
+    @property
+    def has_bounded_claim(self) -> bool:
+        """Whether this slot contributes at least one min/max BOUND to either axis.
+
+        The question the outside-window opt-in turns on (#943 item B), asked of
+        the slot itself so the config-flow summary does not re-derive which
+        claims survive normalization from the raw wire format. That copy drifted
+        immediately: it did not know that ``use_my`` disclaims the position axis
+        outright, so a ``min_mode`` + ``use_my`` slot was told its constraints
+        stay active overnight when ``axis_constraints._gather_all`` emits
+        nothing for it.
+
+        Mirrors that gather exactly — position claims are skipped for a
+        ``use_my`` slot, and ``FIXED`` on either axis is not a bound — by
+        routing through the same :attr:`position_mode` / :attr:`tilt_mode`
+        derivations the snapshot builder's output is read through.
+        """
+        return (
+            not self.use_my and is_bounded_mode(self.position_mode)
+        ) or is_bounded_mode(self.tilt_mode)
 
     @property
     def slot_name(self) -> str | None:
@@ -626,13 +660,19 @@ class HoldClampVerdict:
     #: group has to carry. False means the hold stands and the coordinator
     #: writes a hold-skip record instead.
     released: bool
-    #: Where that command sends this cover, as a LOGICAL (pre-inversion,
-    #: pre-interpolation) position — the same frame ``PipelineResult.position``
-    #: speaks, so the coordinator maps it through the one ``_to_cover_frame``
-    #: seam. Equals the bound edge that bound THIS cover when a position bound
-    #: moved it, and this cover's own position when none did — which is what
-    #: makes a tilt-forced command a positional no-op. Always resolved, and
-    #: read only while ``released``.
+    #: Where that command sends this cover, on the LOGICAL (un-inverted) side of
+    #: the #1036 conversion. Equals the bound edge that bound THIS cover when a
+    #: position bound moved it, and this cover's own position when none did —
+    #: which is what makes a tilt-forced command a positional no-op. Always
+    #: resolved, and read only while ``released``.
+    #:
+    #: Those two cases are NOT the same frame once a calibration curve is
+    #: configured, and the coordinator must not map them through one transform:
+    #: a bound edge is a configured value the curve still owes a mapping, while
+    #: a cover's own read is already a device-frame number that only had the
+    #: inversion undone. ``coordinator._verdict_dispatch_target`` owns that
+    #: split; ``_to_cover_frame`` alone re-mapped the reads and moved covers no
+    #: bound had touched.
     target: int
 
 

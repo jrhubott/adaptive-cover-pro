@@ -415,9 +415,12 @@ async def test_sunset_seam_inverse_uses_seam_space_not_cached_flag() -> None:
     # Real clamp-then-order seam (#943 item B), with the bound composition —
     # which has its own tests — stubbed to identity so this stays a frame test.
     coord._clamp_to_outside_window_bounds = lambda position, _options: position
-    coord._resolve_sunset_dispatch = types.MethodType(
-        AdaptiveDataUpdateCoordinator._resolve_sunset_dispatch, coord
-    )
+    for _name in ("_resolve_sunset_dispatch", "_resolve_broadcast_dispatch"):
+        setattr(
+            coord,
+            _name,
+            types.MethodType(getattr(AdaptiveDataUpdateCoordinator, _name), coord),
+        )
 
     # Seed prior state (no dispatch), then open the window.
     await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
@@ -459,6 +462,9 @@ async def test_end_time_default_seam_inverse_uses_seam_space() -> None:
     # feed the dispatch loop a mock instead of a position.
     coord._clamp_to_outside_window_bounds = MagicMock(
         side_effect=lambda position, _options: position
+    )
+    coord._resolve_broadcast_dispatch = types.MethodType(
+        AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
     )
     coord._check_sunset_window_transition = AsyncMock()
 

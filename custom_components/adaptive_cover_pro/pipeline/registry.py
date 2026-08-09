@@ -472,11 +472,27 @@ def _as_outside_window_pseudo_hold(
     ``held_position``. Borrowing it is what makes the new capability a
     restatement of an existing rule rather than a second one.
 
-    The holder priority stays ``winning_handler.priority`` at the call site, so
-    every constraint outranks a DEFAULT winner — while a REAL hold (manual
-    override at 80, a group lock) never reaches here at all (``held_position``
-    is already set) and still beats a 77 slot through the unchanged
-    :func:`outranking` gate.
+    The holder priority stays ``winning_handler.priority`` at the call site,
+    which has a consequence worth stating plainly. A REAL hold (manual override
+    at 80, a group lock at 100) never reaches here at all — ``held_position`` is
+    already set — and still beats a 77 slot through the unchanged
+    :func:`outranking` gate. But a pseudo-hold inherits its winner's priority as
+    if that winner were holding the cover, and :func:`outranking` is
+    strictly-greater. Against ``DefaultHandler`` at 0 that is inert: every
+    constraint outranks it. Against a **FIXED custom-position slot** winning at
+    the default 77, a second slot's opted-in bound at 77 does NOT outrank it and
+    is filed as ``yielded_to_hold`` — so on that configuration the opt-in is
+    inert and the user sees a ``bound_yielded_to_hold`` trace step naming a
+    holder that is not holding anything.
+
+    That is today's behaviour and it is pinned by
+    ``tests/test_pipeline/test_outside_window_constraints.py``
+    ``::test_pseudo_hold_ties_are_judged_against_the_winners_own_priority``.
+    Whether it is the RIGHT behaviour is a separate question left open: the
+    pseudo-hold is scaffolding, nobody is holding the cover, and #463's rule for
+    a computed winner is that composition is priority-independent — which argues
+    for handing this call site a below-everything holder priority rather than
+    the winner's own. That is a design change, so it is not made here.
 
     ``held_position`` is stripped back off before the result is returned: it is
     a user-facing field (the Target Position sensor, the Model B stash replay in
@@ -913,12 +929,25 @@ class PipelineRegistry:
         # deliberately not applied. With the clock open the split is inert and
         # ``constraints`` is byte-identical to the pre-item-B gather.
         constraints, window_dropped = partition_axis_constraints(snapshot)
-        # Unconditional: with the clock open ``window_dropped`` is empty, and
-        # both calls are then identities. A dropped source's ``describe_skip``
-        # step is swept so the explicit "not applied outside the window" step
-        # replaces it rather than sitting beside it and contradicting it.
+        # Unconditional: with the clock open ``window_dropped`` is empty and
+        # this is an identity. A dropped source's ``describe_skip`` step is
+        # swept so the explicit "not applied outside the window" step replaces
+        # it rather than sitting beside it and contradicting it.
         trace = _drop_trace_steps(trace, {c.source for c in window_dropped})
-        trace.extend(_window_dropped_steps(window_dropped))
+        # Built here, appended AFTER both axis sweeps — the same reason
+        # ``yielded_steps`` below is. Those sweeps key on the SOURCE of a kept
+        # claim and spare only ``matched=True`` steps, so a slot with one kept
+        # claim and one dropped claim would have its replacement swept straight
+        # back out and be left with no trace entry at all.
+        #
+        # No slot can be in that shape today: every claim of a slot carries the
+        # same ``priority`` and ``outside_window``, so eligibility can only
+        # differ by ``kind is FIXED``, the only FIXED claim this gather emits is
+        # a tilt one, and a FIXED tilt requires ``tilt_only`` — which makes
+        # ``position_mode`` NONE and leaves the slot with nothing else to keep.
+        # Deferring the append costs nothing and means the explanation does not
+        # depend on that chain staying true.
+        window_dropped_steps = _window_dropped_steps(window_dropped)
 
         # Outside-window pseudo-hold (issue #943 item B) — see
         # ``_as_outside_window_pseudo_hold``.
@@ -1145,7 +1174,9 @@ class PipelineRegistry:
             },
         )
         # Past every sweep now — safe to state why a position bound yielded
-        # even when the same slot also bounds the tilt (#1170).
+        # even when the same slot also bounds the tilt (#1170), and why an
+        # ineligible claim was not applied at all (#943 item B).
+        trace.extend(window_dropped_steps)
         trace.extend(yielded_steps)
         # The tilt to clamp is, in precedence order: the FIXED overlay we just
         # filled, or the winner's own tilt (see ``_tilt_to_clamp``). #943's

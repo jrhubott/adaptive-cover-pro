@@ -76,7 +76,7 @@
     "tilt_bound_active": "limite d'inclinaison {low_label}–{high_label} active par {label} ; en attente de l'inclinaison résolue",
     "tilt_bound_inactive": "limite d'inclinaison {low_label}–{high_label} inactive par {label} ; inclinaison résolue {tilt}% déjà dans la plage",
     "tilt_clamped": "inclinaison limitée de {from_tilt}% à {to_tilt}% par {label}",
-    "constraint_outside_window": "limite {low_label}–{high_label} ({axis}) de {label} non appliquée — hors de la plage horaire, et ce créneau ne reste pas actif en dehors",
+    "constraint_outside_window": "limite {low_label}–{high_label} ({axis}) de {label} non appliquée — hors de la plage horaire, seules les limites minimum/maximum réglées pour rester actives s'appliquent",
     "tilt_bound_enforced": "limite d'inclinaison {low_label}–{high_label} appliquée à {tilt}% par {label} (aucune inclinaison résolue lors de ce cycle)"
   },
   "builder": {

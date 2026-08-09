@@ -725,6 +725,12 @@ def _make_pseudo_hold_coordinator(*, positions: dict[str, int], mean: int):
     coordinator._dispatch_to_cover = (
         AdaptiveDataUpdateCoordinator._dispatch_to_cover.__get__(coordinator)
     )
+    # The real frame split too — a verdict's target is a bound edge or a raw
+    # read, and only the first is calibrated. Uncalibrated here, so both
+    # branches agree; binding it keeps the seam under test rather than a mock.
+    coordinator._verdict_dispatch_target = (
+        AdaptiveDataUpdateCoordinator._verdict_dispatch_target.__get__(coordinator)
+    )
     return coordinator
 
 

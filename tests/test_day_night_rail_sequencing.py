@@ -2692,10 +2692,20 @@ _SEAM_MODULES = frozenset(
 _ORDERING_EXEMPT = {
     ("state/window_transition_tracker.py", "check_sunset_window"): (
         "test_sunset_window_transition_hands_the_tracker_an_ordered_list",
-        "Receives an already-ordered entity list. The tracker is HA-boundary "
-        "code with no policy handle, so the coordinator applies "
-        "order_for_dispatch at the call site "
-        "(_check_sunset_window_transition, entities=...).",
+        "Orders through an injected callback, not at the call site. The tracker "
+        "is HA-boundary code with no policy handle, so it hands its own entity "
+        "list to the coordinator's resolve_dispatch and fans out over what "
+        "comes back — coordinator._resolve_broadcast_dispatch applies "
+        "order_for_dispatch there, on the CLAMPED number (#943 item B). The "
+        "entities= argument is the input to that call, not a pre-ordered list.",
+    ),
+    ("coordinator.py", "_on_window_closed"): (
+        "test_end_of_window_default_fans_out_in_policy_order",
+        "Shares coordinator._resolve_broadcast_dispatch with the sunset "
+        "broadcast, which clamps, re-frames and orders in one call. The two "
+        "seams follow ONE rule — order on the CLAMPED number, in the "
+        "configured-inverse frame — and writing it at both loops is the "
+        "two-site mirror that lets them drift.",
     ),
 }
 
@@ -3004,6 +3014,66 @@ def test_user_command_seams_name_the_number_they_will_actually_dispatch() -> Non
 
 
 @pytest.mark.asyncio
+async def test_end_of_window_default_fans_out_in_policy_order() -> None:
+    """The compensating control behind the ``_on_window_closed`` exemption.
+
+    That seam no longer calls ``order_for_dispatch`` in its own body — it shares
+    ``_resolve_broadcast_dispatch`` with the sunset broadcast, because "clamp,
+    re-frame, then order on the clamped number" is ONE rule and two copies of it
+    are two chances to drift. The structural scan cannot see through the helper,
+    so the guarantee has to be asserted behaviourally here: the rails come out
+    bottom-first on a lowering, and the number the ordering view was asked about
+    is the CLAMPED one, not the configured default.
+    """
+    import datetime as dt
+
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    coord = MagicMock()
+    coord.entities = [_MIDDLE, _BOTTOM]
+    coord._policy = _dual_policy(position=40, blend=50)
+    coord.config_entry.options = {}
+    coord._inverse_state = False
+    coord._track_end_time = True
+    coord.automatic_control = True
+    coord._pipeline_has_active_override = MagicMock(return_value=False)
+    coord._event_buffer = EventBuffer(maxlen=10)
+    coord._compute_current_effective_default = MagicMock(return_value=(100, False))
+    # A live ceiling turns the configured full-open default into a lowering.
+    coord._clamp_to_outside_window_bounds = lambda _position, _options: 0
+    coord._cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    coord.async_refresh = AsyncMock()
+    coord._entity_target = lambda entity, position, **_kw: position
+    for name in ("_resolve_broadcast_dispatch", "_check_time_window_transition"):
+        setattr(
+            coord,
+            name,
+            types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
+        )
+
+    async def _invoke_close(track_end_time, refresh_callback, on_window_open=None):
+        await refresh_callback()
+
+    coord._time_mgr.check_transition = _invoke_close
+    coord._check_sunset_window_transition = AsyncMock()
+
+    with patch.object(
+        coord._policy, "order_for_dispatch", wraps=coord._policy.order_for_dispatch
+    ) as order:
+        await coord._check_time_window_transition(dt.datetime.now(dt.UTC))
+
+    # Lowering to the clamped 0: the bottom rail is downstream, so it leads.
+    assert [c.args[0] for c in coord._cmd_svc.apply_position.await_args_list] == [
+        _BOTTOM,
+        _MIDDLE,
+    ]
+    assert order.call_args.kwargs["position"] == 0
+    assert order.call_args.kwargs["inverted"] is False
+
+
+@pytest.mark.asyncio
 async def test_sunset_window_transition_hands_the_tracker_an_ordered_list() -> None:
     """The compensating control behind the one ordering exemption (issue #1115).
 
@@ -3025,16 +3095,25 @@ async def test_sunset_window_transition_hands_the_tracker_an_ordered_list() -> N
     # on the ordering it exists to guard.
     clamp = {"to": 0}
     coord._clamp_to_outside_window_bounds = lambda _position, _options: clamp["to"]
-    coord._resolve_sunset_dispatch = types.MethodType(
-        AdaptiveDataUpdateCoordinator._resolve_sunset_dispatch, coord
-    )
+    for name in ("_resolve_sunset_dispatch", "_resolve_broadcast_dispatch"):
+        setattr(
+            coord,
+            name,
+            types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
+        )
 
     await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
 
     kwargs = coord._window_tracker.check_sunset_window.await_args.kwargs
     resolve = kwargs["resolve_dispatch"]
     # Lowering to 0: the bottom rail is downstream, so it leads (#1115).
-    assert resolve(0) == (0, [_BOTTOM, _MIDDLE])
+    assert resolve(0, kwargs["entities"]) == (0, [_BOTTOM, _MIDDLE])
+
+    # The list the TRACKER holds is what gets ordered — not whatever
+    # ``coord.entities`` happens to say (#943 item B audit).
+    coord.entities = ["cover.not_this_one"]
+    assert resolve(0, [_MIDDLE, _BOTTOM]) == (0, [_BOTTOM, _MIDDLE])
+    coord.entities = [_MIDDLE, _BOTTOM]
 
     # Same configured 0, but a live floor raises it to 100 — the ordering view
     # must be asked about the CLAMPED number, since that is what gets dispatched.
@@ -3042,7 +3121,7 @@ async def test_sunset_window_transition_hands_the_tracker_an_ordered_list() -> N
     with patch.object(
         coord._policy, "order_for_dispatch", wraps=coord._policy.order_for_dispatch
     ) as order:
-        position, _entities = resolve(0)
+        position, _entities = resolve(0, coord.entities)
     assert position == 100
     assert order.call_args.kwargs["position"] == 100
 
