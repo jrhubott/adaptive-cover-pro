@@ -162,12 +162,32 @@ class StateClassifier:
                 was_transitioning = event.old_state is not None and is_state_in_transit(
                     event.old_state.state
                 )
+                # Issue #1235: a pause is only a pause when the event itself
+                # shows progress TOWARD the target (both canonical #186
+                # scenarios do: 46→51 toward 100, 50→40 toward 20). A cover
+                # the user physically reversed (wall switch / remote) reports
+                # the same opening/closing→settled signature but with zero or
+                # negative progress — e.g. a Velux roof window via KLF-200
+                # publishes no intermediate positions, so a reversed open
+                # command is always "opening"(0) → "closed"(0). Restarting
+                # grace there keeps wait_for_target alive forever: the
+                # override detector never runs, ACP re-sends the command, and
+                # every subsequent button press lands in a fresh window. With
+                # an unreadable old position the direction is unknowable —
+                # keep the historical restart behaviour.
+                pause_shows_progress = (
+                    old_position is None
+                    or target is None
+                    or position is None
+                    or abs(position - target) < abs(old_position - target)
+                )
                 if (
                     not cover_is_transitioning
                     and was_transitioning
                     and target is not None
                     and position is not None
                     and position != target
+                    and pause_shows_progress
                 ):
                     grace_mgr.start_command_grace_period(entity_id)
                     self._debug_log(
