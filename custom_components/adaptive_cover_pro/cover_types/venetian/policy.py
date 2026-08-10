@@ -1127,6 +1127,12 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             current_position=current_position,
             reason=reason,
             force=True,
+            # Issue #1234 (#684 leak): reuse the shared eligibility predicate
+            # with a null context rather than open-coding a scope comparison
+            # here. A user-requested tilt is by definition not a
+            # solar-tracking win, so this evaluates to "eligible iff scope is
+            # all_tilt_commands" — exactly right for a user command.
+            drift_reset_eligible=self._drift_reset_eligible(None),
         )
         return True
 
