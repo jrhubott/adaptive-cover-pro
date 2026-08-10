@@ -1928,6 +1928,10 @@
           "description": "Si vrai, min_position s'applique uniquement lors du suivi du soleil.",
           "name": "Activer la position min uniquement pendant le suivi"
         },
+        "enable_position_matching": {
+          "description": "Si vrai, la passe de réconciliation renvoie la cible jusqu'à ce que la protection l'atteigne. Si faux (par défaut), la protection est commandée une seule fois et une stabilisation au-delà de la tolérance de position devient une prise de contrôle manuelle.",
+          "name": "Activer la correspondance de position"
+        },
         "min_position_sun_tracking": {
           "name": "Position minimale pendant le suivi solaire",
           "description": "Limite minimale facultative qui s'applique uniquement pendant le suivi solaire (0–99%). Lorsqu'elle est définie, elle remplace min_position pour les chemins de suivi solaire uniquement. Laissez vide pour utiliser min_position pour tous les chemins."
