@@ -12,8 +12,23 @@ import datetime as dt
 from unittest.mock import MagicMock
 
 import pytest
+from homeassistant import config_entries as ha_config_entries
+from homeassistant.core import HomeAssistant, State
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    mock_restore_cache,
+)
 
+from custom_components.adaptive_cover_pro.const import (
+    CONF_SENSOR_TYPE,
+    DOMAIN,
+    CoverType,
+)
+from custom_components.adaptive_cover_pro.coordinator import (
+    AdaptiveDataUpdateCoordinator,
+)
 from custom_components.adaptive_cover_pro.cover_types import get_policy
+from tests.ha_helpers import VERTICAL_OPTIONS
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -270,3 +285,136 @@ def test_restore_preserves_started_at_math_with_timezone():
     assert restored_started_at is not None
     assert restored_started_at.tzinfo is not None
     assert abs((restored_started_at - original_started_at).total_seconds()) < 1
+
+
+# ---------------------------------------------------------------------------
+# Test 6: Issue #1232 — the destructive tri-state gate at
+# coordinator._update_manager_and_covers wipes a restore that just landed.
+# ---------------------------------------------------------------------------
+
+
+async def test_restored_override_survives_full_entry_setup(
+    hass: HomeAssistant,
+) -> None:
+    """Regression (#1232): a restored override must survive real entry setup.
+
+    `PLATFORMS` forwards SENSOR before SWITCH (`__init__.py:107-108`), so
+    `_ManualOverrideEndSensor._restore_from_attributes` (sensor.py:304) rehydrates
+    the manager before any switch is added. But the very first `_SwitchSpec`
+    (`Integration Enabled`, `switch.py:104-109`) calls `async_turn_on(added=True)`
+    from its own `async_added_to_hass`, which awaits `coordinator.async_refresh()`
+    (`switch.py:358`) — three specs before `Manual Override` (`key="manual_toggle"`)
+    restores `_toggles.manual_toggle` out of its `None` default. That refresh
+    reaches `_update_manager_and_covers`, which used to truthiness-test the
+    tri-state (`not None` is `True`) and reset every cover the sensor had just
+    restored.
+
+    Deliberately does NOT use `_patch_coordinator_refresh` (`tests/ha_helpers.py:186`)
+    — that replaces `async_config_entry_first_refresh` wholesale, which is a
+    *different* refresh than the one this test exercises (the switch-triggered
+    `async_refresh()` fires earlier, during platform setup, while `first_refresh`
+    is still `False`) and would mask the destructive path entirely.
+    """
+    expiry = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=45)
+    mock_restore_cache(
+        hass,
+        (
+            State(
+                "sensor.test_cover_manual_override_end_time",
+                expiry.isoformat(),
+                {"per_entity": {"cover.test_blind": expiry.isoformat()}},
+            ),
+        ),
+    )
+
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {"current_position": 100, "supported_features": 143},
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Test Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="restore_1232_e2e",
+        title="Test Cover",
+    )
+    entry.add_to_hass(hass)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.runtime_data.manager.manual_controlled == ["cover.test_blind"]
+
+
+async def test_update_manager_and_covers_preserves_override_while_toggle_unset(
+    hass: HomeAssistant,
+) -> None:
+    """Regression (#1232), unit-level: an unset `manual_toggle` must not reset.
+
+    Pins the tri-state directly at `_update_manager_and_covers` without going
+    through the full switch-platform setup dance, so a future change to
+    `_update_manager_and_covers` fails fast here rather than only in the slower
+    end-to-end test above.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Restore Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="restore_1232_unit_unset",
+        title="Restore Cover",
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        coordinator = AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+    expiry = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=45)
+    coordinator.manager.restore_override("cover.test_blind", expiry)
+
+    # Unset default: no switch entity has restored `manual_toggle` yet.
+    assert coordinator._toggles.manual_toggle is None
+
+    coordinator._update_manager_and_covers()
+
+    assert coordinator.manager.manual_controlled == ["cover.test_blind"]
+
+
+async def test_update_manager_and_covers_resets_override_when_detection_disabled(
+    hass: HomeAssistant,
+) -> None:
+    """Contract guard: an explicit `manual_toggle = False` must still reset.
+
+    `_update_manager_and_covers`'s docstring promises the reset happens "if
+    manual override detection is disabled" — that is `manual_toggle is False`,
+    not merely falsy. This pins the other half of the tri-state fix so a future
+    refactor cannot over-correct #1232 into "never reset": the detection-disabled
+    case must keep destroying stale override state.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Restore Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="restore_1232_unit_disabled",
+        title="Restore Cover",
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        coordinator = AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+    expiry = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=45)
+    coordinator.manager.restore_override("cover.test_blind", expiry)
+
+    coordinator.manual_toggle = False
+
+    coordinator._update_manager_and_covers()
+
+    assert coordinator.manager.manual_controlled == []

@@ -4163,12 +4163,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Update manager with cover entities.
 
         Registers cover entities with the AdaptiveCoverManager and resets
-        manual override state for all covers if manual override detection
-        is disabled.
+        manual override state for all covers only when detection is
+        explicitly disabled (``manual_toggle is False``); an unset toggle
+        means no switch has restored yet and must not destroy state.
 
         """
         self.manager.add_covers(self.entities)
-        if not self._toggles.manual_toggle:
+        # Tri-state: ``None`` means no switch entity has restored yet (the
+        # platform-setup window in which ``Integration Enabled`` already fires
+        # a coordinator refresh — see switch.py:358). Only an explicit ``False``
+        # means the user disabled manual-override detection, and only that may
+        # destroy restored override state (#1232 / #1019).
+        if self._toggles.manual_toggle is False:
             for entity in self.manager.manual_controlled:
                 self.manager.reset(entity)
 
