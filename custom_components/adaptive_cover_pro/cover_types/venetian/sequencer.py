@@ -717,8 +717,15 @@ class DualAxisSequencer:
             )
             if verify and entity_id not in self._tilt_targets_verified:
                 await asyncio.sleep(VENETIAN_POST_TILT_REBASE_DELAY_SECONDS)
+                # Issue #1234: pass the RAW drift_reset_eligible parameter,
+                # deliberately not the derived drift_reset_enabled — a retry
+                # spawned from here re-derives its own _reset_in_progress /
+                # threshold > 0 folds inside _send_tilt_command itself.
                 await self._verify_and_record_tilt(
-                    entity_id, tilt_target, _retry_depth=_retry_depth
+                    entity_id,
+                    tilt_target,
+                    _retry_depth=_retry_depth,
+                    drift_reset_eligible=drift_reset_eligible,
                 )
             return False
 
@@ -868,8 +875,16 @@ class DualAxisSequencer:
         # may back-rotate the slats during position movement, leaving the cover
         # at tilt=0 even though we sent tilt=N. If we detect drift, clear the
         # recorded target so the next update_tilt_only cycle retries.
+        #
+        # Issue #1234: pass the RAW drift_reset_eligible parameter, deliberately
+        # not the derived drift_reset_enabled — a retry spawned from here
+        # re-derives its own _reset_in_progress / threshold > 0 folds inside
+        # _send_tilt_command itself.
         await self._verify_and_record_tilt(
-            entity_id, tilt_target, _retry_depth=_retry_depth
+            entity_id,
+            tilt_target,
+            _retry_depth=_retry_depth,
+            drift_reset_eligible=drift_reset_eligible,
         )
 
         if position_settled:
@@ -1295,7 +1310,12 @@ class DualAxisSequencer:
         )
 
     async def _verify_and_record_tilt(
-        self, entity_id: str, tilt_target: int, *, _retry_depth: int = 0
+        self,
+        entity_id: str,
+        tilt_target: int,
+        *,
+        _retry_depth: int = 0,
+        drift_reset_eligible: bool = True,
     ) -> None:
         """Poll actual tilt up to N samples; accept on the first in-tolerance read.
 
@@ -1315,6 +1335,14 @@ class DualAxisSequencer:
         retry passes ``_retry_depth=1`` to block further recursion: a still-
         drifting second attempt drops out and the next coordinator cycle
         owns ultimate recovery.
+
+        ``drift_reset_eligible`` (issue #1234) rides along with the retry
+        send. Without it, the flag could not survive the round trip
+        ``_send_tilt_command`` → ``_verify_and_record_tilt`` →
+        ``_send_tilt_command``: the retry always re-defaulted to eligible,
+        silently re-arming drift-reset accumulation on a send that the
+        caller had already ruled ineligible (e.g. ``sun_tracking_only``
+        scope on a non-solar win).
         """
         if self._get_current_tilt_position is None:
             return
@@ -1386,5 +1414,10 @@ class DualAxisSequencer:
                 reason="drift_retry",
                 force=True,
                 verify=True,
+                # Issue #1234: forward the caller's eligibility rather than
+                # letting it fall back to the True default — otherwise a
+                # scope-ineligible primary send that drifts silently re-arms
+                # drift-reset accumulation on the retry.
+                drift_reset_eligible=drift_reset_eligible,
                 _retry_depth=1,
             )
