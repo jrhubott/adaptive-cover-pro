@@ -1,0 +1,79 @@
+name: Forward-Merge Check
+
+# Standalone CI task that fails when `main` holds commits that never made it
+# back to `develop` — i.e. the post-release forward-merge was skipped.
+#
+# Every stable release and every hotfix leaves `main` one or more commits ahead
+# (the version bump at minimum). `git checkout develop && git merge main` is the
+# step that resolves it, and it is the step most easily forgotten: the fix or
+# the release already shipped, so nothing else complains. When it lapses, the
+# next stable cut hits a phantom version-bump conflict, and any hotfix that was
+# written directly on `main` is silently absent from ongoing work.
+#
+# The assertion: `origin/main` must be an ancestor of `origin/develop`.
+#
+# Two triggers, because the lapse has two shapes:
+#   - push to develop — fires the moment you resume work on develop after a
+#     release without forward-merging. No false positive during a release: the
+#     forward-merge is itself a push to develop and satisfies the assertion.
+#   - daily schedule — catches release-then-walk-away, where develop is never
+#     pushed at all. GitHub emails the maintainer on scheduled-workflow failure.
+#
+# Kept separate from tests.yml so a missed forward-merge surfaces as its own
+# check rather than a failing unit test (same rationale as
+# deprecated-ha-helpers.yml).
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - develop
+  schedule:
+    # 13:00 UTC daily — well after a typical evening release, so an overnight
+    # lapse is reported the next morning rather than a full cycle later.
+    - cron: "0 13 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: main is contained in develop
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # Full history: `merge-base --is-ancestor` needs the real graph, and a
+          # shallow clone reports false negatives.
+          fetch-depth: 0
+
+      - name: Assert origin/main is an ancestor of origin/develop
+        run: |
+          set -euo pipefail
+          git fetch origin main develop --quiet
+
+          if git merge-base --is-ancestor origin/main origin/develop; then
+            echo "✅ origin/main is fully contained in origin/develop."
+            exit 0
+          fi
+
+          BEHIND=$(git rev-list --count origin/develop..origin/main)
+          echo "::error::main has $BEHIND commit(s) that are not on develop — the forward-merge was skipped."
+          echo ""
+          echo "Missing from develop:"
+          git log --oneline origin/develop..origin/main
+          echo ""
+          echo "Fix with:"
+          echo "  git checkout develop && git pull --ff-only"
+          echo "  git merge main -m 'Forward-merge main into develop'"
+          echo "  git push"
+          echo ""
+          echo "Resolve any conflict in the merge — never duplicate the commits"
+          echo "as fresh commits on develop (that conflicts on the next release)."
+          exit 1
