@@ -21,13 +21,11 @@ The distinguishing value here is that the install is live: the recorder can be q
 
 ## Step 0 — Session Startup
 
-`CLAUDE.md` requires it before anything else:
-
 ```bash
-cat HANDOFF.md && git status && git log --oneline -5
+git status && git log --oneline -5
 ```
 
-The handoff often names recent work in the same subsystem, which is exactly the context that turns "this looks wrong" into "this regressed in #NNNN."
+Recent commits often name work in the same subsystem, which is exactly the context that turns "this looks wrong" into "this regressed in #NNNN." When a symptom looks like a known trap rather than a new defect, `HANDOFF.md` is worth a read — it carries the unfiled gotchas and the "not hotfixable to main" table, and nothing else.
 
 ---
 
@@ -239,7 +237,7 @@ After creation, replace the trailing question with the issue URL and the Step 9 
 - **Never claim a mechanism that was not executed.** A repro that was written but not run is not evidence.
 - **Read-only against Home Assistant.** This skill queries; it does not call services, change options, or move covers. If moving a cover would confirm a hypothesis, ask the user to do it.
 - **Leave the working tree clean.** Delete every scratch test and verify with `git status --short`.
-- **Do not edit `HANDOFF.md` or `CLAUDE.md` as part of this workflow** — both are locally untracked and managed outside the repo.
+- **Do not edit `HANDOFF.md` or `CLAUDE.md` as part of this workflow** — both are excluded from the repo and synced from a source of truth outside it, so an edit to the copy here is silently discarded. `HANDOFF.md` is written only by `~/.claude/references/handoff-update.md`, after a merged run.
 - **Report contradictions rather than smoothing them.** If the recorder disagrees with the diagnostics, that gap is the finding.
 
 ---
