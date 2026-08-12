@@ -376,9 +376,25 @@ def test_a_renamed_disabled_attribute_does_not_kill_the_hacs_rung(
     assert status.detected_via == "hacs"
 
 
-def test_hacs_without_a_system_object_is_not_ready(hass: HomeAssistant) -> None:
-    _install_hacs(hass, SimpleNamespace(stage="startup"))
-    assert async_get_card_status(hass).hacs_ready is False
+def test_hacs_without_a_system_object_is_still_ready_when_running(
+    hass: HomeAssistant,
+) -> None:
+    """Losing ``system`` entirely must not be read as "disabled".
+
+    The stage check is what decides; a missing or renamed ``system`` defaults
+    to not-disabled. Asserting False here instead would pass with the nested
+    getattr deleted, which is the opposite of a guard.
+    """
+    _install_hacs(
+        hass,
+        SimpleNamespace(
+            stage="running",
+            repositories=SimpleNamespace(get_by_full_name=lambda _n: _repo()),
+        ),
+    )
+    status = async_get_card_status(hass)
+    assert status.hacs_ready is True
+    assert status.detected_via == "hacs"
 
 
 def test_exploding_lovelace_resources_degrade(hass: HomeAssistant) -> None:
@@ -711,8 +727,8 @@ def test_installed_screens_never_mention_hacs(step_id: str, language: str) -> No
 # "mise à jour" (update) contains it.
 _CURRENCY_CLAIMS = {
     "en": ("up to date", "latest version", "is current"),
-    "de": ("auf dem neuesten Stand", "ist aktuell"),
-    "fr": ("est à jour", "sont à jour", "dernière version"),
+    "de": ("auf dem neuesten Stand", "ist aktuell", "neueste Version"),
+    "fr": ("est à jour", "sont à jour", "êtes à jour", "dernière version"),
 }
 
 

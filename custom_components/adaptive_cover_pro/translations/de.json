@@ -1170,7 +1170,7 @@
       },
       "card_add": {
         "title": "Dashboard-Karte",
-        "description": "Die Begleit-**Adaptive Cover Pro Card** wandelt die Sensoren dieser Integration in ein Dashboard um, das du auf einen Blick lesen kannst — Sonnen- und Fenstergeometrie, die Entscheidungsspur und aktuelle Beschattungspositionen mit Inline-Steuerelementen.\n\nSie ist auf diesem System nicht installiert.\n\n➕ [Karte zu HACS hinzufügen]({install_url})\n\nHACS öffnet die Seite der Karte und lässt dich das Repository zuvor bestätigen, falls es noch nicht bekannt ist. Lade sie dort herunter und aktualisiere anschließend den Browser — die Karten erscheinen dann in der Kartenauswahl unter **Adaptive Cover Pro**.\n\nSiehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten."
+        "description": "Die Begleit-**Adaptive Cover Pro Card** wandelt die Sensoren dieser Integration in ein Dashboard um, das du auf einen Blick lesen kannst — Sonnen- und Fenstergeometrie, die Entscheidungsspur und aktuelle Beschattungspositionen mit Inline-Steuerelementen.\n\nSie ist auf diesem System nicht installiert.\n\n➕ [Karte zu HACS hinzufügen]({install_url})\n\nHACS öffnet die Seite der Karte und bittet dich zunächst, das Repository zu bestätigen, falls es noch nicht bekannt ist. Lade sie dort herunter und aktualisiere anschließend den Browser — die Karten erscheinen dann in der Kartenauswahl unter **Adaptive Cover Pro**.\n\nSiehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten."
       },
       "card_manual": {
         "title": "Dashboard-Karte",
