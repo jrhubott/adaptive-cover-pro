@@ -327,6 +327,7 @@
           "summary": "📋 Configuration Summary",
           "troubleshoot": "🩺 Troubleshoot",
           "sync": "🔄 Copy to Other Covers",
+          "card": "🖼️ Dashboard Card",
           "debug": "🔍 Debug & Diagnostics",
           "done": "✅ Save & Close",
           "light_cloud": "☁️ Weather, Light & Cloud",
@@ -341,6 +342,18 @@
           "queue_settings": "🚦 Queue Settings",
           "queue_overview": "🚦 Queue Overview"
         }
+      },
+      "card_installed": {
+        "title": "Dashboard Card",
+        "description": "✅ The companion **Adaptive Cover Pro Card** is installed. {version_line}\n\n{update_line}\n\nThe cards read this integration's entities directly, so there is nothing to configure here. See [Dashboard Cards]({learn_more}) for what each card shows and how to add one to a dashboard.\n\nAfter a card upgrade, run the `lovelace.reload_resources` action and hard-refresh the browser — Home Assistant caches dashboard modules hard enough that a plain reload keeps serving the old one."
+      },
+      "card_add": {
+        "title": "Dashboard Card",
+        "description": "The companion **Adaptive Cover Pro Card** turns this integration's sensors into a dashboard you can read at a glance — sun and window geometry, the decision trace, and live cover positions with inline controls.\n\nIt is not installed on this system.\n\n➕ [Add the card to HACS]({install_url})\n\nHACS will ask you to confirm adding the repository, then offer it for download. Refresh the browser afterwards and the cards appear in the card picker under **Adaptive Cover Pro**.\n\nSee [Dashboard Cards]({learn_more}) for what each card shows."
+      },
+      "card_manual": {
+        "title": "Dashboard Card",
+        "description": "The companion **Adaptive Cover Pro Card** is not installed, and HACS was not found on this system.\n\nInstall [HACS]({hacs_url}) and reopen this page for a one-click add — that is the route worth taking, because HACS also handles upgrades.\n\nTo do it by hand instead: [download the card]({download_url}), place `adaptive-cover-pro-card.js` in `www/community/adaptive-cover-pro-card/`, then register it under **Settings → Dashboards → ⋮ → Resources** as a JavaScript module.\n\nSee [Dashboard Cards]({learn_more}) for the full instructions."
       },
       "pipeline_priorities": {
         "title": "Handler Priorities",

@@ -338,7 +338,8 @@
           "change_cover_type": "🔁 Modifier le type de store",
           "calibration": "📐 Étalonnage",
           "queue_settings": "🚦 Paramètres de la file d'attente",
-          "queue_overview": "🚦 Aperçu de la file d'attente"
+          "queue_overview": "🚦 Aperçu de la file d'attente",
+          "card": "🖼️ Carte de tableau de bord"
         },
         "description": "Configuration : **{instance_name}**{profile_line}\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
       },
@@ -1162,6 +1163,18 @@
       "queue_overview": {
         "title": "Aperçu de la file d'attente",
         "description": "{overview}"
+      },
+      "card_installed": {
+        "title": "Carte de tableau de bord",
+        "description": "✅ La carte de tableau de bord compagnon **Adaptive Cover Pro Card** est installée. {version_line}\n\n{update_line}\n\nLes cartes lisent directement les entités de cette intégration, il n'y a donc rien à configurer ici. Consultez [Cartes de tableau de bord]({learn_more}) pour voir ce que chaque carte affiche et comment en ajouter une à un tableau de bord.\n\nAprès une mise à jour de la carte, exécutez l'action `lovelace.reload_resources` et actualisez le navigateur en forçant le cache — Home Assistant met en cache les modules de tableau de bord suffisamment fortement qu'un simple rechargement continue à servir l'ancien."
+      },
+      "card_add": {
+        "title": "Carte de tableau de bord",
+        "description": "La carte de tableau de bord compagnon **Adaptive Cover Pro Card** transforme les capteurs de cette intégration en un tableau de bord que vous pouvez consulter d'un coup d'œil — géométrie du soleil et de la fenêtre, trace de décision, et positions de protection actualisées en direct avec des contrôles intégrés.\n\nElle n'est pas installée sur ce système.\n\n➕ [Ajouter la carte à HACS]({install_url})\n\nHACS vous demandera de confirmer l'ajout du dépôt, puis vous proposera de le télécharger. Actualisez le navigateur ensuite et les cartes apparaissent dans le sélecteur de cartes sous **Adaptive Cover Pro**.\n\nConsultez [Cartes de tableau de bord]({learn_more}) pour voir ce que chaque carte affiche."
+      },
+      "card_manual": {
+        "title": "Carte de tableau de bord",
+        "description": "La carte de tableau de bord compagnon **Adaptive Cover Pro Card** n'est pas installée, et HACS n'a pas été trouvé sur ce système.\n\nInstallez [HACS]({hacs_url}) et rouvrez cette page pour un ajout en un clic — c'est la voie à suivre, car HACS gère également les mises à jour.\n\nPour le faire manuellement à la place : [téléchargez la carte]({download_url}), placez `adaptive-cover-pro-card.js` dans `www/community/adaptive-cover-pro-card/`, puis enregistrez-la sous **Paramètres → Tableaux de bord → ⋮ → Ressources** en tant que module JavaScript.\n\nConsultez [Cartes de tableau de bord]({learn_more}) pour les instructions complètes."
       }
     },
     "abort": {
