@@ -657,6 +657,207 @@ async def test_window_close_skips_reposition_when_custom_position_active():
     cmd_svc.apply_position.assert_not_called()
 
 
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_window_close_sends_when_stale_winner_is_window_gated():
+    """_on_window_closed must refresh the pipeline before trusting the guard.
+
+    Regression for issue #1241: the tick that detects the window close may
+    still carry a stale ``_pipeline_result`` from before ``end_time`` (no
+    coordinator refresh happened in the gap). If that stale winner is a
+    window-gated handler (SOLAR here; CLIMATE/CLOUD/GLARE_ZONE are the same
+    family), ``_pipeline_has_active_override`` must not trust it blindly —
+    those handlers all decline once the clock window is closed, so a fresh
+    evaluation resolves to DEFAULT and the end-time reposition must still
+    fire. Mirrors test_window_close_sends_reposition_when_auto_control_on,
+    but seeds a stale SOLAR result and models the refresh resolving it to
+    DEFAULT, the way a real post-close coordinator cycle would.
+    """
+    import datetime as dt
+    from types import SimpleNamespace
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DEFAULT_HEIGHT,
+        ControlMethod,
+    )
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+    coord._event_buffer = EventBuffer(maxlen=50)
+    coord.automatic_control = True
+    coord._track_end_time = True
+    coord._inverse_state = False
+    coord.entities = [MagicMock()]
+    coord.hass = (
+        MagicMock()
+    )  # required by _read_time_entity in _compute_current_effective_default
+    # Stale in-window winner: models a tick where no refresh happened in the
+    # gap between end_time and this evaluation, so the pipeline result still
+    # reflects the daytime SOLAR winner.
+    coord._pipeline_result = SimpleNamespace(control_method=ControlMethod.SOLAR)
+
+    cmd_svc = MagicMock()
+    cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    cmd_svc.clear_non_safety_targets = MagicMock()
+    coord._cmd_svc = cmd_svc
+
+    def _refresh_resolves_to_default(*_args, **_kwargs):
+        # Models what a real post-close coordinator cycle produces: SOLAR
+        # declines once the clock window is closed, so DEFAULT now wins.
+        coord._pipeline_result = SimpleNamespace(control_method=ControlMethod.DEFAULT)
+
+    coord.async_refresh = AsyncMock(side_effect=_refresh_resolves_to_default)
+
+    options = {CONF_DEFAULT_HEIGHT: 0}
+    config_entry = MagicMock()
+    config_entry.options = options
+    coord.config_entry = config_entry
+
+    cover_data = MagicMock()
+    cover_data.sun_data = MagicMock()
+    coord.get_blind_data = MagicMock(return_value=cover_data)
+    coord._build_position_context = MagicMock(return_value=MagicMock(force=True))
+    coord.manager = MagicMock()
+
+    from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
+        WindowTransitionTracker,
+    )
+
+    tracker = WindowTransitionTracker(
+        hass=MagicMock(),
+        logger=coord.logger,
+        event_buffer=coord._event_buffer,
+        effective_default_fn=lambda _opts: (0, False),
+    )
+    tracker._prev_sunset_active = True
+    coord._window_tracker = tracker
+
+    with patch(
+        "custom_components.adaptive_cover_pro.helpers.compute_effective_default",
+        return_value=(0, False),
+    ):
+        time_mgr = MagicMock()
+
+        coord._policy = get_policy("cover_blind")
+
+        async def _invoke(track_end_time, refresh_callback, on_window_open=None):
+            await refresh_callback()
+
+        time_mgr.check_transition = _invoke
+        coord._time_mgr = time_mgr
+
+        await coord._check_time_window_transition(dt.datetime.now(dt.UTC))
+
+    cmd_svc.apply_position.assert_called_once()
+    assert cmd_svc.apply_position.call_args[0][2] == "end_time_default"
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_window_close_still_defers_to_custom_position_after_refresh():
+    """A genuinely active override found by the fresh evaluation still skips.
+
+    Regression for issue #895, re-pinned for #1241: the #1241 fix inserts a
+    pipeline refresh before ``_pipeline_has_active_override`` is consulted.
+    This proves that refresh does not weaken the #895 guard — when the
+    *fresh* (post-refresh) result is a genuine CUSTOM_POSITION winner (a
+    user's sleep-mode floor, priority 77), the end-time default must still
+    be skipped rather than force-overwriting it.
+    """
+    import datetime as dt
+    from types import SimpleNamespace
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DEFAULT_HEIGHT,
+        ControlMethod,
+    )
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+    coord._event_buffer = EventBuffer(maxlen=50)
+    coord.automatic_control = True
+    coord._track_end_time = True
+    coord._inverse_state = False
+    coord.entities = [MagicMock()]
+    coord.hass = (
+        MagicMock()
+    )  # required by _read_time_entity in _compute_current_effective_default
+    # Same stale starting point as the sibling test above — the guard's
+    # freshness fix must apply uniformly, whatever the fresh result turns
+    # out to be.
+    coord._pipeline_result = SimpleNamespace(control_method=ControlMethod.SOLAR)
+
+    cmd_svc = MagicMock()
+    cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    cmd_svc.clear_non_safety_targets = MagicMock()
+    coord._cmd_svc = cmd_svc
+
+    def _refresh_resolves_to_custom_position(*_args, **_kwargs):
+        # Models a fresh evaluation finding a genuinely active override
+        # (e.g. a custom-position sensor that flipped on around end_time).
+        coord._pipeline_result = SimpleNamespace(
+            control_method=ControlMethod.CUSTOM_POSITION
+        )
+
+    coord.async_refresh = AsyncMock(side_effect=_refresh_resolves_to_custom_position)
+
+    options = {CONF_DEFAULT_HEIGHT: 0}
+    config_entry = MagicMock()
+    config_entry.options = options
+    coord.config_entry = config_entry
+
+    cover_data = MagicMock()
+    cover_data.sun_data = MagicMock()
+    coord.get_blind_data = MagicMock(return_value=cover_data)
+    coord._build_position_context = MagicMock(return_value=MagicMock(force=True))
+    coord.manager = MagicMock()
+
+    from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
+        WindowTransitionTracker,
+    )
+
+    tracker = WindowTransitionTracker(
+        hass=MagicMock(),
+        logger=coord.logger,
+        event_buffer=coord._event_buffer,
+        effective_default_fn=lambda _opts: (0, False),
+    )
+    tracker._prev_sunset_active = True
+    coord._window_tracker = tracker
+
+    with patch(
+        "custom_components.adaptive_cover_pro.helpers.compute_effective_default",
+        return_value=(0, False),
+    ):
+        time_mgr = MagicMock()
+
+        coord._policy = get_policy("cover_blind")
+
+        async def _invoke(track_end_time, refresh_callback, on_window_open=None):
+            await refresh_callback()
+
+        time_mgr.check_transition = _invoke
+        coord._time_mgr = time_mgr
+
+        await coord._check_time_window_transition(dt.datetime.now(dt.UTC))
+
+    cmd_svc.apply_position.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # _build_pipeline: tilt threaded from options to CustomPositionHandler
 # ---------------------------------------------------------------------------
