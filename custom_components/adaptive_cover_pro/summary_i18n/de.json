@@ -171,6 +171,7 @@
   "timing": {
     "from_entity": "von {entity}",
     "from_time": "von {time}",
+    "from_sunrise": "ab Sonnenaufgang",
     "until_entity": "bis {entity}",
     "until_time": "bis {time}",
     "active_daylight": "Aktiv während Tageslicht",

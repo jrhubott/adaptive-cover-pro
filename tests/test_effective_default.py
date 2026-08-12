@@ -642,6 +642,39 @@ class TestBlankStartTimeNightAfterMidnight:
         assert result == 0
         assert active is True
 
+    def test_blank_start_at_midnight_with_no_sunset_pos_returns_default(self):
+        """No configured sunset_pos short-circuits BEFORE the #492 branch.
+
+        Issue #1256: unlike the case above, this reporter never configured a
+        sunset/night position. ``sunset_pos is None`` returns ``h_def``
+        unconditionally (helpers.py:1210-1211) — the #492/#493
+        ``window_explicitly_started`` signal never gets consulted at all, so
+        it holding ``False`` at midnight makes no difference here. This
+        documents why the fix belongs in the time-window's active/inactive
+        transition (issue #1256) rather than in this function: with no night
+        position configured, the only thing that stops the daytime default
+        from firing at midnight is the window itself staying closed.
+        """
+        sun = _make_sun_data(
+            sunrise_hour=4,
+            sunrise_minute=19,
+            sunset_hour=21,
+            sunset_minute=31,
+        )
+        today = dt.date.today()
+        now = dt.datetime(today.year, today.month, today.day, 0, 1, 0)
+        with _freeze_now(now):
+            result, active = compute_effective_default(
+                h_def=100,
+                sunset_pos=None,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                window_explicitly_started=False,
+            )
+        assert result == 100
+        assert active is False
+
 
 # ---------------------------------------------------------------------------
 # Timezone regression: entity-override boundaries must respect HA local tz
