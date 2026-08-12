@@ -81,11 +81,21 @@ def effective_manual_threshold(user_threshold: int | None) -> int:
 
     Floored at ``POSITION_TOLERANCE_PERCENT`` so motor rounding and reporting
     imprecision can't trip false positives even when the user configures
-    ``manual_threshold = 0`` or leaves it unset. Both the primary-axis check
-    in ``PositionDeltaDetector.detect`` and the secondary-axis check in
-    ``SecondaryAxisCheck.evaluate`` delegate here; keeping the two in sync
-    via a single helper prevents the formula from drifting (e.g. the day
-    ``POSITION_TOLERANCE_PERCENT`` changes).
+    ``manual_threshold = 0`` or leaves it unset. The floor reads the CONSTANT and
+    not ``CONF_POSITION_TOLERANCE``, deliberately: a user who widens the arrival
+    tolerance to 15 must not thereby have a genuine 14% nudge swallowed.
+
+    Both the primary-axis check in ``PositionDeltaDetector.detect`` and the
+    secondary-axis check in ``SecondaryAxisCheck.evaluate`` delegate here; keeping
+    the two in sync via a single helper prevents the formula from drifting (e.g.
+    the day ``POSITION_TOLERANCE_PERCENT`` changes).
+
+    Both callers compare with STRICT ``>``, and that is part of the contract
+    rather than an accident of each call site (issue #1273). Because the floor is
+    the same constant ``CoverCommandService._position_matches`` tests with ``<=``
+    to decide the cover ARRIVED, a delta equal to the threshold has to fall on
+    the not-a-touch side on every axis; the secondary axis used ``>=`` and so
+    disagreed with the primary one on exactly that value.
     """
     return max(
         user_threshold if user_threshold is not None else 0, POSITION_TOLERANCE_PERCENT
@@ -281,7 +291,13 @@ class SecondaryAxisCheck:
         if reported == self.expected:
             return SecondaryAxisResult()
 
-        if delta >= effective_threshold:
+        # Strictly greater, matching the primary axis (issue #1273). The
+        # threshold is floored at ``POSITION_TOLERANCE_PERCENT``, the same
+        # constant ``CoverCommandService._position_matches`` compares with
+        # ``<=`` to decide the cover ARRIVED — so a delta equal to the threshold
+        # must not simultaneously read as a user touch. This axis used ``>=``,
+        # which made the two axes return opposite verdicts on that one value.
+        if delta > effective_threshold:
             return SecondaryAxisResult(
                 consumed=True,
                 is_manual=True,
@@ -291,7 +307,7 @@ class SecondaryAxisCheck:
                     "new_position": reported,
                     "effective_threshold": effective_threshold,
                     "reason": (
-                        f"{self.label} delta {delta:.1f}% >= threshold {effective_threshold}%"
+                        f"{self.label} delta {delta:.1f}% > threshold {effective_threshold}%"
                     ),
                 },
             )

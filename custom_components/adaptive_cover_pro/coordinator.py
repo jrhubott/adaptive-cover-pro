@@ -5653,7 +5653,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         now = dt.datetime.now(dt.UTC)
         reset_secs = self.manager.reset_duration.total_seconds()
         entries = {}
-        for eid in self.manager.covers:
+        # ``active_entities()`` is the shared liveness accessor (issue #1273) —
+        # the same one the ``manual_override_end_time`` sensor iterates, so the
+        # two surfaces can no longer report different cover sets. Membership
+        # already implies ``expiry_for`` is non-None; the guard below stays as
+        # the belt-and-braces read.
+        for eid in self.manager.active_entities():
             started_at = self.manager.manual_control_time.get(eid)
             expires_at = self.manager.expiry_for(eid)
             if started_at is None or expires_at is None:
@@ -5661,7 +5666,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             if started_at.tzinfo is None:
                 started_at = started_at.replace(tzinfo=dt.UTC)
             entries[eid] = {
-                "active": self.manager.manual_control.get(eid, False),
+                # Every entry in this block is a live override by construction
+                # now that the loop iterates ``active_entities()``. The key is
+                # retained rather than dropped so the diagnostics schema a
+                # reader (or a saved diagnostics file) already knows is unchanged.
+                "active": True,
                 "started_at": started_at.isoformat(),
                 "started_at_source": self.manager.manual_control_start_source.get(
                     eid, STARTED_AT_SOURCE_ENGAGED
