@@ -269,6 +269,7 @@ from .companion_card import (
     CARD_DOWNLOAD_URL,
     CARD_WIKI_URL,
     HACS_DOWNLOAD_URL,
+    CardStatus,
     async_get_card_status,
 )
 from .engine.sun_geometry import computed_fov_line, fov_from_reveal
@@ -5485,11 +5486,12 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> FlowResult:
         """Route to the companion-card screen this install needs (issue #1168).
 
-        Renders nothing itself. Which of the three leaves applies depends on
-        whether the card is already here and whether HACS is around to add it,
-        and each leaf owns its own translation block — so all the prose stays
-        in ``translations/`` and gets translated the normal way, rather than
-        being assembled in Python and shipped English-only.
+        Renders nothing itself. Which leaf applies depends on whether the card
+        is already here, whether its version is knowable, and whether HACS is
+        around to add it. Every leaf owns its own translation block, so all the
+        prose stays in ``translations/`` and gets translated the normal way —
+        nothing user-visible is assembled from f-strings here, which would ship
+        an English sentence inside an otherwise German or French screen.
 
         HACS present but not yet ready lands on ``card_add`` too: the add link
         is harmless when the repository is already registered (it just opens
@@ -5497,39 +5499,76 @@ class OptionsFlowHandler(OptionsFlow):
         screen rather than to a false "not installed".
         """
         status = async_get_card_status(self.hass)
-        if status.installed:
-            return await self.async_step_card_installed()
-        if status.hacs_present:
-            return await self.async_step_card_add()
-        return await self.async_step_card_manual()
-
-    async def async_step_card_installed(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Confirm the card is present, and report the version it is on."""
-        if user_input is not None:
-            return await self.async_step_init()
-        status = async_get_card_status(self.hass)
-        # A hand-registered resource with no ``?v=`` stamp leaves the version
-        # unknowable — collapse the line rather than rendering "None".
-        version_line = (
-            f"Version **{status.installed_version}**."
-            if status.installed_version
-            else ""
-        )
-        update_line = ""
+        if not status.installed:
+            if status.hacs_present:
+                return await self.async_step_card_add()
+            return await self.async_step_card_manual()
         if (
             status.installed_version
             and status.available_version
             and status.available_version != status.installed_version
         ):
-            update_line = f"⬆️ **{status.available_version}** is available in HACS."
+            return await self.async_step_card_installed_update(status=status)
+        if status.installed_version:
+            return await self.async_step_card_installed_version(status=status)
+        return await self.async_step_card_installed()
+
+    async def async_step_card_installed(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Confirm the card is present, with no version to report.
+
+        Reached when the card was found as a hand-registered dashboard
+        resource carrying no ``?v=`` stamp: it is installed, but which build
+        is anyone's guess.
+        """
+        if user_input is not None:
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="card_installed",
             data_schema=vol.Schema({}),
+            description_placeholders={"learn_more": CARD_WIKI_URL},
+        )
+
+    async def async_step_card_installed_version(
+        self,
+        user_input: dict[str, Any] | None = None,
+        *,
+        status: CardStatus | None = None,
+    ) -> FlowResult:
+        """Confirm the card is present and up to date, and name its version.
+
+        ``status`` is threaded from the router so the render path resolves it
+        once; HA passes only ``user_input``, so the submit path never needs it.
+        """
+        if user_input is not None:
+            return await self.async_step_init()
+        status = status or async_get_card_status(self.hass)
+        return self.async_show_form(
+            step_id="card_installed_version",
+            data_schema=vol.Schema({}),
             description_placeholders={
-                "version_line": version_line,
-                "update_line": update_line,
+                "installed_version": status.installed_version or "",
+                "learn_more": CARD_WIKI_URL,
+            },
+        )
+
+    async def async_step_card_installed_update(
+        self,
+        user_input: dict[str, Any] | None = None,
+        *,
+        status: CardStatus | None = None,
+    ) -> FlowResult:
+        """Report that a newer card version is waiting in HACS."""
+        if user_input is not None:
+            return await self.async_step_init()
+        status = status or async_get_card_status(self.hass)
+        return self.async_show_form(
+            step_id="card_installed_update",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "installed_version": status.installed_version or "",
+                "available_version": status.available_version or "",
                 "learn_more": CARD_WIKI_URL,
             },
         )

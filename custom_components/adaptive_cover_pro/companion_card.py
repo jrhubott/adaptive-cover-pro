@@ -100,32 +100,37 @@ def async_get_card_status(hass: HomeAssistant) -> CardStatus:
     whole options flow down with it.
     """
     hacs = hass.data.get(HACS_DOMAIN)
-    from_hacs = _status_from_hacs(hacs)
+    hacs_present = hacs is not None
+    # Resolved once and reported verbatim, so "HACS is not ready" and "HACS was
+    # ready but the read failed" stay distinguishable — inferring readiness
+    # from a null result would conflate the two.
+    hacs_ready = _hacs_is_ready(hacs)
+
+    from_hacs = _status_from_hacs(hacs) if hacs_ready else None
     if from_hacs is not None and from_hacs.installed:
         return from_hacs
 
     resource_url = _card_resource_url(hass)
     if resource_url is not None:
         return CardStatus(
-            hacs_present=hacs is not None,
-            hacs_ready=from_hacs is not None,
+            hacs_present=hacs_present,
+            hacs_ready=hacs_ready,
             installed=True,
             installed_version=_version_from_url(resource_url),
             detected_via=DETECTED_VIA_RESOURCE,
         )
 
-    # ``from_hacs`` is None whenever HACS could not be asked at all — absent,
-    # still starting, disabled, or its internals moved. That is deliberately
-    # NOT reported as ``hacs_ready``: the caller offers the one-click add on
-    # the strength of ``hacs_present`` alone, so an unknowable state lands on a
-    # useful screen instead of a false "not installed" claim.
-    return from_hacs or CardStatus(hacs_present=hacs is not None)
+    # Nothing found. The caller offers the one-click add on the strength of
+    # ``hacs_present`` alone, so a HACS that could not be asked still lands on
+    # a useful screen instead of a false "not installed" claim.
+    return from_hacs or CardStatus(hacs_present=hacs_present, hacs_ready=hacs_ready)
 
 
 def _status_from_hacs(hacs: object | None) -> CardStatus | None:
-    """Return what HACS says about the card, or None if it cannot answer."""
-    if not _hacs_is_ready(hacs):
-        return None
+    """Return what HACS says about the card, or None if the read failed.
+
+    The caller has already confirmed HACS is ready.
+    """
     known = CardStatus(hacs_present=True, hacs_ready=True)
     try:
         # ``get_by_full_name`` lowercases its argument; ``is_registered`` does

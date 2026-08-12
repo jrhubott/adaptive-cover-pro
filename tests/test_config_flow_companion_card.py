@@ -8,9 +8,12 @@ Three concerns:
   internals, and none of it may break the options flow.
 - ``card`` is offered in the cover options menu and NEVER in the profile,
   group, or queue menus.
-- ``async_step_card`` routes to one of three leaf screens, each of which
-  receives its URLs through ``description_placeholders`` (hassfest forbids
-  literal URLs in the translation strings) and returns to ``init`` on submit.
+- ``async_step_card`` routes to one of five leaf screens, each of which owns a
+  full translation block and receives only bare data through
+  ``description_placeholders`` — URLs (hassfest forbids literal URLs in the
+  translation strings) and bare version numbers, never an assembled English
+  sentence that would render inside a German or French body. Every leaf
+  returns to ``init`` on submit.
 """
 
 from __future__ import annotations
@@ -401,11 +404,32 @@ def test_card_menu_entry_has_an_en_json_label() -> None:
 @pytest.mark.parametrize(
     ("status", "expected_step"),
     [
-        (CardStatus(installed=True, detected_via="hacs"), "card_installed"),
+        (CardStatus(installed=True, detected_via="resource"), "card_installed"),
+        (
+            CardStatus(
+                installed=True, installed_version="v2.17.0", detected_via="hacs"
+            ),
+            "card_installed_version",
+        ),
+        (
+            CardStatus(
+                installed=True,
+                installed_version="v2.16.0",
+                available_version="v2.17.0",
+                detected_via="hacs",
+            ),
+            "card_installed_update",
+        ),
         (CardStatus(hacs_present=True, hacs_ready=True), "card_add"),
         (CardStatus(), "card_manual"),
     ],
-    ids=["installed", "hacs-no-card", "no-hacs"],
+    ids=[
+        "installed-no-version",
+        "installed",
+        "update-available",
+        "hacs-no-card",
+        "no-hacs",
+    ],
 )
 async def test_card_routes_on_status(
     hass: HomeAssistant, status: CardStatus, expected_step: str
@@ -414,6 +438,22 @@ async def test_card_routes_on_status(
         result = await _cover_flow(hass).async_step_card()
     assert result["type"] == "form"
     assert result["step_id"] == expected_step
+
+
+async def test_matching_installed_and_available_is_not_an_update(
+    hass: HomeAssistant,
+) -> None:
+    status = CardStatus(
+        hacs_present=True,
+        hacs_ready=True,
+        installed=True,
+        installed_version="v2.17.0",
+        available_version="v2.17.0",
+        detected_via="hacs",
+    )
+    with patch(_CARD_STATUS_SEAM, return_value=status):
+        result = await _cover_flow(hass).async_step_card()
+    assert result["step_id"] == "card_installed_version"
 
 
 async def test_hacs_present_but_not_ready_offers_the_add_screen(
@@ -467,11 +507,10 @@ async def test_installed_screen_reports_the_version(hass: HomeAssistant) -> None
     )
     with patch(_CARD_STATUS_SEAM, return_value=status):
         result = await _cover_flow(hass).async_step_card()
-    assert "v2.17.0" in result["description_placeholders"]["version_line"]
-    assert result["description_placeholders"]["update_line"] == ""
+    assert result["description_placeholders"]["installed_version"] == "v2.17.0"
 
 
-async def test_installed_screen_flags_a_pending_update(hass: HomeAssistant) -> None:
+async def test_update_screen_names_both_versions(hass: HomeAssistant) -> None:
     status = CardStatus(
         hacs_present=True,
         hacs_ready=True,
@@ -482,41 +521,71 @@ async def test_installed_screen_flags_a_pending_update(hass: HomeAssistant) -> N
     )
     with patch(_CARD_STATUS_SEAM, return_value=status):
         result = await _cover_flow(hass).async_step_card()
-    assert "v2.17.0" in result["description_placeholders"]["update_line"]
+    placeholders = result["description_placeholders"]
+    assert placeholders["installed_version"] == "v2.16.0"
+    assert placeholders["available_version"] == "v2.17.0"
 
 
-async def test_installed_screen_without_a_known_version_is_blank_not_none(
+async def test_no_leaf_assembles_user_visible_prose_in_python(
     hass: HomeAssistant,
 ) -> None:
-    status = CardStatus(installed=True, detected_via="resource")
-    with patch(_CARD_STATUS_SEAM, return_value=status):
-        result = await _cover_flow(hass).async_step_card()
-    placeholders = result["description_placeholders"]
-    assert "None" not in placeholders["version_line"]
-    assert placeholders["update_line"] == ""
+    """Placeholders carry bare data, never English sentences.
+
+    A Python-built sentence would render untranslated inside an otherwise
+    German or French screen, which is the whole reason each state has its own
+    translation block instead of one block with a ``{version_line}`` hole.
+    """
+    statuses = [
+        CardStatus(installed=True, detected_via="resource"),
+        CardStatus(installed=True, installed_version="v2.17.0", detected_via="hacs"),
+        CardStatus(
+            installed=True,
+            installed_version="v2.16.0",
+            available_version="v2.17.0",
+            detected_via="hacs",
+        ),
+        CardStatus(hacs_present=True, hacs_ready=True),
+        CardStatus(),
+    ]
+    for status in statuses:
+        with patch(_CARD_STATUS_SEAM, return_value=status):
+            result = await _cover_flow(hass).async_step_card()
+        for name, value in result["description_placeholders"].items():
+            if name == "learn_more" or name.endswith("_url"):
+                continue
+            # A bare version or an empty string: no spaces, no markdown.
+            assert " " not in value, f"{result['step_id']}/{name} carries prose"
+            assert "*" not in value, f"{result['step_id']}/{name} carries markdown"
 
 
-@pytest.mark.parametrize(
-    "step_id", ["card_installed", "card_add", "card_manual"], ids=lambda s: s
-)
+_LEAF_STATUS = {
+    "card_installed": CardStatus(installed=True, detected_via="resource"),
+    "card_installed_version": CardStatus(
+        installed=True, installed_version="v2.17.0", detected_via="hacs"
+    ),
+    "card_installed_update": CardStatus(
+        installed=True,
+        installed_version="v2.16.0",
+        available_version="v2.17.0",
+        detected_via="hacs",
+    ),
+    "card_add": CardStatus(hacs_present=True, hacs_ready=True),
+    "card_manual": CardStatus(),
+}
+
+
+@pytest.mark.parametrize("step_id", sorted(_LEAF_STATUS), ids=lambda s: s)
 async def test_every_leaf_has_an_empty_schema_and_a_learn_more(
     hass: HomeAssistant, step_id: str
 ) -> None:
-    status = {
-        "card_installed": CardStatus(installed=True, detected_via="resource"),
-        "card_add": CardStatus(hacs_present=True, hacs_ready=True),
-        "card_manual": CardStatus(),
-    }[step_id]
-    with patch(_CARD_STATUS_SEAM, return_value=status):
+    with patch(_CARD_STATUS_SEAM, return_value=_LEAF_STATUS[step_id]):
         result = await _cover_flow(hass).async_step_card()
     assert result["step_id"] == step_id
     assert result["data_schema"]({}) == {}
     assert result["description_placeholders"]["learn_more"].startswith("https://")
 
 
-@pytest.mark.parametrize(
-    "step_id", ["card_installed", "card_add", "card_manual"], ids=lambda s: s
-)
+@pytest.mark.parametrize("step_id", sorted(_LEAF_STATUS), ids=lambda s: s)
 async def test_every_leaf_returns_to_the_menu_on_submit(
     hass: HomeAssistant, step_id: str
 ) -> None:
@@ -526,14 +595,26 @@ async def test_every_leaf_returns_to_the_menu_on_submit(
     assert result["step_id"] == "init"
 
 
+@pytest.mark.parametrize(
+    "step_id",
+    ["card_installed_version", "card_installed_update"],
+    ids=["version", "update"],
+)
+async def test_version_leaves_resolve_status_when_called_directly(
+    hass: HomeAssistant, step_id: str
+) -> None:
+    """HA can route to a leaf without the router threading ``status`` in."""
+    _install_hacs(hass, _hacs(repo=_repo(installed_version="v2.17.0")))
+    result = await getattr(_cover_flow(hass), f"async_step_{step_id}")()
+    assert result["description_placeholders"]["installed_version"] == "v2.17.0"
+
+
 # ---------------------------------------------------------------------------
 # Translation blocks
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "step_id", ["card_installed", "card_add", "card_manual"], ids=lambda s: s
-)
+@pytest.mark.parametrize("step_id", sorted(_LEAF_STATUS), ids=lambda s: s)
 def test_every_leaf_has_a_translation_block(step_id: str) -> None:
     block = _en_step(step_id)
     assert block["title"]
@@ -543,11 +624,16 @@ def test_every_leaf_has_a_translation_block(step_id: str) -> None:
 @pytest.mark.parametrize(
     ("step_id", "placeholders"),
     [
-        ("card_installed", {"version_line", "update_line", "learn_more"}),
+        ("card_installed", {"learn_more"}),
+        ("card_installed_version", {"installed_version", "learn_more"}),
+        (
+            "card_installed_update",
+            {"installed_version", "available_version", "learn_more"},
+        ),
         ("card_add", {"install_url", "learn_more"}),
         ("card_manual", {"hacs_url", "download_url", "learn_more"}),
     ],
-    ids=["installed", "add", "manual"],
+    ids=["installed", "version", "update", "add", "manual"],
 )
 def test_description_placeholders_match_the_translation(
     step_id: str, placeholders: set[str]

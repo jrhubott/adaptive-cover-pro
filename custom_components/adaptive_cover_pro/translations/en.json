@@ -345,7 +345,15 @@
       },
       "card_installed": {
         "title": "Dashboard Card",
-        "description": "✅ The companion **Adaptive Cover Pro Card** is installed. {version_line}\n\n{update_line}\n\nThe cards read this integration's entities directly, so there is nothing to configure here. See [Dashboard Cards]({learn_more}) for what each card shows and how to add one to a dashboard.\n\nAfter a card upgrade, run the `lovelace.reload_resources` action and hard-refresh the browser — Home Assistant caches dashboard modules hard enough that a plain reload keeps serving the old one."
+        "description": "✅ The companion **Adaptive Cover Pro Card** is installed. It was found as a dashboard resource, so its version is not reported here.\n\nThe cards read this integration's entities directly, so there is nothing to configure here. See [Dashboard Cards]({learn_more}) for what each card shows and how to add one to a dashboard.\n\nAfter a card upgrade, run the `lovelace.reload_resources` action and hard-refresh the browser — Home Assistant caches dashboard modules hard enough that a plain reload keeps serving the old one."
+      },
+      "card_installed_version": {
+        "title": "Dashboard Card",
+        "description": "✅ The companion **Adaptive Cover Pro Card** is installed and up to date, on version **{installed_version}**.\n\nThe cards read this integration's entities directly, so there is nothing to configure here. See [Dashboard Cards]({learn_more}) for what each card shows and how to add one to a dashboard.\n\nAfter a card upgrade, run the `lovelace.reload_resources` action and hard-refresh the browser — Home Assistant caches dashboard modules hard enough that a plain reload keeps serving the old one."
+      },
+      "card_installed_update": {
+        "title": "Dashboard Card",
+        "description": "✅ The companion **Adaptive Cover Pro Card** is installed, on version **{installed_version}**.\n\n⬆️ Version **{available_version}** is available. Open HACS to download it.\n\nSee [Dashboard Cards]({learn_more}) for what each card shows and how to add one to a dashboard.\n\nAfter the upgrade, run the `lovelace.reload_resources` action and hard-refresh the browser — Home Assistant caches dashboard modules hard enough that a plain reload keeps serving the old one."
       },
       "card_add": {
         "title": "Dashboard Card",
