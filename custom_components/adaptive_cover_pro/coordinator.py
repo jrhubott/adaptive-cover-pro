@@ -542,6 +542,25 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Cover entity state provider
         self._cover_provider = CoverProvider(hass=self.hass, logger=self.logger)
 
+        def _resolve_blank_start_sunrise() -> dt.datetime | None:
+            """Astronomical sunrise, as naive-local wall-clock time (issue #1256).
+
+            Feeds ``TimeWindowManager.after_start_time`` so a blank start
+            time anchors the window's lower bound to sunrise instead of
+            midnight, once an end bound is configured. Resolved lazily on
+            each call — a fresh ``SunData`` read at evaluation time, not a
+            value captured once at startup — and fails open to ``None`` on
+            any error, which ``after_start_time`` treats identically to "no
+            sunrise available" (stays True, the pre-#1256 behaviour).
+            """
+            try:
+                sun_data = self._sun_provider.create_sun_data(
+                    self.hass.config.time_zone
+                )
+                return dt_util.as_local(sun_data.sunrise()).replace(tzinfo=None)
+            except Exception:  # noqa: BLE001 — fail open to pre-#1256 behaviour
+                return None
+
         # Time window manager (start/end time checks). Built here, ahead of the
         # snapshot builder, because the builder's effective-default fallback
         # reads the live window state off it (issue #1055).
@@ -550,6 +569,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             logger=self.logger,
             event_buffer=self._event_buffer,
             template_variables=self._template_variables,
+            sunrise_provider=_resolve_blank_start_sunrise,
         )
 
         # Pipeline snapshot builder — owns the HA reads + assembly for each

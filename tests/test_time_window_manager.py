@@ -14,14 +14,16 @@ from custom_components.adaptive_cover_pro.const import BLANK_TIME
 from custom_components.adaptive_cover_pro.managers.time_window import TimeWindowManager
 
 
-def _make_manager(mock_hass=None):
+def _make_manager(mock_hass=None, sunrise_provider=None):
     """Build a TimeWindowManager with a MagicMock hass and logger."""
     hass = mock_hass or MagicMock()
     logger = MagicMock()
     logger.debug = MagicMock()
     logger.info = MagicMock()
     logger.error = MagicMock()
-    return TimeWindowManager(hass=hass, logger=logger)
+    return TimeWindowManager(
+        hass=hass, logger=logger, sunrise_provider=sunrise_provider
+    )
 
 
 _TIME_WINDOW = "custom_components.adaptive_cover_pro.managers.time_window"
@@ -168,6 +170,208 @@ def test_after_start_time_static_parse_failure_treats_as_passed():
         result = mgr.after_start_time
 
     assert result is True
+
+
+# ---------------------------------------------------------------------------
+# after_start_time: blank start anchors to sunrise once an end bound is
+# configured (issue #1256) — otherwise the window re-opens at local midnight
+# ---------------------------------------------------------------------------
+
+
+def _sunrise_provider(hour: int, minute: int, day: dt.date = dt.date(2026, 8, 12)):
+    """Build a deterministic ``sunrise_provider`` returning a fixed naive-local time."""
+    sunrise = dt.datetime.combine(day, dt.time(hour, minute))
+    return lambda: sunrise
+
+
+# The reporter's end entity (sensor.sun_next_setting) reads tomorrow's sunset
+# all evening — the parsed value never changes; only _normalize_to_today's
+# comparison against "today" does, as the clock crosses midnight.
+_END_ENTITY_RAW = "2026-08-12T20:07:39"
+_END_ENTITY_PARSED = dt.datetime(2026, 8, 12, 20, 7, 39)
+
+
+@pytest.mark.unit
+def test_blank_start_with_configured_end_stays_closed_before_sunrise():
+    """A blank start + a configured end must NOT open the window at midnight.
+
+    Issue #1256: mapping "no start configured" straight to True puts the
+    window's lower bound at midnight. With a sunrise provider wired and an
+    end bound configured, the lower bound must be sunrise instead.
+    """
+    mgr = _make_manager(sunrise_provider=_sunrise_provider(6, 0))
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity="sensor.sun_next_setting",
+    )
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_safe_state", return_value=_END_ENTITY_RAW),
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_END_ENTITY_PARSED),
+        patch(
+            f"{_TIME_WINDOW}.local_now_naive",
+            return_value=dt.datetime(2026, 8, 12, 0, 5, 0),
+        ),
+    ):
+        assert mgr.after_start_time is False
+        assert mgr.is_active is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_blank_start_with_configured_end_no_midnight_reopen_transition():
+    """No ``on_window_open`` / ``time_window_changed`` event fires at local midnight.
+
+    Reproduces the reporter's timeline end-to-end: window closes at sunset
+    (end time passed), stays closed through midnight, and check_transition
+    never sees inactive→active until sunrise.
+    """
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    event_buffer = EventBuffer(maxlen=50)
+    mgr = TimeWindowManager(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        event_buffer=event_buffer,
+        sunrise_provider=_sunrise_provider(6, 0),
+    )
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity="sensor.sun_next_setting",
+    )
+    on_window_open = AsyncMock()
+    refresh_callback = AsyncMock()
+
+    # Prime at 23:55 Aug 11 local — window CLOSED (end time already passed
+    # today, per _normalize_to_today pinning the entity's Aug-12 reading
+    # back to Aug-11).
+    with (
+        patch(f"{_TIME_WINDOW}.get_safe_state", return_value=_END_ENTITY_RAW),
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_END_ENTITY_PARSED),
+        patch(
+            f"{_TIME_WINDOW}.local_now_naive",
+            return_value=dt.datetime(2026, 8, 11, 23, 55, 0),
+        ),
+    ):
+        await mgr.check_transition(
+            track_end_time=True,
+            refresh_callback=refresh_callback,
+            on_window_open=on_window_open,
+        )
+    assert mgr._last_time_window_state is False
+
+    # Advance to 00:05 Aug 12 local — the date rollover that (pre-fix)
+    # re-opens the window at midnight.
+    with (
+        patch(f"{_TIME_WINDOW}.get_safe_state", return_value=_END_ENTITY_RAW),
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_END_ENTITY_PARSED),
+        patch(
+            f"{_TIME_WINDOW}.local_now_naive",
+            return_value=dt.datetime(2026, 8, 12, 0, 5, 0),
+        ),
+    ):
+        await mgr.check_transition(
+            track_end_time=True,
+            refresh_callback=refresh_callback,
+            on_window_open=on_window_open,
+        )
+
+    on_window_open.assert_not_awaited()
+    assert all(
+        event.get("event") != "time_window_changed" for event in event_buffer.snapshot()
+    )
+
+
+@pytest.mark.unit
+def test_window_explicitly_started_stays_false_across_midnight_and_noon():
+    """window_explicitly_started (#492/#493) must not move.
+
+    Locked separately from after_start_time so the sunrise anchor cannot
+    resurrect the bug #493 fixed: a blank start must never register as an
+    explicit start, at midnight or at any other hour.
+    """
+    mgr = _make_manager(sunrise_provider=_sunrise_provider(6, 0))
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity="sensor.sun_next_setting",
+    )
+
+    for now in (
+        dt.datetime(2026, 8, 12, 0, 5, 0),
+        dt.datetime(2026, 8, 12, 12, 0, 0),
+    ):
+        with patch(f"{_TIME_WINDOW}.local_now_naive", return_value=now):
+            assert mgr.window_explicitly_started is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_blank_start_opens_window_at_sunrise_not_before():
+    """Sunrise, not midnight, is where the blank-start window actually opens.
+
+    check_transition must fire on_window_open exactly once, at the 05:55 →
+    06:05 sunrise crossing.
+    """
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    event_buffer = EventBuffer(maxlen=50)
+    mgr = TimeWindowManager(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        event_buffer=event_buffer,
+        sunrise_provider=_sunrise_provider(6, 0),
+    )
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity="sensor.sun_next_setting",
+    )
+    on_window_open = AsyncMock()
+    refresh_callback = AsyncMock()
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_safe_state", return_value=_END_ENTITY_RAW),
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_END_ENTITY_PARSED),
+        patch(
+            f"{_TIME_WINDOW}.local_now_naive",
+            return_value=dt.datetime(2026, 8, 12, 5, 55, 0),
+        ),
+    ):
+        assert mgr.after_start_time is False
+        await mgr.check_transition(
+            track_end_time=True,
+            refresh_callback=refresh_callback,
+            on_window_open=on_window_open,
+        )
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_safe_state", return_value=_END_ENTITY_RAW),
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_END_ENTITY_PARSED),
+        patch(
+            f"{_TIME_WINDOW}.local_now_naive",
+            return_value=dt.datetime(2026, 8, 12, 6, 5, 0),
+        ),
+    ):
+        assert mgr.after_start_time is True
+        assert mgr.is_active is True
+        await mgr.check_transition(
+            track_end_time=True,
+            refresh_callback=refresh_callback,
+            on_window_open=on_window_open,
+        )
+
+    on_window_open.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

@@ -794,6 +794,41 @@ def test_mixed_start_entity_with_static_end_time():
     assert "until 21:30" in summary
 
 
+def test_blank_start_with_configured_end_shows_from_sunrise():
+    """A blank start + configured end now anchors to sunrise, not midnight (#1256).
+
+    The summary must say so — a bare 'until 21:30' with no lower bound would
+    silently misrepresent the window as unbounded-below when it isn't.
+    """
+    cfg = {CONF_END_TIME: "21:30"}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "from sunrise" in summary
+    assert "until 21:30" in summary
+
+
+def test_blank_start_with_configured_end_entity_shows_from_sunrise():
+    """Same as above, with an end ENTITY instead of a static end time."""
+    cfg = {CONF_END_ENTITY: "sensor.sun_next_setting"}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "from sunrise" in summary
+    assert "sensor.sun_next_setting" in summary
+
+
+def test_blank_start_with_no_end_does_not_show_from_sunrise():
+    """Both blank (issue #492's shape) stays 'Active during daylight' — unchanged.
+
+    With no end bound configured either, the window is unbounded on both
+    sides and the #1256 sunrise anchor does not apply (out of scope: the
+    blank-end symmetric case is a deliberate follow-up, not this fix).
+    """
+    from custom_components.adaptive_cover_pro.const import BLANK_TIME
+
+    cfg = {CONF_START_TIME: BLANK_TIME, CONF_END_TIME: BLANK_TIME}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "from sunrise" not in summary
+    assert "Active during daylight" in summary
+
+
 def test_sunset_position_shown():
     """Sunset/end-of-day position appears in timing bullet."""
     cfg = {CONF_SUNSET_POS: 0}
