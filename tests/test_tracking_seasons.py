@@ -73,6 +73,10 @@ def _ctx(
         lux=lux,
         irradiance=irradiance,
         is_sunny=is_sunny,
+        # ``ClimateContext.is_low_light`` delegates to the data object so the
+        # smoothed cloud-suppression bool can override the readings (#1238).
+        # These tests never smooth, so the double supplies the raw OR.
+        is_low_light=(lux or irradiance or not is_sunny),
         winter_close_insulation=winter_close_insulation,
         transparent_blind=transparent_blind,
         # Extreme-heat mode is off in these tests; the shared _TOP_OVERRIDES

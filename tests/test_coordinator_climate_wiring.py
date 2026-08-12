@@ -708,6 +708,20 @@ class TestCloudSuppressionCoordinatorWiring:
         coord._cloud_mgr.update_config(enabled=True, hold_time_seconds=120)
         coord._start_cloud_hold_timeout = MagicMock()
 
+        # First cycle after setup: the manager seeds on the world as found
+        # rather than debouncing it (issue #1238), so a resting sunny read is
+        # needed before the crossing this test is about.
+        coord._reconcile_cloud_suppression(
+            ClimateReadings(
+                outside_temperature=None,
+                inside_temperature=None,
+                is_presence=True,
+                is_sunny=True,
+                lux_below_threshold=False,
+                irradiance_below_threshold=False,
+                cloud_coverage_above_threshold=False,
+            )
+        )
         coord._reconcile_cloud_suppression(
             ClimateReadings(
                 outside_temperature=None,

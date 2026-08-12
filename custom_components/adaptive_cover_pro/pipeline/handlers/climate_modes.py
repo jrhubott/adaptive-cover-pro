@@ -105,8 +105,14 @@ class ClimateContext:
 
     @property
     def is_low_light(self) -> bool:
-        """Whether lux/irradiance/no-sun indicates there's no real sun to manage."""
-        return bool(self.data.lux or self.data.irradiance or not self.data.is_sunny)
+        """Whether lux/irradiance/no-sun indicates there's no real sun to manage.
+
+        The predicate itself lives on ``ClimateCoverData.is_low_light``, which
+        prefers the smoothed ``low_light_active`` flag (the resolved
+        cloud-suppression bool, carrying the user's hold-time) over the raw
+        single-crossing OR — issue #1238.
+        """
+        return bool(self.data.is_low_light)
 
     @property
     def is_winter_insulation(self) -> bool:

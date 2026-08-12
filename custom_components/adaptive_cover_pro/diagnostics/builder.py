@@ -748,6 +748,14 @@ class DiagnosticsBuilder:
                 "lux_below_threshold": climate_data.lux_below_threshold,
                 "irradiance_below_threshold": climate_data.irradiance_below_threshold,
                 "cloud_coverage_above_threshold": climate_data.cloud_coverage_above_threshold,
+                # The RESOLVED low-light answer plus its provenance (issue
+                # #1238). The three raw inputs above no longer determine it on
+                # their own — with cloud suppression on, the smoothed
+                # cloud-suppression bool (hysteresis + hold-time) wins — so
+                # without these two keys a support trace cannot tell a held
+                # low-light from a raw one.
+                "is_low_light": climate_data.is_low_light,
+                "low_light_smoothed": climate_data.low_light_active is not None,
                 "tracking_seasons": sorted(climate_data.tracking_seasons),
             }
 
