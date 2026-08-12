@@ -179,3 +179,62 @@ class TestHoldDebouncer:
         d.reset(False)
         d.evaluate(False, hold_time=0)  # no transition
         assert commits == []
+
+
+class TestHoldDebouncerStartupSeed:
+    """``reset(..., seeded=False)`` makes the FIRST observation commit in-line.
+
+    A debounce guards *changes*; the first reading after construction or a config
+    reload is not a change, it is the world as found. Without the seed a reload in
+    the held condition leaves ``resolved`` at the reset value for the whole hold
+    time (issue #1238). Opt-in — every caller that does not ask for it keeps the
+    historical behaviour byte-for-byte.
+    """
+
+    def test_unseeded_first_evaluate_commits_without_a_timer(self, logger):
+        d = HoldDebouncer(logger, label="test")
+        d.reset(False, seeded=False)
+
+        assert d.evaluate(True, hold_time=600) is None
+        assert d.resolved is True
+        assert d.is_timeout_running is False
+
+    def test_second_transition_still_debounces(self, logger):
+        d = HoldDebouncer(logger, label="test")
+        d.reset(False, seeded=False)
+        d.evaluate(True, hold_time=600)
+
+        assert d.evaluate(False, hold_time=600) == "should_start_timeout"
+        assert d.resolved is True  # unchanged pending expiry
+        d.cancel()
+
+    def test_seeding_a_matching_value_fires_no_commit_callback(self, logger):
+        """A startup that finds the reset value records no spurious change."""
+        commits: list[tuple] = []
+        d = HoldDebouncer(
+            logger, label="test", on_commit=lambda p, n: commits.append((p, n))
+        )
+        d.reset(False, seeded=False)
+
+        assert d.evaluate(False, hold_time=600) is None
+        assert d.resolved is False
+        assert commits == []
+
+    def test_reset_defaults_to_seeded_and_is_byte_identical(self, logger):
+        """The default ``reset(initial)`` keeps the pre-#1238 first-cycle debounce."""
+        d = HoldDebouncer(logger, label="test")
+        d.reset(False)
+
+        assert d.evaluate(True, hold_time=600) == "should_start_timeout"
+        assert d.resolved is False
+
+    def test_reseeding_via_reset_re_arms_the_seed(self, logger):
+        """A config reload calls ``reset`` again — the next reading seeds again."""
+        d = HoldDebouncer(logger, label="test")
+        d.reset(False, seeded=False)
+        d.evaluate(True, hold_time=600)
+        assert d.resolved is True
+
+        d.reset(False, seeded=False)
+        assert d.evaluate(True, hold_time=600) is None
+        assert d.resolved is True

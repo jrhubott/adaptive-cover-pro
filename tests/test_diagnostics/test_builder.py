@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 import pytest
 
@@ -835,6 +836,28 @@ class TestClimateDiagnostics:
         pr = _make_pr(control_method=ControlMethod.CLOUD, climate_data=cd)
         diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
         assert diag["climate_conditions"]["cloud_coverage_above_threshold"] is True
+
+    def test_climate_conditions_report_resolved_low_light(
+        self, builder: DiagnosticsBuilder
+    ):
+        """The resolved low-light answer + whether it was smoothed (issue #1238).
+
+        The raw inputs alone stopped determining the branch once the LOW_LIGHT
+        rule started reading the debounced cloud-suppression bool — a trace that
+        shows only the raw values cannot distinguish a held low light from an
+        instantaneous one.
+        """
+        raw = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=raw)
+        diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
+        assert diag["climate_conditions"]["is_low_light"] is False
+        assert diag["climate_conditions"]["low_light_smoothed"] is False
+
+        smoothed = replace(self._make_climate_data(), low_light_active=True)
+        pr = _make_pr(control_method=ControlMethod.DEFAULT, climate_data=smoothed)
+        diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
+        assert diag["climate_conditions"]["is_low_light"] is True
+        assert diag["climate_conditions"]["low_light_smoothed"] is True
 
 
 # ---------------------------------------------------------------------------

@@ -76,6 +76,10 @@ class HoldDebouncer:
         self._on_commit = on_commit
         self.resolved: Any = None
         self._pending_target: Any = None
+        # Set here rather than via reset() — the constructor assigns ``resolved``
+        # directly, so a caller that never calls reset() would otherwise have no
+        # ``_seeded`` at all. True keeps that caller on the historical path.
+        self._seeded: bool = True
         self._timer = TimeoutController(logger, label=label)
 
     @property
@@ -91,7 +95,19 @@ class HoldDebouncer:
         ``None`` otherwise (including the ``hold_time == 0`` case, which commits
         in-line). A pending target that changes to a further value while a timer
         runs keeps the timer and updates the pending target.
+
+        An UNSEEDED debouncer (``reset(..., seeded=False)``) commits its very
+        first observation in-line, whatever it is: a debounce guards *changes*,
+        and the first reading after construction or a config reload is the world
+        as found, not a change (issue #1238). ``_commit`` fires ``on_commit``
+        only on an actual difference, so a startup that agrees with the reset
+        value records no spurious event.
         """
+        if not self._seeded:
+            self._seeded = True
+            self._commit(instantaneous)
+            return None
+
         if instantaneous == self.resolved:
             # No transition needed. A timer counting toward a now-abandoned
             # transition is cancelled (the condition reverted → true debounce).
@@ -137,10 +153,17 @@ class HoldDebouncer:
         """Cancel the running hold-time timer, if any."""
         self._timer.cancel()
 
-    def reset(self, initial: Any) -> None:
-        """Restore the resolved value to ``initial`` and drop pending state."""
+    def reset(self, initial: Any, *, seeded: bool = True) -> None:
+        """Restore the resolved value to ``initial`` and drop pending state.
+
+        ``seeded=False`` marks ``initial`` as a placeholder rather than an
+        observation, so the next :meth:`evaluate` commits in-line instead of
+        debouncing the first reading. Opt-in — the default keeps every existing
+        caller byte-identical.
+        """
         self.resolved = initial
         self._pending_target = None
+        self._seeded = seeded
         self.cancel()
 
     def _commit(self, target: Any) -> None:

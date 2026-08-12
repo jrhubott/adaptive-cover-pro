@@ -42,8 +42,17 @@ def _ctx(
     transparent_blind=False,
     default_position=50,
     is_extreme_heat=False,
+    is_low_light=None,
 ):
-    """Build a ClimateContext over a normal (non-tilt) cover with a mock policy."""
+    """Build a ClimateContext over a normal (non-tilt) cover with a mock policy.
+
+    ``is_low_light`` mirrors how ``is_winter``/``is_summer``/``is_extreme_heat``
+    are already handled here: the context reads a resolved predicate off the
+    data object, so the double supplies one. It defaults to the raw OR the
+    readings imply, which keeps every existing call site meaning what it did,
+    and can be passed explicitly to decouple the predicate from the readings
+    (issue #1238's smoothed ``low_light_active`` seam).
+    """
     policy = MagicMock()
     policy.position_for_intent.side_effect = lambda sun_through: (
         "intent_open" if sun_through else "intent_block"
@@ -54,6 +63,11 @@ def _ctx(
         lux=lux,
         irradiance=irradiance,
         is_sunny=is_sunny,
+        is_low_light=(
+            (lux or irradiance or not is_sunny)
+            if is_low_light is None
+            else is_low_light
+        ),
         winter_close_insulation=winter_close_insulation,
         transparent_blind=transparent_blind,
         policy=policy,
@@ -77,6 +91,17 @@ def test_is_low_light_any_signal():
     assert _ctx(irradiance=True).is_low_light
     assert _ctx(is_sunny=False).is_low_light
     assert not _ctx().is_low_light
+
+
+def test_is_low_light_delegates_to_the_climate_data_predicate():
+    """The context is a pass-through; the smoothing lives on ClimateCoverData.
+
+    Issue #1238 moved the OR onto ``ClimateCoverData.is_low_light`` so the
+    resolved cloud-suppression bool (hysteresis + hold-time) can override it.
+    All four rule tables inherit that through this one delegation.
+    """
+    assert _ctx(lux=True, is_low_light=False).is_low_light is False
+    assert _ctx(is_low_light=True).is_low_light is True
 
 
 def test_is_winter_insulation_requires_both():

@@ -69,7 +69,12 @@ class CloudSuppressionManager:
         self._debouncer = HoldDebouncer(
             logger, label="cloud-suppression hold", on_commit=self._on_commit
         )
-        self._debouncer.reset(False)
+        # seeded=False: the first reading after construction/reload is the world
+        # as found, not a change, so it must not be debounced (issue #1238).
+        # Without it a restart in cloudy weather would leave the resolved bool
+        # False — and the climate LOW_LIGHT branch, which now gates on it, would
+        # sun-track for the whole hold-time before the cover settled.
+        self._debouncer.reset(False, seeded=False)
 
     # --- Configuration ---
 
@@ -184,4 +189,4 @@ class CloudSuppressionManager:
         self._lux_latched = False
         self._irr_latched = False
         self._cloud_latched = False
-        self._debouncer.reset(False)
+        self._debouncer.reset(False, seeded=False)

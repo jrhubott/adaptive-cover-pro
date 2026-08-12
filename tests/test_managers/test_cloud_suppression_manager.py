@@ -72,6 +72,20 @@ def _readings(
     )
 
 
+def _primed_manager(logger, *, hold_time_seconds: int) -> CloudSuppressionManager:
+    """Build an enabled manager that already observed its resting (sunny) state.
+
+    The FIRST observation after construction or a config reload is seeded in-line
+    (issue #1238): it is the world as found, not a change, so it commits without
+    starting a hold timer. Every test below is about the SECOND reading — the one
+    that is a genuine transition and therefore the one the hold-time governs.
+    """
+    m = CloudSuppressionManager(logger=logger)
+    m.update_config(enabled=True, hold_time_seconds=hold_time_seconds)
+    m.evaluate(_readings())
+    return m
+
+
 # ---------------------------------------------------------------------------
 # (a) Back-compat: hold=0 + blank release ⇒ resolved bool == raw OR
 # ---------------------------------------------------------------------------
@@ -141,8 +155,7 @@ class TestHoldTimeDebounce:
 
     def test_pending_transition_does_not_flip_and_signals_timer(self, logger):
         """Instantaneous flip with hold>0 keeps state and signals start-timer."""
-        m = CloudSuppressionManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
 
         signal = m.evaluate(_readings(is_sunny=False))
         assert signal == "should_start_timeout"
@@ -151,8 +164,7 @@ class TestHoldTimeDebounce:
     @pytest.mark.asyncio
     async def test_revert_before_expiry_cancels_timer(self, logger):
         """If instantaneous reverts before the timer fires, it is cancelled."""
-        m = CloudSuppressionManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
 
         assert m.evaluate(_readings(is_sunny=False)) == "should_start_timeout"
         m.start_hold_timeout(AsyncMock())
@@ -167,8 +179,7 @@ class TestHoldTimeDebounce:
     @pytest.mark.asyncio
     async def test_second_evaluate_while_timer_running_does_not_resignal(self, logger):
         """A still-pending transition does not ask to start a second timer."""
-        m = CloudSuppressionManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
         assert m.evaluate(_readings(is_sunny=False)) == "should_start_timeout"
         m.start_hold_timeout(AsyncMock())
         # Same instantaneous, timer already running → no new signal.
@@ -188,8 +199,7 @@ class TestTimerExpiry:
     @pytest.mark.asyncio
     async def test_expiry_commits_and_calls_refresh(self, logger):
         """Expiry flips the resolved bool and invokes the refresh callback."""
-        m = CloudSuppressionManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
         m.evaluate(_readings(is_sunny=False))
         assert m.is_suppression_active is False
 
