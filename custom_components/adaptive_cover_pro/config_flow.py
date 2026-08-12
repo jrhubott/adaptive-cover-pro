@@ -1374,6 +1374,12 @@ INTERPOLATION_OPTIONS = vol.Schema(
     }
 )
 
+# Keys in INTERPOLATION_OPTIONS with no schema default. Voluptuous omits them
+# from user_input when cleared, so the flow handler must call
+# optional_entities() with this list before dict.update() -- otherwise the
+# prior custom range survives a clear (issue #1267).
+_INTERP_OPTIONAL_KEYS: list[str] = [CONF_INTERP_START, CONF_INTERP_END]
+
 
 def _get_azimuth_edges(data) -> int:
     """Return the total azimuth sun-acceptance-angle span (fov_left + fov_right)."""
@@ -6084,6 +6090,16 @@ class OptionsFlowHandler(OptionsFlow):
                         "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot",
                     },
                 )
+            # Fill cleared optional (no-default) fields so a clear round-trips
+            # (issue #1267). left_gamma always carries a schema default= and
+            # is excluded on purpose.
+            self.optional_entities(
+                [
+                    BLIND_SPOT_FORM_KEYS["right_gamma"],
+                    BLIND_SPOT_FORM_KEYS["elevation"],
+                ],
+                user_input,
+            )
             mapped = {
                 slot_keys[sub]: user_input[form_key]
                 for sub, form_key in BLIND_SPOT_FORM_KEYS.items()
@@ -6305,6 +6321,7 @@ class OptionsFlowHandler(OptionsFlow):
     ):
         """Manage motion/occupancy-based control."""
         if user_input is not None:
+            self.optional_entities([CONF_MOTION_TEMPLATE], user_input)
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(
@@ -7156,6 +7173,7 @@ class OptionsFlowHandler(OptionsFlow):
                         "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
                     },
                 )
+            self.optional_entities(_INTERP_OPTIONAL_KEYS, user_input)
             self.options.update(user_input)
             return await self.async_step_calibration()
         return self.async_show_form(
