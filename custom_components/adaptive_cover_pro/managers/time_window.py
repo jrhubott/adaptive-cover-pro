@@ -23,6 +23,21 @@ from .common import EventRecorder
 from .common.condition_gate import ConditionGate
 
 
+def _bound_is_configured(entity: str | None, static_value: str | None) -> bool:
+    """Whether a start/end time bound has a real (non-blank) value configured.
+
+    True when an entity is wired, or a static value is set and isn't the
+    blank sentinel ``BLANK_TIME``. Single definition of "configured" for a
+    time-window bound, shared so a future symmetric check (e.g. "is the
+    *start* bound configured?" for the blank-end case) delegates here rather
+    than re-deriving the same predicate (CODING_GUIDELINES no-duplication
+    rule). Currently consulted once, from :pyattr:`TimeWindowManager.after_start_time`.
+    """
+    return entity is not None or (
+        static_value is not None and static_value != BLANK_TIME
+    )
+
+
 class TimeWindowManager:
     """Manages operational time window checks.
 
@@ -38,6 +53,7 @@ class TimeWindowManager:
         event_buffer=None,
         clock: Callable[[], float] = time.monotonic,
         template_variables: Mapping[str, Any] | None = None,
+        sunrise_provider: Callable[[], dt.datetime | None] | None = None,
     ) -> None:
         """Initialize time window manager.
 
@@ -50,12 +66,24 @@ class TimeWindowManager:
             template_variables: Opaque render context threaded into the
                 daytime-gate template — the ``acp`` self-reference namespace
                 built once by the coordinator (issue #1159).
+            sunrise_provider: Optional zero-arg closure returning today's
+                astronomical sunrise as naive-local wall-clock time (or
+                ``None`` when unresolvable). Consulted only by
+                :pyattr:`after_start_time`, only when no start time is
+                configured AND an end bound is configured, so a blank start
+                anchors the window's lower bound to sunrise instead of
+                midnight (issue #1256) rather than leaving the window open
+                all night. Injected — like the ``ConditionGate`` readers
+                below — so tests drive it deterministically; omitting it
+                (the default) preserves the pre-#1256 fail-open-to-True
+                behaviour.
 
         """
         self._hass = hass
         self.logger = logger
         self._event_buffer = event_buffer
         self._template_variables = template_variables
+        self._sunrise_provider = sunrise_provider
         self._events = EventRecorder(event_buffer)
         self._last_time_window_state: bool | None = None
 
@@ -299,13 +327,27 @@ class TimeWindowManager:
 
         Returns:
             True if current time is after configured start time (from entity
-            or static config), False otherwise. Returns True if no start time
-            configured (including the blank sentinel) — the active-window logic
-            keys on this meaning "no start restriction".
+            or static config), False otherwise. When no start time is
+            configured (including the blank sentinel) the result depends on
+            whether an end bound is configured: with no end bound the window
+            is unbounded on both sides and this fails open to True — "no
+            start restriction" (unchanged pre-#1256 behaviour). Once an end
+            bound IS configured, a blank start anchors the window's lower
+            bound to astronomical sunrise instead of midnight (issue #1256),
+            via the injected ``sunrise_provider`` — matching the ``start_time``
+            option's documented "leave blank to start at sunrise". Falls back
+            to True (fail-open) when no ``sunrise_provider`` was injected or
+            it returns ``None``.
 
         """
         passed = self._start_has_passed()
-        return True if passed is None else passed
+        if passed is not None:
+            return passed
+        if _bound_is_configured(self._end_time_entity, self._end_time_config):
+            sunrise = self._sunrise_provider() if self._sunrise_provider else None
+            if sunrise is not None:
+                return local_now_naive() >= sunrise
+        return True
 
     @property
     def window_explicitly_started(self) -> bool:
