@@ -254,3 +254,50 @@ class TestDisabled:
         """No readings → inactive."""
         assert mgr.evaluate(None) is None
         assert mgr.is_suppression_active is False
+
+
+# ---------------------------------------------------------------------------
+# (g) A transient readings outage re-seeds the debounce (issue #1238)
+# ---------------------------------------------------------------------------
+
+
+class TestReadingsOutage:
+    """``readings is None`` resets, so the next reading is a first sighting again."""
+
+    @pytest.mark.asyncio
+    async def test_outage_during_a_pending_hold_recovers_in_line(self, logger):
+        """Outage → the next valid reading commits without re-arming the hold.
+
+        The outage is what ends the pending transition: ``_reset`` cancels the
+        timer, drops the pending target and forces the resolved bool back to
+        False — it did that before issue #1238 too. The seed only decides what
+        the NEXT valid reading costs, and committing it in-line is the intended
+        recovery: re-arming a full hold there would buy another hold-time of the
+        wrong state after a one-cycle blip. Nothing is swallowed — the pending
+        transition still lands, just sooner.
+        """
+        m = _primed_manager(logger, hold_time_seconds=120)
+
+        assert m.evaluate(_readings(is_sunny=False)) == "should_start_timeout"
+        m.start_hold_timeout(AsyncMock())
+        assert m.is_timeout_running is True
+
+        # One cycle without readings: timer cancelled, resolved back to False.
+        assert m.evaluate(None) is None
+        assert m.is_timeout_running is False
+        assert m.is_suppression_active is False
+
+        # The reading that follows is the world as found → commits in-line.
+        assert m.evaluate(_readings(is_sunny=False)) is None
+        assert m.is_suppression_active is True
+        assert m.is_timeout_running is False
+
+    def test_the_transition_after_an_outage_still_debounces(self, logger):
+        """The re-seed is one-shot — the next genuine change holds again."""
+        m = _primed_manager(logger, hold_time_seconds=120)
+        m.evaluate(None)
+        m.evaluate(_readings(is_sunny=False))  # re-seeded → in-line
+        assert m.is_suppression_active is True
+
+        assert m.evaluate(_readings(is_sunny=True)) == "should_start_timeout"
+        assert m.is_suppression_active is True  # release edge held

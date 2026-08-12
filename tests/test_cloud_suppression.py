@@ -445,10 +445,16 @@ class TestCloudSuppressionPipelineIntegration:
         assert result.position == 60
 
     @pytest.mark.parametrize(
-        ("is_sunset_active", "expected_tilt"), [(False, 35), (True, 5)]
+        ("is_sunset_active", "min_tilt", "max_tilt", "expected_tilt"),
+        [
+            (False, 0, 100, 35),  # unconstrained → default_tilt as configured
+            (True, 0, 100, 5),  # unconstrained → sunset_tilt as configured
+            (False, 10, 30, 30),  # #503 clamp pulls default_tilt down to max
+            (True, 10, 30, 5),  # #128 carve-out: sunset_tilt stays unclamped
+        ],
     )
     def test_venetian_cloud_coverage_outside_fov_keeps_the_default_tilt(
-        self, is_sunset_active: bool, expected_tilt: int
+        self, is_sunset_active: bool, min_tilt: int, max_tilt: int, expected_tilt: int
     ) -> None:
         """The #1214 tilt outcome for the widened branch, pinned explicitly.
 
@@ -457,7 +463,10 @@ class TestCloudSuppressionPipelineIntegration:
         winner, ``DefaultHandler``, called the very same helper. Both must land on
         the identical slat angle: this branch changes which handler answers, and
         it must not change what the slats do. Parametrised over the sunset
-        carve-out because that is where the two tilt sources differ.
+        carve-out (that is where the two tilt sources differ) crossed with the
+        tilt limits, because the two paths through ``compute_default_tilt``
+        disagree about clamping: only the non-sunset ``default_tilt`` honours the
+        #503 min/max, while ``sunset_tilt`` keeps the #128 bypass.
         """
         readings = make_weather_readings(
             is_sunny=True,
@@ -480,6 +489,8 @@ class TestCloudSuppressionPipelineIntegration:
             "default_position": 60,
             "default_tilt": 35,
             "sunset_tilt": 5,
+            "min_tilt": min_tilt,
+            "max_tilt": max_tilt,
             "is_sunset_active": is_sunset_active,
             "climate_readings": readings,
             "climate_options": options,
