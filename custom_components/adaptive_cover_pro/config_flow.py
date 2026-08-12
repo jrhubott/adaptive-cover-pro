@@ -5522,8 +5522,12 @@ class OptionsFlowHandler(OptionsFlow):
         "found as a dashboard resource". A hand-registered resource with no
         ``?v=`` stamp is the common case, but HACS also reports a null
         ``installed_version`` for a repository tracked from a branch rather
-        than a release. The screen therefore states only what is certain: the
-        card is installed, and which build is anyone's guess.
+        than a release.
+
+        The screen therefore claims exactly two things, both of which the
+        router established: the card is installed, and its version is unknown.
+        In particular it must not mention HACS — this leaf is reachable with
+        HACS absent, where ``card_manual`` is busy saying the opposite.
         """
         if user_input is not None:
             return await self.async_step_init()
@@ -5539,7 +5543,11 @@ class OptionsFlowHandler(OptionsFlow):
         *,
         status: CardStatus | None = None,
     ) -> FlowResult:
-        """Confirm the card is present and up to date, and name its version.
+        """Confirm the card is present and name the version it is on.
+
+        Deliberately does NOT say "up to date": this leaf is reached whenever
+        ``available_version`` is falsy *or* equal to the installed one, and an
+        unknown available version is not evidence of being current.
 
         ``status`` is threaded from the router so the render path resolves it
         once; HA passes only ``user_input``, so the submit path never needs it.

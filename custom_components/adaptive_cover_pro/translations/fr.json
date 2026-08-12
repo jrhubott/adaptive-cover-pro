@@ -1166,7 +1166,7 @@
       },
       "card_installed": {
         "title": "Carte de tableau de bord",
-        "description": "✅ La carte de tableau de bord compagnon **Adaptive Cover Pro Card** est installée, mais impossible de déterminer sa version. Ouvrez HACS pour la vérifier.\n\nLes cartes lisent directement les entités de cette intégration, il n'y a donc rien à configurer ici. Consultez [Cartes de tableau de bord]({learn_more}) pour voir ce que chaque carte affiche et comment en ajouter une à un tableau de bord.\n\nAprès une mise à jour de la carte, exécutez l'action `lovelace.reload_resources` et forcez l'actualisation du navigateur — Home Assistant met en cache les modules de tableau de bord de façon si agressive qu'un simple rechargement continue de servir l'ancien."
+        "description": "✅ La carte de tableau de bord compagnon **Adaptive Cover Pro Card** est installée, mais impossible de déterminer sa version.\n\nLes cartes lisent directement les entités de cette intégration, il n'y a donc rien à configurer ici. Consultez [Cartes de tableau de bord]({learn_more}) pour voir ce que chaque carte affiche et comment en ajouter une à un tableau de bord.\n\nAprès une mise à jour de la carte, exécutez l'action `lovelace.reload_resources` et forcez l'actualisation du navigateur — Home Assistant met en cache les modules de tableau de bord de façon si agressive qu'un simple rechargement continue de servir l'ancien."
       },
       "card_add": {
         "title": "Carte de tableau de bord",
@@ -1178,7 +1178,7 @@
       },
       "card_installed_version": {
         "title": "Carte de tableau de bord",
-        "description": "✅ La carte de tableau de bord compagnon **Adaptive Cover Pro Card** est installée et à jour, version **{installed_version}**.\n\nLes cartes lisent directement les entités de cette intégration, il n'y a donc rien à configurer ici. Consultez [Cartes de tableau de bord]({learn_more}) pour voir ce que chaque carte affiche et comment en ajouter une à un tableau de bord.\n\nAprès une mise à jour de la carte, exécutez l'action `lovelace.reload_resources` et forcez l'actualisation du navigateur — Home Assistant met en cache les modules de tableau de bord de façon si agressive qu'un simple rechargement continue de servir l'ancien."
+        "description": "✅ La carte de tableau de bord compagnon **Adaptive Cover Pro Card** est installée, version **{installed_version}**.\n\nLes cartes lisent directement les entités de cette intégration, il n'y a donc rien à configurer ici. Consultez [Cartes de tableau de bord]({learn_more}) pour voir ce que chaque carte affiche et comment en ajouter une à un tableau de bord.\n\nAprès une mise à jour de la carte, exécutez l'action `lovelace.reload_resources` et forcez l'actualisation du navigateur — Home Assistant met en cache les modules de tableau de bord de façon si agressive qu'un simple rechargement continue de servir l'ancien."
       },
       "card_installed_update": {
         "title": "Carte de tableau de bord",

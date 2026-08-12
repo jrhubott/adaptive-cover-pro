@@ -560,6 +560,24 @@ async def test_update_screen_names_both_versions(hass: HomeAssistant) -> None:
     assert placeholders["available_version"] == "v2.17.0"
 
 
+_LEAF_STATUS = {
+    "card_installed": CardStatus(installed=True, detected_via="resource"),
+    "card_installed_version": CardStatus(
+        installed=True, installed_version="v2.17.0", detected_via="hacs"
+    ),
+    "card_installed_update": CardStatus(
+        installed=True,
+        installed_version="v2.16.0",
+        available_version="v2.17.0",
+        detected_via="hacs",
+    ),
+    "card_add": CardStatus(hacs_present=True, hacs_ready=True),
+    "card_manual": CardStatus(),
+}
+
+_MISSING = object()
+
+
 async def test_no_leaf_assembles_user_visible_prose_in_python(
     hass: HomeAssistant,
 ) -> None:
@@ -580,9 +598,12 @@ async def test_no_leaf_assembles_user_visible_prose_in_python(
         for name, value in result["description_placeholders"].items():
             if name == "learn_more" or name.endswith("_url"):
                 continue
-            assert value == getattr(status, name), (
+            # Sentinel rather than a bare getattr: a placeholder renamed to
+            # something CardStatus has no field for must fail as this
+            # assertion, not as an AttributeError raised before it.
+            assert value == getattr(status, name, _MISSING), (
                 f"{result['step_id']}/{name} is not the bare CardStatus field: "
-                f"{value!r} != {getattr(status, name)!r}"
+                f"{value!r} != {getattr(status, name, _MISSING)!r}"
             )
             checked += 1
     # Guard the guard: three data placeholders exist across the five leaves
@@ -593,20 +614,48 @@ async def test_no_leaf_assembles_user_visible_prose_in_python(
     ), f"expected 3 data placeholders across the leaves, saw {checked}"
 
 
-_LEAF_STATUS = {
-    "card_installed": CardStatus(installed=True, detected_via="resource"),
-    "card_installed_version": CardStatus(
-        installed=True, installed_version="v2.17.0", detected_via="hacs"
-    ),
-    "card_installed_update": CardStatus(
+@pytest.mark.parametrize(
+    "step_id",
+    ["card_installed", "card_installed_version"],
+    ids=["versionless", "version"],
+)
+@pytest.mark.parametrize("language", ["en", "de", "fr"], ids=lambda s: s)
+def test_installed_screens_never_mention_hacs(step_id: str, language: str) -> None:
+    """Both are reachable with HACS absent, where ``card_manual`` says so.
+
+    Telling a HACS-less install to "open HACS" is the same fault as claiming a
+    detection method the router never checked: the screen asserting more than
+    the state it was routed on.
+    """
+    path = _EN_JSON.parent / f"{language}.json"
+    block = json.loads(path.read_text(encoding="utf-8"))["options"]["step"][step_id]
+    assert "HACS" not in block["description"]
+
+
+def test_version_screen_does_not_claim_to_be_up_to_date() -> None:
+    """It is reached when ``available_version`` is unknown, not just equal.
+
+    ``async_step_card`` routes here on ``installed_version`` alone once the
+    update branch declines, so an install whose available version was never
+    reported would be told it is current on no evidence.
+    """
+    description = _en_step("card_installed_version")["description"]
+    assert "up to date" not in description
+
+
+async def test_unknown_available_version_is_not_reported_as_current(
+    hass: HomeAssistant,
+) -> None:
+    status = CardStatus(
         installed=True,
-        installed_version="v2.16.0",
-        available_version="v2.17.0",
-        detected_via="hacs",
-    ),
-    "card_add": CardStatus(hacs_present=True, hacs_ready=True),
-    "card_manual": CardStatus(),
-}
+        installed_version="2.10.0",
+        available_version=None,
+        detected_via="resource",
+    )
+    with patch(_CARD_STATUS_SEAM, return_value=status):
+        result = await _cover_flow(hass).async_step_card()
+    assert result["step_id"] == "card_installed_version"
+    assert result["description_placeholders"]["installed_version"] == "2.10.0"
 
 
 @pytest.mark.parametrize("step_id", sorted(_LEAF_STATUS), ids=lambda s: s)
