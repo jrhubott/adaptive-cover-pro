@@ -2577,6 +2577,140 @@ async def test_options_flow_position_step_clears_sunset_pos_when_omitted(
 
 
 # ---------------------------------------------------------------------------
+# Regression: clearing motion template / interp start-end (issue #1267)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_options_flow_motion_override_clears_motion_template(
+    hass: HomeAssistant,
+) -> None:
+    """Clearing the motion template in options flow must set the key to None.
+
+    Regression for issue #1267: submitting an empty motion_override form while
+    a previously-saved CONF_MOTION_TEMPLATE exists must overwrite it with None,
+    not leave the old template in place. Same class of bug as #323/#377 —
+    async_step_motion_override never called optional_entities() at all.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_MOTION_TEMPLATE
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    pre_options = dict(VERTICAL_OPTIONS)
+    pre_options[CONF_MOTION_TEMPLATE] = "{{ true }}"
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Motion Template Clear", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=pre_options,
+        entry_id="motion_template_clear_01",
+        title="Motion Template Clear",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "motion_override"}
+    )
+
+    # Submit motion_override form with no template key — simulates the user
+    # clearing the field (voluptuous drops a bare Optional with no default).
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] in ("form", "menu")
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+
+    assert (
+        result["data"].get(CONF_MOTION_TEMPLATE) is None
+    ), "CONF_MOTION_TEMPLATE should be None after clearing, not '{{ true }}'"
+
+
+@pytest.mark.integration
+async def test_options_flow_interp_clears_start_end(
+    hass: HomeAssistant,
+) -> None:
+    """Clearing interp start/end in options flow must set both keys to None.
+
+    Regression for issue #1267: submitting the interp form without
+    CONF_INTERP_START/CONF_INTERP_END while prior values are stored must
+    overwrite them with None, not leave the old custom range in place —
+    position_utils.interpolate_position() gates the custom-range remap on
+    both being not-None, so a stranded stale value keeps a custom
+    interpolation range silently active after the user believes it's off.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_INTERP,
+        CONF_INTERP_END,
+        CONF_INTERP_LIST,
+        CONF_INTERP_LIST_NEW,
+        CONF_INTERP_START,
+    )
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    pre_options = dict(VERTICAL_OPTIONS)
+    pre_options[CONF_INTERP] = True
+    pre_options[CONF_INTERP_START] = 10
+    pre_options[CONF_INTERP_END] = 90
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Interp Clear", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=pre_options,
+        entry_id="interp_clear_01",
+        title="Interp Clear",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "calibration"}
+    )
+    assert result["type"] == "menu"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "interp"}
+    )
+    assert result["type"] == "form"
+    assert result["step_id"] == "interp"
+
+    # Submit without CONF_INTERP_START/CONF_INTERP_END — simulates the user
+    # clearing both fields (bare Optionals with no default).
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_INTERP_LIST: [], CONF_INTERP_LIST_NEW: []},
+    )
+    assert result["type"] == "menu"  # async_step_interp forwards to calibration
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "init"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+
+    saved = result["data"]
+    assert (
+        saved.get(CONF_INTERP_START) is None
+    ), f"CONF_INTERP_START should be None after clearing, got {saved.get(CONF_INTERP_START)!r}"
+    assert (
+        saved.get(CONF_INTERP_END) is None
+    ), f"CONF_INTERP_END should be None after clearing, got {saved.get(CONF_INTERP_END)!r}"
+
+
+# ---------------------------------------------------------------------------
 # Regression tests for issue #565 — create-flow persistence drop (Defect A & B)
 # ---------------------------------------------------------------------------
 
