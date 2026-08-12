@@ -1166,7 +1166,7 @@
       },
       "card_installed": {
         "title": "Dashboard-Karte",
-        "description": "✅ Die Begleit-**Adaptive Cover Pro Card** ist installiert. Die Version ist nicht verfügbar, da die Karte als Dashboard-Ressource erkannt wurde.\n\nDie Karten lesen die Entitäten dieser Integration direkt ein, daher gibt es hier nichts zu konfigurieren. Siehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten und wie sie zu einem Dashboard hinzugefügt werden.\n\nNach einem Karten-Update führe die Aktion `lovelace.reload_resources` aus und lade den Browser vollständig neu — Home Assistant cached Dashboard-Module so stark, dass ein normales Reload die alte Version weiter bereitstellt."
+        "description": "✅ Die Begleit-**Adaptive Cover Pro Card** ist installiert, aber die installierte Version konnte nicht bestimmt werden. Öffne HACS, um sie zu überprüfen.\n\nDie Karten lesen die Entitäten dieser Integration direkt ein, daher gibt es hier nichts zu konfigurieren. Siehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten und wie sie zu einem Dashboard hinzugefügt werden.\n\nNach einem Karten-Update führe die Aktion `lovelace.reload_resources` aus und lade den Browser vollständig neu — Home Assistant cached Dashboard-Module so stark, dass ein normales Reload die alte Version weiter bereitstellt."
       },
       "card_add": {
         "title": "Dashboard-Karte",
@@ -1182,7 +1182,7 @@
       },
       "card_installed_update": {
         "title": "Dashboard-Karte",
-        "description": "✅ Die Begleit-**Adaptive Cover Pro Card** ist installiert, Version **{installed_version}**.\n\n⬆️ Version **{available_version}** ist verfügbar. Öffne HACS zum Download.\n\nSiehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten und wie sie zu einem Dashboard hinzugefügt werden.\n\nNach dem Update führe die Aktion `lovelace.reload_resources` aus und lade den Browser vollständig neu — Home Assistant cached Dashboard-Module so stark, dass ein normales Reload die alte Version weiter bereitstellt."
+        "description": "✅ Die Begleit-**Adaptive Cover Pro Card** ist installiert, Version **{installed_version}**.\n\n⬆️ Version **{available_version}** ist verfügbar. Öffne HACS zum Download.\n\nDie Karten lesen die Entitäten dieser Integration direkt ein, daher gibt es hier nichts zu konfigurieren. Siehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten und wie sie zu einem Dashboard hinzugefügt werden.\n\nNach dem Update führe die Aktion `lovelace.reload_resources` aus und lade den Browser vollständig neu — Home Assistant cached Dashboard-Module so stark, dass ein normales Reload die alte Version weiter bereitstellt."
       }
     },
     "abort": {

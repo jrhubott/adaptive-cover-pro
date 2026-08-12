@@ -5518,9 +5518,12 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> FlowResult:
         """Confirm the card is present, with no version to report.
 
-        Reached when the card was found as a hand-registered dashboard
-        resource carrying no ``?v=`` stamp: it is installed, but which build
-        is anyone's guess.
+        Reached whenever the version is unknowable, which is not the same as
+        "found as a dashboard resource". A hand-registered resource with no
+        ``?v=`` stamp is the common case, but HACS also reports a null
+        ``installed_version`` for a repository tracked from a branch rather
+        than a release. The screen therefore states only what is certain: the
+        card is installed, and which build is anyone's guess.
         """
         if user_input is not None:
             return await self.async_step_init()
@@ -5540,15 +5543,18 @@ class OptionsFlowHandler(OptionsFlow):
 
         ``status`` is threaded from the router so the render path resolves it
         once; HA passes only ``user_input``, so the submit path never needs it.
+        Reached without one, re-enter through the router rather than rendering
+        a screen whose version placeholder would come out empty.
         """
         if user_input is not None:
             return await self.async_step_init()
-        status = status or async_get_card_status(self.hass)
+        if status is None:
+            return await self.async_step_card()
         return self.async_show_form(
             step_id="card_installed_version",
             data_schema=vol.Schema({}),
             description_placeholders={
-                "installed_version": status.installed_version or "",
+                "installed_version": status.installed_version,
                 "learn_more": CARD_WIKI_URL,
             },
         )
@@ -5562,13 +5568,14 @@ class OptionsFlowHandler(OptionsFlow):
         """Report that a newer card version is waiting in HACS."""
         if user_input is not None:
             return await self.async_step_init()
-        status = status or async_get_card_status(self.hass)
+        if status is None:
+            return await self.async_step_card()
         return self.async_show_form(
             step_id="card_installed_update",
             data_schema=vol.Schema({}),
             description_placeholders={
-                "installed_version": status.installed_version or "",
-                "available_version": status.available_version or "",
+                "installed_version": status.installed_version,
+                "available_version": status.available_version,
                 "learn_more": CARD_WIKI_URL,
             },
         )

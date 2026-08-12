@@ -440,6 +440,40 @@ async def test_card_routes_on_status(
     assert result["step_id"] == expected_step
 
 
+async def test_hacs_install_without_a_version_does_not_claim_a_resource(
+    hass: HomeAssistant,
+) -> None:
+    """HACS reports a null ``installed_version`` for a branch-tracked repo.
+
+    That reaches the same versionless leaf a hand-registered resource does, so
+    the screen must not name a detection method the router never checked. It
+    asserts only what is certain: installed, version unknown.
+    """
+    status = CardStatus(
+        hacs_present=True,
+        hacs_ready=True,
+        installed=True,
+        installed_version=None,
+        available_version="v2.17.0",
+        detected_via="hacs",
+    )
+    with patch(_CARD_STATUS_SEAM, return_value=status):
+        result = await _cover_flow(hass).async_step_card()
+    assert result["step_id"] == "card_installed"
+    description = _en_step("card_installed")["description"]
+    assert "dashboard resource" not in description
+    assert "could not be determined" in description
+
+
+async def test_versionless_leaf_names_no_detection_method(hass: HomeAssistant) -> None:
+    """The same leaf serves a resource install and a versionless HACS install."""
+    for detected_via in ("resource", "hacs"):
+        status = CardStatus(installed=True, detected_via=detected_via)
+        with patch(_CARD_STATUS_SEAM, return_value=status):
+            result = await _cover_flow(hass).async_step_card()
+        assert result["step_id"] == "card_installed"
+
+
 async def test_matching_installed_and_available_is_not_an_update(
     hass: HomeAssistant,
 ) -> None:
@@ -529,33 +563,34 @@ async def test_update_screen_names_both_versions(hass: HomeAssistant) -> None:
 async def test_no_leaf_assembles_user_visible_prose_in_python(
     hass: HomeAssistant,
 ) -> None:
-    """Placeholders carry bare data, never English sentences.
+    """Every non-URL placeholder is a verbatim ``CardStatus`` field.
 
     A Python-built sentence would render untranslated inside an otherwise
     German or French screen, which is the whole reason each state has its own
     translation block instead of one block with a ``{version_line}`` hole.
+
+    Asserting equality with the source field rather than merely "contains no
+    space" is what keeps this from passing on ``⬆️v2.17.0`` or a single
+    English word.
     """
-    statuses = [
-        CardStatus(installed=True, detected_via="resource"),
-        CardStatus(installed=True, installed_version="v2.17.0", detected_via="hacs"),
-        CardStatus(
-            installed=True,
-            installed_version="v2.16.0",
-            available_version="v2.17.0",
-            detected_via="hacs",
-        ),
-        CardStatus(hacs_present=True, hacs_ready=True),
-        CardStatus(),
-    ]
-    for status in statuses:
+    checked = 0
+    for status in _LEAF_STATUS.values():
         with patch(_CARD_STATUS_SEAM, return_value=status):
             result = await _cover_flow(hass).async_step_card()
         for name, value in result["description_placeholders"].items():
             if name == "learn_more" or name.endswith("_url"):
                 continue
-            # A bare version or an empty string: no spaces, no markdown.
-            assert " " not in value, f"{result['step_id']}/{name} carries prose"
-            assert "*" not in value, f"{result['step_id']}/{name} carries markdown"
+            assert value == getattr(status, name), (
+                f"{result['step_id']}/{name} is not the bare CardStatus field: "
+                f"{value!r} != {getattr(status, name)!r}"
+            )
+            checked += 1
+    # Guard the guard: three data placeholders exist across the five leaves
+    # (installed_version twice, available_version once). A refactor that
+    # renames them must not silently turn this test into a no-op.
+    assert (
+        checked == 3
+    ), f"expected 3 data placeholders across the leaves, saw {checked}"
 
 
 _LEAF_STATUS = {
@@ -600,12 +635,17 @@ async def test_every_leaf_returns_to_the_menu_on_submit(
     ["card_installed_version", "card_installed_update"],
     ids=["version", "update"],
 )
-async def test_version_leaves_resolve_status_when_called_directly(
+async def test_version_leaves_reroute_when_reached_without_a_status(
     hass: HomeAssistant, step_id: str
 ) -> None:
-    """HA can route to a leaf without the router threading ``status`` in."""
+    """Reached with no ``status``, a version leaf re-enters through the router.
+
+    Rendering anyway would put an empty string in the version placeholder and
+    show "on version ****" to the user.
+    """
     _install_hacs(hass, _hacs(repo=_repo(installed_version="v2.17.0")))
     result = await getattr(_cover_flow(hass), f"async_step_{step_id}")()
+    assert result["step_id"] == "card_installed_version"
     assert result["description_placeholders"]["installed_version"] == "v2.17.0"
 
 
