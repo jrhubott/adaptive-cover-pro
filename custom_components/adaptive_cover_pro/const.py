@@ -1598,7 +1598,12 @@ DEFAULT_MOTION_TIMEOUT_MODE = MOTION_TIMEOUT_MODE_RETURN  # default mode
 POSITION_CHECK_INTERVAL_MINUTES = 1  # minutes — recheck cadence
 # Default for the now-configurable CONF_POSITION_TOLERANCE (issue #507). Still
 # the fixed floor for the manual-override threshold (effective_manual_threshold
-# in managers/manual_override.py reads this constant directly, NOT the option).
+# in managers/manual_override/secondary_axis.py reads this constant directly,
+# NOT the option — see that function's docstring for why a widened arrival
+# tolerance must not raise the false-positive floor).
+# It is also why both manual-override axes compare with STRICT ``>`` (#1273):
+# a delta this predicate's own `<=` reading calls "arrived" must not also read
+# as a user touch.
 POSITION_TOLERANCE_PERCENT = 3  # % — "position matches" tolerance (default)
 MAX_POSITION_RETRIES = 3  # maximum re-send attempts before giving up
 # Default for CONF_ENABLE_POSITION_MATCHING (issue #591). False = matching off:

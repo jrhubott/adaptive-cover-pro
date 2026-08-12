@@ -151,8 +151,9 @@ class TestSuppressed:
         assert res.event_name == "manual_override_set"
         assert res.event_kwargs["our_state"] == 70
         assert res.event_kwargs["new_position"] == 20
-        # The numeric path's reason text wins — no "back-rotate" wording.
-        assert res.event_kwargs["reason"].startswith("tilt delta 50.0% >= threshold")
+        # The numeric path's reason text wins — no "back-rotate" wording. The
+        # operator is STRICT ``>`` (issue #1273), matching the primary axis.
+        assert res.event_kwargs["reason"].startswith("tilt delta 50.0% > threshold")
 
     def test_predicate_called_with_entity_and_delta(self):
         # Verify the widened signature is actually used.

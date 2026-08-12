@@ -189,6 +189,90 @@ def test_restore_from_attributes_filters_unknown_entities():
 
 
 # ---------------------------------------------------------------------------
+# Test 3b: A corrupted per_entity VALUE cannot break sensor setup (issue #1273)
+# ---------------------------------------------------------------------------
+#
+# The shared base seam guards the per_entity MAPPING shape, so neither
+# restorable subclass iterates a non-mapping. Nothing guarded the values, and
+# the restore payload is whatever a prior build (possibly an older one, after a
+# roll-back) happened to write. #1232 was a reboot-path wipe in this same code.
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [
+        pytest.param("not-a-timestamp", id="unparseable-string"),
+        pytest.param("", id="empty-string"),
+        pytest.param(None, id="none"),
+        pytest.param(12345, id="not-a-string"),
+        pytest.param(["2026-01-01T00:00:00+00:00"], id="list"),
+        # Parses cleanly, then explodes on the aware/naive comparison — the
+        # shape a rolled-back build could have persisted.
+        pytest.param("2099-01-01T00:00:00", id="naive-timestamp"),
+    ],
+)
+def test_restore_skips_a_corrupt_entry_without_raising(bad_value):
+    """A bad entry is dropped; it must not propagate out of the restore."""
+    eid = "cover.living_room"
+    manager = _make_manager(covers={eid})
+    sensor = _make_sensor(manager)
+
+    restored = sensor._restore_from_attributes({eid: bad_value})
+
+    assert restored is False
+    assert manager.manual_control.get(eid, False) is False
+    assert eid not in manager.manual_control_time
+
+
+def test_restore_keeps_good_entries_alongside_a_corrupt_one():
+    """One bad cover must not cost the others their override (issue #1273)."""
+    good = "cover.good"
+    bad = "cover.bad"
+    manager = _make_manager(covers={good, bad})
+    sensor = _make_sensor(manager)
+
+    expiry = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=30)
+    restored = sensor._restore_from_attributes(
+        {bad: "not-a-timestamp", good: expiry.isoformat()}
+    )
+
+    assert restored is True
+    assert manager.manual_control.get(good) is True
+    assert manager.manual_control.get(bad, False) is False
+
+
+# ---------------------------------------------------------------------------
+# Test 3c: restore_override records its own event (issue #1273)
+# ---------------------------------------------------------------------------
+
+
+def test_restore_override_records_its_own_event():
+    """The manager owns its diagnostics, not the sensor calling _record_event."""
+    eid = "cover.living_room"
+    manager = _make_manager(covers={eid})
+
+    expiry = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=30)
+    manager.restore_override(eid, expiry)
+
+    events = [e for e in manager.get_event_buffer() if e.get("event") == "restored"]
+    assert len(events) == 1
+    assert events[0]["entity_id"] == eid
+
+
+def test_restore_path_does_not_double_record():  # noqa: D103
+    """The sensor must not add a second ``restored`` event on top of the manager's."""
+    eid = "cover.living_room"
+    manager = _make_manager(covers={eid})
+    sensor = _make_sensor(manager)
+
+    expiry = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=30)
+    sensor._restore_from_attributes({eid: expiry.isoformat()})
+
+    events = [e for e in manager.get_event_buffer() if e.get("event") == "restored"]
+    assert len(events) == 1
+
+
+# ---------------------------------------------------------------------------
 # Test 4: Startup skip — async_handle_first_refresh skips manual covers
 # ---------------------------------------------------------------------------
 

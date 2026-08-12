@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 import datetime as dt
 from dataclasses import asdict, dataclass, field
+import logging
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -64,6 +65,8 @@ from .helpers import (
 from .reason_i18n import Reason, render, reason_to_dict
 from .templates import is_template_string
 from .unit_system import length_display_unit, to_display_length
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _localized_reason(
@@ -281,6 +284,42 @@ class _ACPRestorableDiagnosticSensor(_ACPDiagnosticSensor, RestoreEntity):
         return False
 
 
+def _parse_restored_expiry(entity_id: str, raw: Any) -> dt.datetime | None:
+    """Parse one restored expiry value, or return None if it is unusable (#1273).
+
+    Rejects anything ``fromisoformat`` cannot take, and anything it CAN take but
+    that comes back naive — a naive value compares fine here and then raises
+    ``TypeError`` against the tz-aware ``now`` at the call site, so it has to be
+    caught at the parse rather than trusted through.
+    """
+    if not isinstance(raw, str):
+        _LOGGER.warning(
+            "Discarding restored manual-override expiry for %s: expected an "
+            "ISO-8601 string, got %s",
+            entity_id,
+            type(raw).__name__,
+        )
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(raw)
+    except ValueError:
+        _LOGGER.warning(
+            "Discarding unparseable restored manual-override expiry for %s: %r",
+            entity_id,
+            raw,
+        )
+        return None
+    if parsed.tzinfo is None:
+        _LOGGER.warning(
+            "Discarding restored manual-override expiry for %s: %r carries no "
+            "timezone, so its true instant is unknown",
+            entity_id,
+            raw,
+        )
+        return None
+    return parsed
+
+
 class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
     """Concrete: rehydrate manual-override manager from per_entity expiry dict."""
 
@@ -290,6 +329,14 @@ class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
         per_entity maps cover entity_id → ISO-8601 UTC expiry string.
         Entries that are expired or not in the current cover set are dropped.
         Returns True if at least one entity was restored.
+
+        A malformed value is dropped with a warning rather than raised (issue
+        #1273). The payload is whatever some earlier build wrote, so this cannot
+        assume its own output shape: an unparseable or non-string value would
+        otherwise raise straight out of ``async_added_to_hass``, and a NAIVE
+        timestamp — the shape a rolled-back build could persist — parses cleanly
+        and then raises ``TypeError`` on the comparison below. One bad cover must
+        not cost every other cover its override (cf. #1232).
         """
         now = dt.datetime.now(dt.UTC)
         manager = self.coordinator.manager
@@ -298,17 +345,10 @@ class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
         for eid, expiry_iso in per_entity.items():
             if eid not in manager.covers:
                 continue
-            expiry = dt.datetime.fromisoformat(expiry_iso)
-            if expiry <= now:
+            expiry = _parse_restored_expiry(eid, expiry_iso)
+            if expiry is None or expiry <= now:
                 continue
             manager.restore_override(eid, expiry)
-            manager._record_event(  # noqa: SLF001
-                eid,
-                "restored",
-                our_state=None,
-                new_position=None,
-                reason="restored from RestoreEntity after reboot",
-            )
             restored_any = True
 
         return restored_any
@@ -769,11 +809,16 @@ def _last_action_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
 
 
 def _manual_override_expiries(s: _ManualOverrideEndSensor) -> dict[str, dt.datetime]:
-    """Per-entity resolved override end times, via the manager's single authority."""
+    """Per-entity resolved override end times, via the manager's single authority.
+
+    Iterates ``active_entities()`` rather than a raw state store (issue #1273),
+    so this sensor and the ``manual_override_state`` diagnostics block cannot
+    disagree about which covers are held.
+    """
     manager = s.coordinator.manager
     return {
         entity_id: expiry
-        for entity_id in manager.manual_control_time
+        for entity_id in manager.active_entities()
         if (expiry := manager.expiry_for(entity_id)) is not None
     }
 
