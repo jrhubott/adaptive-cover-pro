@@ -1886,6 +1886,10 @@
           "description": "Wenn wahr, wird min_position nur während Sonnenverfolgung angewendet.",
           "name": "Minimum-Position nur während Verfolgung aktivieren"
         },
+        "enable_position_matching": {
+          "description": "Wenn wahr, sendet der Abgleichdurchlauf das Ziel erneut, bis die Beschattung es erreicht. Wenn falsch (Standard), wird die Beschattung einmal angesteuert, und ein Ruhezustand jenseits der Positionstoleranz wird zu einer manuellen Übersteuerung.",
+          "name": "Positionsabgleich aktivieren"
+        },
         "min_position_sun_tracking": {
           "name": "Min. Position während Sonnennachführung",
           "description": "Optionale separate Minimalgrenze, die nur während der Sonnennachführung gilt (0–99%). Wenn gesetzt, überschreibt sie min_position nur für Sonnennachführungs-Pfade. Leer lassen, um min_position für alle Pfade zu verwenden."

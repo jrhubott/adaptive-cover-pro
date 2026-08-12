@@ -1583,6 +1583,10 @@
           "name": "Open/close threshold",
           "description": "Position below which open/close-only covers are closed (1–99%)."
         },
+        "enable_position_matching": {
+          "name": "Enable position matching",
+          "description": "If true, the reconciliation pass resends the target until the cover reaches it. If false (the default), the cover is commanded once and a settle past the position tolerance becomes a manual override."
+        },
         "inverse_state": {
           "name": "Inverse state",
           "description": "Invert position for covers that report state inversely."

@@ -262,6 +262,16 @@ set_position_limits:
       description: "If true, min_position applies only while sun is tracked."
       selector:
         boolean:
+    min_position_sun_tracking:
+      name: Min position during sun tracking
+      description: "Optional separate minimum floor that applies only during sun tracking (0–99%). When set, overrides min_position for sun-tracking paths only. Leave unset to use min_position for all paths."
+      selector:
+        number:
+          min: 0
+          max: 99
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
     max_position:
       name: Maximum position
       description: "Maximum position the cover may move to (0–100%; 0 = always closed)."
