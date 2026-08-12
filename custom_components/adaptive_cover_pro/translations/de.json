@@ -338,7 +338,8 @@
           "change_cover_type": "🔁 Beschattungstyp ändern",
           "calibration": "📐 Kalibrierung",
           "queue_settings": "🚦 Warteschlangen-Einstellungen",
-          "queue_overview": "🚦 Warteschlangen-Übersicht"
+          "queue_overview": "🚦 Warteschlangen-Übersicht",
+          "card": "🖼️ Dashboard-Karte"
         },
         "description": "Konfiguration: **{instance_name}**{profile_line}\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
       },
@@ -1162,6 +1163,26 @@
       "queue_overview": {
         "title": "Warteschlangen-Übersicht",
         "description": "{overview}"
+      },
+      "card_installed": {
+        "title": "Dashboard-Karte",
+        "description": "✅ Die Begleit-**Adaptive Cover Pro Card** ist installiert, aber die installierte Version konnte nicht bestimmt werden.\n\nDie Karten lesen die Entitäten dieser Integration direkt ein, daher gibt es hier nichts zu konfigurieren. Siehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten und wie sie zu einem Dashboard hinzugefügt werden.\n\nNach einem Karten-Update führe die Aktion `lovelace.reload_resources` aus und lade den Browser vollständig neu — Home Assistant cached Dashboard-Module so stark, dass ein normales Reload die alte Version weiter bereitstellt."
+      },
+      "card_add": {
+        "title": "Dashboard-Karte",
+        "description": "Die Begleit-**Adaptive Cover Pro Card** wandelt die Sensoren dieser Integration in ein Dashboard um, das du auf einen Blick lesen kannst — Sonnen- und Fenstergeometrie, die Entscheidungsspur und aktuelle Beschattungspositionen mit Inline-Steuerelementen.\n\nSie ist auf diesem System nicht installiert.\n\n➕ [Karte zu HACS hinzufügen]({install_url})\n\nHACS öffnet die Seite der Karte und bittet dich zunächst, das Repository zu bestätigen, falls es noch nicht bekannt ist. Lade sie dort herunter und aktualisiere anschließend den Browser — die Karten erscheinen dann in der Kartenauswahl unter **Adaptive Cover Pro**.\n\nSiehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten."
+      },
+      "card_manual": {
+        "title": "Dashboard-Karte",
+        "description": "Die Begleit-**Adaptive Cover Pro Card** ist nicht installiert, und HACS wurde auf diesem System nicht gefunden.\n\nInstalliere [HACS]({hacs_url}) und öffne diese Seite erneut für ein One-Click-Add — das ist der empfehlenswerte Weg, da HACS auch Updates verwaltet.\n\nUm es stattdessen von Hand zu tun: [lade die Karte herunter]({download_url}), platziere `adaptive-cover-pro-card.js` in `www/community/adaptive-cover-pro-card/`, und registriere es dann unter **Einstellungen → Dashboards → ⋮ → Ressourcen** als JavaScript-Modul.\n\nSiehe [Dashboard-Karten]({learn_more}) für die vollständigen Anweisungen."
+      },
+      "card_installed_version": {
+        "title": "Dashboard-Karte",
+        "description": "✅ Die Begleit-**Adaptive Cover Pro Card** ist installiert, Version **{installed_version}**.\n\nDie Karten lesen die Entitäten dieser Integration direkt ein, daher gibt es hier nichts zu konfigurieren. Siehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten und wie sie zu einem Dashboard hinzugefügt werden.\n\nNach einem Karten-Update führe die Aktion `lovelace.reload_resources` aus und lade den Browser vollständig neu — Home Assistant cached Dashboard-Module so stark, dass ein normales Reload die alte Version weiter bereitstellt."
+      },
+      "card_installed_update": {
+        "title": "Dashboard-Karte",
+        "description": "✅ Die Begleit-**Adaptive Cover Pro Card** ist installiert, Version **{installed_version}**.\n\n⬆️ Version **{available_version}** ist verfügbar. Öffne HACS zum Download.\n\nDie Karten lesen die Entitäten dieser Integration direkt ein, daher gibt es hier nichts zu konfigurieren. Siehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten und wie sie zu einem Dashboard hinzugefügt werden.\n\nNach dem Update führe die Aktion `lovelace.reload_resources` aus und lade den Browser vollständig neu — Home Assistant cached Dashboard-Module so stark, dass ein normales Reload die alte Version weiter bereitstellt."
       }
     },
     "abort": {
