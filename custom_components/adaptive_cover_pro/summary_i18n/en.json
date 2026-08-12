@@ -165,6 +165,7 @@
   "timing": {
     "from_entity": "from {entity}",
     "from_time": "from {time}",
+    "from_sunrise": "from sunrise",
     "until_entity": "until {entity}",
     "until_time": "until {time}",
     "active_daylight": "Active during daylight",

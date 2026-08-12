@@ -1708,6 +1708,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     # --- Timing window ---
     "timing.from_entity": "from {entity}",
     "timing.from_time": "from {time}",
+    "timing.from_sunrise": "from sunrise",
     "timing.until_entity": "until {entity}",
     "timing.until_time": "until {time}",
     "timing.active_daylight": "Active during daylight",
@@ -2902,10 +2903,18 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     sunset_time_entity = config.get(CONF_SUNSET_TIME_ENTITY)
     sunrise_time_entity = config.get(CONF_SUNRISE_TIME_ENTITY)
     timing_parts = []
+    # A blank/unset start no longer means "no lower bound" once an end bound
+    # IS configured — it anchors to astronomical sunrise instead of midnight
+    # (issue #1256), matching the start_time option's documented "leave
+    # blank to start at sunrise". With no end bound either, the window stays
+    # unbounded on both sides and this stays silent, as before.
+    end_bound_configured = bool(end_entity) or bool(end_time and end_time != BLANK_TIME)
     if start_entity:
         timing_parts.append(L["timing.from_entity"].format(entity=start_entity))
     elif start_time and start_time != BLANK_TIME:
         timing_parts.append(L["timing.from_time"].format(time=start_time))
+    elif end_bound_configured:
+        timing_parts.append(L["timing.from_sunrise"])
     if end_entity:
         timing_parts.append(L["timing.until_entity"].format(entity=end_entity))
     elif end_time and end_time != BLANK_TIME:

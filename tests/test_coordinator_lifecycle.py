@@ -398,6 +398,93 @@ async def test_coordinator_injects_time_mgr_into_snapshot_builder(
     assert coordinator._snapshot_builder._time_mgr is coordinator._time_mgr
 
 
+async def test_coordinator_sunrise_provider_resolves_naive_local_sunrise(
+    hass: HomeAssistant,
+) -> None:
+    """The coordinator wires a real ``sunrise_provider`` into TimeWindowManager (#1256).
+
+    ``TimeWindowManager.after_start_time`` anchors a blank start time to
+    sunrise instead of midnight once an end bound is configured — but only
+    if the injected closure actually resolves a sane naive-LOCAL value, the
+    same frame ``local_now_naive()`` reads. Pacific/Auckland (UTC+12) makes a
+    naive-UTC leak obvious: astral's sunrise is UTC-aware, so a fix that
+    forgot the ``dt_util.as_local`` conversion (or stripped tzinfo without
+    converting) would land ~12 hours away from a plausible Auckland morning.
+    """
+    import datetime as dt
+    import zoneinfo
+    from unittest.mock import patch
+
+    from homeassistant import config_entries as ha_config_entries
+
+    auckland = zoneinfo.ZoneInfo("Pacific/Auckland")
+    hass.config.time_zone = "Pacific/Auckland"
+    hass.config.latitude = -36.8485
+    hass.config.longitude = 174.7633
+    hass.config.elevation = 20
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Sunrise Provider Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="sunrise_provider_01",
+        title="Sunrise Provider Cover",
+    )
+    entry.add_to_hass(hass)
+
+    with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", auckland):
+        token = ha_config_entries.current_entry.set(entry)
+        try:
+            coordinator = AdaptiveDataUpdateCoordinator(hass)
+        finally:
+            ha_config_entries.current_entry.reset(token)
+
+        sunrise = coordinator._time_mgr._sunrise_provider()
+
+    assert sunrise is not None
+    assert sunrise.tzinfo is None  # naive-local, matching local_now_naive()
+    # A same-instant value stuck in UTC (the bug this guards) would land
+    # many hours off any plausible Auckland sunrise hour.
+    assert dt.time(4, 0) <= sunrise.time() <= dt.time(10, 0)
+
+
+async def test_coordinator_sunrise_provider_fails_open_on_error(
+    hass: HomeAssistant,
+) -> None:
+    """A broken sun-data read must not crash — the sunrise_provider fails open to None.
+
+    Mirrors ``after_start_time``'s own fail-open-to-True contract for "no
+    sunrise available" (issue #1256): any error resolving today's
+    astronomical sunrise degrades gracefully instead of raising out of a
+    property read every coordinator cycle would hit.
+    """
+    from unittest.mock import patch
+
+    from homeassistant import config_entries as ha_config_entries
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Sunrise Error Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="sunrise_provider_err_01",
+        title="Sunrise Error Cover",
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        coordinator = AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+    with patch.object(
+        coordinator._sun_provider,
+        "create_sun_data",
+        side_effect=RuntimeError("boom"),
+    ):
+        assert coordinator._time_mgr._sunrise_provider() is None
+
+
 # ---------------------------------------------------------------------------
 # Venetian mode wiring
 # ---------------------------------------------------------------------------
