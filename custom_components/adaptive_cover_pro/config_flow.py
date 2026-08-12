@@ -5547,7 +5547,9 @@ class OptionsFlowHandler(OptionsFlow):
 
         Deliberately does NOT say "up to date": this leaf is reached whenever
         ``available_version`` is falsy *or* equal to the installed one, and an
-        unknown available version is not evidence of being current.
+        unknown available version is not evidence of being current. Like
+        ``card_installed`` it must also not mention HACS, being equally
+        reachable on a system that has none.
 
         ``status`` is threaded from the router so the render path resolves it
         once; HA passes only ``user_input``, so the submit path never needs it.

@@ -357,7 +357,7 @@
       },
       "card_add": {
         "title": "Dashboard Card",
-        "description": "The companion **Adaptive Cover Pro Card** turns this integration's sensors into a dashboard you can read at a glance — sun and window geometry, the decision trace, and live cover positions with inline controls.\n\nIt is not installed on this system.\n\n➕ [Add the card to HACS]({install_url})\n\nHACS will ask you to confirm adding the repository, then offer it for download. Refresh the browser afterwards and the cards appear in the card picker under **Adaptive Cover Pro**.\n\nSee [Dashboard Cards]({learn_more}) for what each card shows."
+        "description": "The companion **Adaptive Cover Pro Card** turns this integration's sensors into a dashboard you can read at a glance — sun and window geometry, the decision trace, and live cover positions with inline controls.\n\nIt is not installed on this system.\n\n➕ [Add the card to HACS]({install_url})\n\nHACS opens the card's page, asking you to confirm the repository first if it is not already tracked. Download it there, then refresh the browser and the cards appear in the card picker under **Adaptive Cover Pro**.\n\nSee [Dashboard Cards]({learn_more}) for what each card shows."
       },
       "card_manual": {
         "title": "Dashboard Card",

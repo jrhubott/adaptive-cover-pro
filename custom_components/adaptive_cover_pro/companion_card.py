@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from urllib.parse import parse_qs, urlsplit
 
 from homeassistant.core import HomeAssistant, callback
 
@@ -49,8 +50,10 @@ LOVELACE_DOMAIN = "lovelace"
 # an object at hass.data["hacs"], but one whose repo list is empty or stale.
 _HACS_STAGE_RUNNING = "running"
 
-# The cache-buster users maintain by hand on a manually registered resource.
-_VERSION_QUERY = "?v="
+# The cache-buster query parameter users maintain by hand on a manually
+# registered resource. HACS stamps its own URLs with ``hacstag`` instead, which
+# is deliberately not read: it is a build tag, not a version.
+_VERSION_PARAM = "v"
 
 # ── Outbound links ──────────────────────────────────────────────────────────
 # ``category`` is load-bearing: HACS's repository dashboard only offers its
@@ -156,14 +159,20 @@ def _status_from_hacs(hacs: object | None) -> CardStatus | None:
 
 
 def _hacs_is_ready(hacs: object | None) -> bool:
-    """Whether HACS is loaded far enough for its repository list to be trusted."""
+    """Whether HACS is loaded far enough for its repository list to be trusted.
+
+    Both attributes are read through ``getattr`` defaults rather than as bare
+    chains. If HACS renames ``system.disabled``, the default says "not
+    disabled" and the stage check still decides — a rename must not silently
+    take the whole HACS rung down and leave every install falling back to
+    resource detection with no version to report.
+    """
     if hacs is None:
         return False
     try:
-        return (
-            getattr(hacs, "stage", None) == _HACS_STAGE_RUNNING
-            and not hacs.system.disabled  # type: ignore[attr-defined]
-        )
+        if getattr(hacs, "stage", None) != _HACS_STAGE_RUNNING:
+            return False
+        return not getattr(getattr(hacs, "system", None), "disabled", False)
     except Exception:
         _LOGGER.debug("Could not read HACS readiness", exc_info=True)
         return False
@@ -172,15 +181,17 @@ def _hacs_is_ready(hacs: object | None) -> bool:
 def _card_resource_url(hass: HomeAssistant) -> str | None:
     """Return the card's registered dashboard-resource URL, if one exists.
 
-    Matches on the bundle filename so both the HACS path
-    (``/hacsfiles/...``) and a hand-registered ``/local/...`` copy are found.
+    Compares the URL's final path segment rather than searching the whole
+    string, so both the HACS path (``/hacsfiles/...``) and a hand-registered
+    ``/local/...`` copy match, while a longer name that merely contains ours
+    (``my-adaptive-cover-pro-card.js``, or a ``.js.map``) does not.
     """
     try:
         resources = getattr(hass.data.get(LOVELACE_DOMAIN), "resources", None)
         items = resources.async_items() if resources is not None else ()
         for item in items:
             url = item.get("url") or ""
-            if CARD_JS_FILENAME in url:
+            if urlsplit(url).path.rsplit("/", 1)[-1] == CARD_JS_FILENAME:
                 return url
     except Exception:
         _LOGGER.debug("Could not read the dashboard resources", exc_info=True)
@@ -188,5 +199,11 @@ def _card_resource_url(hass: HomeAssistant) -> str | None:
 
 
 def _version_from_url(url: str) -> str | None:
-    """Lift the ``?v=`` stamp a manual install carries, when it has one."""
-    return url.partition(_VERSION_QUERY)[2] or None
+    """Lift the ``?v=`` stamp a manual install carries, when it has one.
+
+    Parsed as a query parameter rather than split on the string, so a URL
+    carrying more than one parameter yields the version alone instead of
+    everything trailing it.
+    """
+    values = parse_qs(urlsplit(url).query).get(_VERSION_PARAM)
+    return values[0] if values else None

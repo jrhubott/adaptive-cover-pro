@@ -142,6 +142,16 @@ def _en_step(step_id: str) -> dict:
     return json.loads(_EN_JSON.read_text(encoding="utf-8"))["options"]["step"][step_id]
 
 
+# Discovered, not hardcoded, so a language added via `acp-translate` is covered
+# by the prose guards below the day it lands rather than silently skipped.
+_LANGUAGES = sorted(p.stem for p in _EN_JSON.parent.glob("*.json"))
+
+
+def _step(language: str, step_id: str) -> dict:
+    path = _EN_JSON.parent / f"{language}.json"
+    return json.loads(path.read_text(encoding="utf-8"))["options"]["step"][step_id]
+
+
 # ---------------------------------------------------------------------------
 # Detection — companion_card.async_get_card_status
 # ---------------------------------------------------------------------------
@@ -241,6 +251,44 @@ def test_unrelated_resource_is_not_mistaken_for_the_card(hass: HomeAssistant) ->
     assert async_get_card_status(hass).installed is False
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"/hacsfiles/x/my-{CARD_JS_FILENAME}",
+        f"/hacsfiles/x/{CARD_JS_FILENAME}.map",
+        f"/hacsfiles/x/{CARD_JS_FILENAME}.bak",
+    ],
+    ids=["longer-name", "sourcemap", "backup"],
+)
+def test_a_url_merely_containing_the_filename_is_not_the_card(
+    hass: HomeAssistant, url: str
+) -> None:
+    """Matching is on the final path segment, not a substring of the whole URL."""
+    _install_resource(hass, url)
+    assert async_get_card_status(hass).installed is False
+
+
+def test_version_is_parsed_as_a_query_parameter_not_a_string_split(
+    hass: HomeAssistant,
+) -> None:
+    """A second parameter must not end up glued to the version."""
+    _install_resource(hass, f"/hacsfiles/x/{CARD_JS_FILENAME}?v=1.2&cachebust=9")
+    assert async_get_card_status(hass).installed_version == "1.2"
+
+
+def test_version_survives_a_parameter_ordered_before_it(hass: HomeAssistant) -> None:
+    _install_resource(hass, f"/hacsfiles/x/{CARD_JS_FILENAME}?cachebust=9&v=1.2")
+    assert async_get_card_status(hass).installed_version == "1.2"
+
+
+def test_hacstag_is_not_read_as_a_version(hass: HomeAssistant) -> None:
+    """HACS stamps a build tag, not a version. Reporting it would mislead."""
+    _install_resource(hass, f"/hacsfiles/x/{CARD_JS_FILENAME}?hacstag=1217318442217")
+    status = async_get_card_status(hass)
+    assert status.installed is True
+    assert status.installed_version is None
+
+
 def test_hacs_wins_over_resource_when_both_present(hass: HomeAssistant) -> None:
     _install_hacs(hass, _hacs(repo=_repo(installed_version="v2.17.0")))
     _install_resource(hass, f"/hacsfiles/x/{CARD_JS_FILENAME}?v=1.0.0")
@@ -304,6 +352,33 @@ def test_hacs_object_missing_expected_attributes_degrades(hass: HomeAssistant) -
     status = async_get_card_status(hass)
     assert status.hacs_present is True
     assert status.hacs_ready is False
+
+
+def test_a_renamed_disabled_attribute_does_not_kill_the_hacs_rung(
+    hass: HomeAssistant,
+) -> None:
+    """HACS carries ``disabled_reason`` too; ``disabled`` could go away.
+
+    Losing it must not silently drop every install to resource detection with
+    no version to report — the stage check still decides.
+    """
+    _install_hacs(
+        hass,
+        SimpleNamespace(
+            stage="running",
+            system=SimpleNamespace(disabled_reason=None),
+            repositories=SimpleNamespace(get_by_full_name=lambda _n: _repo()),
+        ),
+    )
+    status = async_get_card_status(hass)
+    assert status.hacs_ready is True
+    assert status.installed is True
+    assert status.detected_via == "hacs"
+
+
+def test_hacs_without_a_system_object_is_not_ready(hass: HomeAssistant) -> None:
+    _install_hacs(hass, SimpleNamespace(stage="startup"))
+    assert async_get_card_status(hass).hacs_ready is False
 
 
 def test_exploding_lovelace_resources_degrade(hass: HomeAssistant) -> None:
@@ -619,33 +694,50 @@ async def test_no_leaf_assembles_user_visible_prose_in_python(
     ["card_installed", "card_installed_version"],
     ids=["versionless", "version"],
 )
-@pytest.mark.parametrize("language", ["en", "de", "fr"], ids=lambda s: s)
+@pytest.mark.parametrize("language", _LANGUAGES, ids=lambda s: s)
 def test_installed_screens_never_mention_hacs(step_id: str, language: str) -> None:
     """Both are reachable with HACS absent, where ``card_manual`` says so.
 
     Telling a HACS-less install to "open HACS" is the same fault as claiming a
     detection method the router never checked: the screen asserting more than
-    the state it was routed on.
+    the state it was routed on. The language list is discovered, so a new
+    translation is covered the day it lands.
     """
-    path = _EN_JSON.parent / f"{language}.json"
-    block = json.loads(path.read_text(encoding="utf-8"))["options"]["step"][step_id]
-    assert "HACS" not in block["description"]
+    assert "HACS" not in _step(language, step_id)["description"]
 
 
-def test_version_screen_does_not_claim_to_be_up_to_date() -> None:
+# Phrases that would assert the install is current. Per-language because the
+# claim is prose, not a token: French "à jour" cannot be matched directly, as
+# "mise à jour" (update) contains it.
+_CURRENCY_CLAIMS = {
+    "en": ("up to date", "latest version", "is current"),
+    "de": ("auf dem neuesten Stand", "ist aktuell"),
+    "fr": ("est à jour", "sont à jour", "dernière version"),
+}
+
+
+def test_currency_claim_phrases_cover_every_shipped_language() -> None:
+    """A new language must declare its phrases, or the guard below goes blind."""
+    assert set(_LANGUAGES) == set(_CURRENCY_CLAIMS)
+
+
+@pytest.mark.parametrize("language", _LANGUAGES, ids=lambda s: s)
+def test_version_screen_does_not_claim_to_be_up_to_date(language: str) -> None:
     """It is reached when ``available_version`` is unknown, not just equal.
 
     ``async_step_card`` routes here on ``installed_version`` alone once the
     update branch declines, so an install whose available version was never
     reported would be told it is current on no evidence.
     """
-    description = _en_step("card_installed_version")["description"]
-    assert "up to date" not in description
+    description = _step(language, "card_installed_version")["description"]
+    for phrase in _CURRENCY_CLAIMS[language]:
+        assert phrase not in description, f"{language} claims currency: {phrase!r}"
 
 
-async def test_unknown_available_version_is_not_reported_as_current(
+async def test_unknown_available_version_still_routes_to_the_version_screen(
     hass: HomeAssistant,
 ) -> None:
+    """Routing only. The prose half is asserted by the guard above."""
     status = CardStatus(
         installed=True,
         installed_version="2.10.0",
