@@ -5013,6 +5013,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         is where ``_pipeline_result`` is first set to ``None``); treating a
         missing attribute the same as ``None`` mirrors real startup, where the
         pipeline hasn't evaluated yet.
+
+        **Freshness precondition (issue #1241):** this reads whatever
+        ``_pipeline_result`` a coordinator update cycle last wrote — it does
+        NOT itself evaluate the pipeline. ``_pipeline_result`` is only
+        reassigned inside ``_calculate_cover_state``, and this coordinator has
+        no periodic update interval, so between ``end_time`` and the tick that
+        notices the window closed, a stale in-window winner (SOLAR/CLIMATE/
+        CLOUD/GLARE_ZONE) can sit here for up to a full reconciliation
+        interval even though that handler would decline the instant it were
+        re-evaluated with the window closed. A caller that needs "is a
+        higher-priority handler winning *right now*" — a true one-shot with no
+        further retry — must refresh the pipeline immediately before calling
+        this method, the way ``_on_window_closed`` does. ``check_sunset_window``
+        does not need that refresh: unlike the end-time edge, its False→True
+        edge is deliberately left unresolved when this guard trips (see its
+        docstring), so a stale True here only delays the sunset dispatch to
+        the next reconciliation tick (≤1 minute) rather than losing it for the
+        day — the edge self-heals without a refresh.
         """
         result = getattr(self, "_pipeline_result", None)
         if result is None:
@@ -5129,6 +5147,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     "skipping return-to-default reposition"
                 )
                 return
+            # Issue #1241: refresh BEFORE consulting the override guard below.
+            # The guard's question is "is a higher-priority handler winning
+            # *now that the window is closed*" — but this tick's
+            # ``_pipeline_result`` was last written by whichever coordinator
+            # cycle happened to run most recently, which may predate
+            # ``end_time`` by up to a full reconciliation interval if no
+            # tracked entity changed state in the gap. A stale in-window
+            # winner (SOLAR/CLIMATE/CLOUD/GLARE_ZONE) would otherwise look
+            # like an active override forever, even though every one of
+            # those handlers declines the instant the clock window closes.
+            # This refresh re-evaluates the pipeline with the window already
+            # closed, so a window-gated handler has already stood down and a
+            # genuinely active override (CUSTOM_POSITION/MANUAL/WEATHER) is
+            # still correctly detected. It cannot itself dispatch anything —
+            # the outside-window invariant blocks reposition — so this is
+            # compute-only.
+            await self.async_refresh()
             if self._pipeline_has_active_override():
                 self.logger.debug(
                     "End time reached but a higher-priority handler (%s) is "
@@ -5178,7 +5213,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     "end_time_default",
                     context=ctx,
                 )
-            # Trigger a normal refresh so sensor state and diagnostics update
+            # Trigger a normal refresh so sensor state and diagnostics reflect
+            # the commands just dispatched above. Distinct from the #1241
+            # refresh earlier in this function: that one runs BEFORE dispatch
+            # to freshen the guard's input; this one runs AFTER dispatch to
+            # publish its result. Neither makes the other redundant.
             await self.async_refresh()
 
         async def _on_window_open() -> None:
