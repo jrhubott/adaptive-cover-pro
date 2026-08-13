@@ -39,6 +39,7 @@ from custom_components.adaptive_cover_pro.const import (
     IRRADIANCE_PLANE_HORIZONTAL,
     VERTICAL_GLASS_PITCH_DEG,
 )
+from tests._helpers.diagnostic_coordinator import make_diagnostic_coordinator
 
 pytestmark = pytest.mark.unit
 
@@ -363,11 +364,14 @@ def test_a_non_finite_reading_reports_unknown_instead_of_crashing_the_sensor():
 #
 # These tests drive the REAL glue the coordinator uses: a ``ClimateProvider``
 # read for the magnitude (unit-blind, exactly as issue #1237 left it) plus its
-# SEPARATE ``read_irradiance_unit`` for the unit, combined via the same
-# ``value is None or unit == WATTS_PER_SQUARE_METER`` formula
-# ``AdaptiveDataUpdateCoordinator.build_diagnostic_data`` uses (locked by
-# ``tests/test_coordinator_solar_gain.py``'s source-inspection tests), then
-# handed to the pure estimator.
+# SEPARATE ``read_irradiance_unit`` for the unit, combined by actually calling
+# ``AdaptiveDataUpdateCoordinator.build_diagnostic_data`` through a coordinator
+# stub — not by re-deriving its ``value is None or unit == WATTS_PER_SQUARE_METER``
+# gate formula here. A hand-rolled second copy of that formula is exactly what
+# let the #1280 audit delete the coordinator's short-circuit unnoticed: this
+# file's own test suite kept passing because it was checking its OWN copy of
+# the rule, not the coordinator's. See ``tests/test_coordinator_solar_gain.py``
+# for the dedicated gate-boolean tests that pin the short-circuit itself.
 # ---------------------------------------------------------------------------
 
 
@@ -382,7 +386,21 @@ def _mock_irradiance_state(state: str, unit: str | None):
 def _real_chain_estimate(
     *, entity: str | None, state: str | None = None, unit: str | None = None
 ):
-    """Reproduce the coordinator's exact irradiance→gain glue, end to end."""
+    """Reproduce the coordinator's exact irradiance→gain glue, end to end.
+
+    A real ``ClimateProvider`` reads the magnitude and (separately) the unit
+    from a mocked HA state, exactly as the coordinator does; the combination
+    of the two into ``irradiance_unit_ok`` is then exercised by calling the
+    REAL ``build_diagnostic_data`` through a coordinator stub, so this test
+    can never drift from what the coordinator actually computes.
+
+    ``entity=None`` is the one exception: with no entity configured, the
+    ``solar_gain`` block is gated off entirely at the diagnostics layer (see
+    ``test_gated_on_the_irradiance_entity``) — there would be no block to
+    inspect. That case exercises the pure estimator directly instead, with
+    ``irradiance_unit_ok`` hardcoded True — the coordinator's own docstring
+    on the gate documents this as the trivial, nothing-to-refuse case.
+    """
     hass = MagicMock()
     hass.states.get.return_value = (
         _mock_irradiance_state(state, unit) if entity is not None else None
@@ -394,69 +412,76 @@ def _real_chain_estimate(
         irradiance_entity=entity,
         irradiance_threshold=300,
     )
-    observed_unit = provider.read_irradiance_unit(entity)
-    unit_ok = (
-        readings.irradiance_value is None
-        or observed_unit == UnitOfIrradiance.WATTS_PER_SQUARE_METER
+
+    if entity is None:
+        estimate = estimate_solar_gain(
+            ghi_w_m2=readings.irradiance_value,
+            irradiance_unit_ok=True,
+            irradiance_plane=IRRADIANCE_PLANE_HORIZONTAL,
+            sol_elev_deg=45.0,
+            cos_aoi=0.8,
+            plane_tilt_deg=VERTICAL_GLASS_PITCH_DEG,
+            day_of_year=172,
+            area_m2=3.0,
+            area_source="derived",
+            effective_g=0.55,
+            effective_g_source="preset",
+        )
+        return readings, asdict(estimate)
+
+    coord = make_diagnostic_coordinator(
+        climate_provider=provider,
+        weather_readings=readings,
+        irradiance_entity=entity,
     )
-    estimate = estimate_solar_gain(
-        ghi_w_m2=readings.irradiance_value,
-        irradiance_unit_ok=unit_ok,
-        irradiance_plane=IRRADIANCE_PLANE_HORIZONTAL,
-        sol_elev_deg=45.0,
-        cos_aoi=0.8,
-        plane_tilt_deg=VERTICAL_GLASS_PITCH_DEG,
-        day_of_year=172,
-        area_m2=3.0,
-        area_source="derived",
-        effective_g=0.55,
-        effective_g_source="preset",
-    )
-    return readings, estimate
+    diagnostics = coord.build_diagnostic_data()
+    return readings, diagnostics.get("solar_gain", {})
 
 
 def test_a_metric_reading_computes_gain_exactly_as_before():
     """Regression guard: W/m² is the shipped, unaffected happy path."""
-    readings, estimate = _real_chain_estimate(
-        entity="sensor.solar", state="600", unit="W/m²"
+    readings, block = _real_chain_estimate(
+        entity="sensor.solar",
+        state="600",
+        unit=UnitOfIrradiance.WATTS_PER_SQUARE_METER,
     )
     assert readings.irradiance_value == pytest.approx(600.0)
-    assert estimate.unknown_reason is None
-    assert estimate.gain_w is not None
-    assert _spec().value_fn(_stub_sensor(asdict(estimate))) is not None
+    assert block["unknown_reason"] is None
+    assert block["gain_w"] is not None
+    assert _spec().value_fn(_stub_sensor(block)) is not None
 
 
 def test_an_imperial_reading_is_refused_not_converted():
     """The BTU number is NOT silently divided by 3 — it is refused outright."""
-    readings, estimate = _real_chain_estimate(
+    readings, block = _real_chain_estimate(
         entity="sensor.solar", state="190", unit="BTU/(h⋅ft²)"
     )
     # The state-layer read stays unit-blind (issue #1237's own contract) —
     # only the GAIN estimator refuses the number.
     assert readings.irradiance_value == pytest.approx(190.0)
-    assert estimate.gain_w is None
-    assert estimate.ghi_w_m2 is None
-    assert estimate.unknown_reason == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
-    assert estimate.unknown_reason != UNKNOWN_NO_IRRADIANCE
-    assert _spec().value_fn(_stub_sensor(asdict(estimate))) is None
+    assert block["gain_w"] is None
+    assert block["ghi_w_m2"] is None
+    assert block["unknown_reason"] == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
+    assert block["unknown_reason"] != UNKNOWN_NO_IRRADIANCE
+    assert _spec().value_fn(_stub_sensor(block)) is None
 
 
 def test_an_absent_unit_takes_the_same_refusal_path():
     """A sensor with no ``unit_of_measurement`` at all is treated the same way."""
-    readings, estimate = _real_chain_estimate(
+    readings, block = _real_chain_estimate(
         entity="sensor.solar", state="612.5", unit=None
     )
     assert readings.irradiance_value == pytest.approx(612.5)
-    assert estimate.gain_w is None
-    assert estimate.unknown_reason == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
+    assert block["gain_w"] is None
+    assert block["unknown_reason"] == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
 
 
 def test_no_entity_configured_still_reports_no_irradiance():
     """Regression guard: the pre-existing 'nothing configured' path is unchanged."""
-    readings, estimate = _real_chain_estimate(entity=None)
+    readings, block = _real_chain_estimate(entity=None)
     assert readings.irradiance_value is None
-    assert estimate.gain_w is None
-    assert estimate.unknown_reason == UNKNOWN_NO_IRRADIANCE
+    assert block["gain_w"] is None
+    assert block["unknown_reason"] == UNKNOWN_NO_IRRADIANCE
 
 
 def test_cloud_suppression_threshold_is_unaffected_by_an_imperial_unit():

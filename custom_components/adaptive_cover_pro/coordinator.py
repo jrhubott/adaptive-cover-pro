@@ -650,6 +650,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Track position explanation for change detection logging
         self._last_position_explanation: str = ""
 
+        # (entity_id, unit) last WARNED about for the estimated-solar-gain
+        # irradiance-unit refusal (issue #1280 Fix 4), so the once-a-cycle
+        # ``build_diagnostic_data`` call logs a refusal ONCE rather than every
+        # cycle forever. ``None`` means nothing is currently being warned
+        # about — reset there whenever the unit becomes acceptable again, so a
+        # user who fixes and later re-breaks their sensor sees the warning
+        # again instead of it staying silenced from the first occurrence.
+        self._irradiance_unit_warned: tuple[str | None, str | None] | None = None
+
         # Built once and reused for both the command-service construction
         # (position_tolerance) and the late policy.attach below.
         _rc_attach = RuntimeConfig.from_options(self.config_entry.options)
@@ -4947,6 +4956,38 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return GlassArea(derived, AREA_SOURCE_DERIVED)
         return GlassArea(None, AREA_SOURCE_UNKNOWN)
 
+    def _warn_on_unsupported_irradiance_unit(
+        self, *, entity_id: str | None, unit: str | None, unit_ok: bool
+    ) -> None:
+        """Log, at most once per (entity, unit) situation, a gain-sensor refusal.
+
+        ``build_diagnostic_data`` runs once per coordinator cycle, so warning
+        unconditionally would spam the log forever for the lifetime of a
+        misconfigured sensor (issue #1280 Fix 4). Tracks the last situation
+        warned about in ``self._irradiance_unit_warned`` — the same
+        remember-and-compare shape this method's caller already uses for
+        ``_last_position_explanation`` — so a refusal that persists logs once,
+        a refusal that changes unit logs again, and a refusal that clears and
+        later recurs (even with the SAME unit) logs again too, because
+        clearing resets the tracked state to ``None``.
+        """
+        if unit_ok:
+            self._irradiance_unit_warned = None
+            return
+        situation = (entity_id, unit)
+        if situation == self._irradiance_unit_warned:
+            return
+        self.logger.warning(
+            "Irradiance entity %s reports unit '%s' instead of W/m² — the "
+            "estimated solar gain sensor cannot use this reading and is "
+            "reporting unknown. Fix the entity's unit_of_measurement, or "
+            "point the irradiance sensor option at one that reports W/m², "
+            "to restore it.",
+            entity_id,
+            unit,
+        )
+        self._irradiance_unit_warned = situation
+
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""
         result = self._pipeline_result
@@ -4989,8 +5030,29 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         _irradiance_value = (
             _temp_readings.irradiance_value if _temp_readings is not None else None
         )
+        _irradiance_entity = self.config_entry.options.get(CONF_IRRADIANCE_ENTITY)
         _irradiance_unit = self._climate_provider.read_irradiance_unit(
-            self.config_entry.options.get(CONF_IRRADIANCE_ENTITY)
+            _irradiance_entity
+        )
+        # Irradiance unit gate (#1237 admits the raw value unit-blind; #1280
+        # refuses to hand it to the estimator unless it is W/m²). HA's
+        # ``irradiance`` device class also permits BTU/(h·ft²) (what HA shows
+        # on the imperial unit system); admitting that unconverted would
+        # silently under-report gain by roughly a factor of 3, so a value that
+        # ISN'T W/m² never reaches ``estimate_solar_gain`` at all — no numeric
+        # reading means the gate can never fire, which is why the ``no entity
+        # configured`` and ``entity unavailable`` cases both stay
+        # ``irradiance_unit_ok=True`` (nothing to refuse).
+        _irradiance_unit_ok = (
+            _irradiance_value is None
+            or _irradiance_unit == UnitOfIrradiance.WATTS_PER_SQUARE_METER
+        )
+        # Fix 4 (#1280): surface the refusal in the log, not just silently as
+        # ``unknown`` — at most once per (entity, unit) situation.
+        self._warn_on_unsupported_irradiance_unit(
+            entity_id=_irradiance_entity,
+            unit=_irradiance_unit,
+            unit_ok=_irradiance_unit_ok,
         )
         ctx = DiagnosticContext(
             pos_sun=self.pos_sun,
@@ -5048,22 +5110,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             day_of_year=dt_util.now().timetuple().tm_yday,
             glass_area_m2=_glass_area.area_m2,
             glass_area_source=_glass_area.source,
-            # Irradiance unit gate (#1237 admits the raw value unit-blind;
-            # #1280 refuses to hand it to the estimator unless it is W/m²).
             # A DELIBERATELY SEPARATE HA read from the climate cycle above —
             # see ``ClimateProvider.read_irradiance_unit``'s docstring for why
-            # it cannot live inside that single-read admission path. HA's
-            # ``irradiance`` device class also permits BTU/(h·ft²) (what HA
-            # shows on the imperial unit system); admitting that unconverted
-            # would silently under-report gain by roughly a factor of 3, so a
-            # value that ISN'T W/m² never reaches ``estimate_solar_gain`` at
-            # all — no numeric reading means the gate can never fire, which is
-            # why the ``no entity configured`` and ``entity unavailable``
-            # cases both stay ``irradiance_unit_ok=True`` (nothing to refuse).
-            irradiance_unit_ok=(
-                _irradiance_value is None
-                or _irradiance_unit == UnitOfIrradiance.WATTS_PER_SQUARE_METER
-            ),
+            # it cannot live inside that single-read admission path.
+            # ``_irradiance_unit_ok`` itself is computed above, alongside the
+            # #1280 Fix 4 one-shot warning that shares its verdict.
+            irradiance_unit_ok=_irradiance_unit_ok,
             irradiance_unit=_irradiance_unit,
             config_options=dict(self.config_entry.options),
             resolved_options=dict(self._resolved_options),
