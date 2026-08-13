@@ -462,23 +462,23 @@ class ClimateProvider:
     def _read_float(self, entity: str | None, label: str) -> float | None:
         """Read one entity's state as a float, or ``None``.
 
-        The single place a sensor state is parsed to a number in this provider
+        The single place a sensor *entity* is read and parsed in this provider
         (issue #1237) — the threshold reader below and the raw-irradiance
         admission both go through it, so there is one unavailable/non-numeric
-        contract and one debug log, not two copies drifting apart.
+        contract and one debug log, not two copies drifting apart. The parse
+        itself delegates to :meth:`_coerce_float`, the provider's only
+        float-coercion primitive; this wrapper adds the entity read and the
+        non-numeric debug log on top of it.
         """
         if entity is None:
             return None
         value = get_safe_state(self._hass, entity)
-        if value is None:
-            return None
-        try:
-            return float(value)
-        except (ValueError, TypeError):
+        parsed = self._coerce_float(value)
+        if parsed is None and value is not None:
             self._logger.debug(
                 "%s entity %s returned non-numeric value: %r", label, entity, value
             )
-            return None
+        return parsed
 
     def _read_numeric_threshold(
         self,
