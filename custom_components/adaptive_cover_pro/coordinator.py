@@ -22,6 +22,7 @@ from homeassistant.const import (
     SERVICE_SET_COVER_POSITION,
     SERVICE_STOP_COVER,
     STATE_ON,
+    UnitOfIrradiance,
 )
 from homeassistant.core import (
     Event,
@@ -98,6 +99,7 @@ from .const import (
     CONF_INTERP,
     CONF_INVERSE_STATE,
     CONF_INVERSE_TILT,
+    CONF_IRRADIANCE_ENTITY,
     CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
@@ -4984,6 +4986,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         _temp_readings = self._weather_readings
         _glass_area = self.glass_area()
+        _irradiance_value = (
+            _temp_readings.irradiance_value if _temp_readings is not None else None
+        )
+        _irradiance_unit = self._climate_provider.read_irradiance_unit(
+            self.config_entry.options.get(CONF_IRRADIANCE_ENTITY)
+        )
         ctx = DiagnosticContext(
             pos_sun=self.pos_sun,
             cover=self._cover_data,
@@ -5036,12 +5044,27 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # read — and the day of year comes from HA's clock frame, never the
             # host's, so a host in another timezone cannot shift the orbital
             # eccentricity term by a day.
-            irradiance_w_m2=(
-                _temp_readings.irradiance_value if _temp_readings is not None else None
-            ),
+            irradiance_w_m2=_irradiance_value,
             day_of_year=dt_util.now().timetuple().tm_yday,
             glass_area_m2=_glass_area.area_m2,
             glass_area_source=_glass_area.source,
+            # Irradiance unit gate (#1237 admits the raw value unit-blind;
+            # #1280 refuses to hand it to the estimator unless it is W/m²).
+            # A DELIBERATELY SEPARATE HA read from the climate cycle above —
+            # see ``ClimateProvider.read_irradiance_unit``'s docstring for why
+            # it cannot live inside that single-read admission path. HA's
+            # ``irradiance`` device class also permits BTU/(h·ft²) (what HA
+            # shows on the imperial unit system); admitting that unconverted
+            # would silently under-report gain by roughly a factor of 3, so a
+            # value that ISN'T W/m² never reaches ``estimate_solar_gain`` at
+            # all — no numeric reading means the gate can never fire, which is
+            # why the ``no entity configured`` and ``entity unavailable``
+            # cases both stay ``irradiance_unit_ok=True`` (nothing to refuse).
+            irradiance_unit_ok=(
+                _irradiance_value is None
+                or _irradiance_unit == UnitOfIrradiance.WATTS_PER_SQUARE_METER
+            ),
+            irradiance_unit=_irradiance_unit,
             config_options=dict(self.config_entry.options),
             resolved_options=dict(self._resolved_options),
             hass=self.hass,

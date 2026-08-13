@@ -151,3 +151,38 @@ def test_irradiance_reaches_the_context_from_the_climate_readings() -> None:
 
     source = inspect.getsource(AdaptiveDataUpdateCoordinator.build_diagnostic_data)
     assert "irradiance_value" in source
+
+
+# ---------------------------------------------------------------------------
+# Unsupported irradiance unit (issue #1280) — refuse to compute, don't convert
+# ---------------------------------------------------------------------------
+
+
+def test_the_irradiance_unit_is_read_and_handed_to_the_context() -> None:
+    """The coordinator wires ``read_irradiance_unit`` into the gate fields.
+
+    A SEPARATE call from the per-cycle ``ClimateProvider.read()`` — folding it
+    into ``_read_irradiance`` would either touch the shared threshold read
+    cloud suppression depends on, or read the same entity's state twice per
+    cycle (see ``ClimateProvider.read_irradiance_unit``'s docstring). This
+    only proves the coordinator calls it and forwards both fields; the
+    read/compare behaviour itself is covered where it is unit-testable:
+    ``tests/test_state/test_climate_provider_irradiance_unit.py`` and the
+    real-chain tests in ``tests/test_sensor_solar_gain.py``.
+    """
+    import inspect
+
+    source = inspect.getsource(AdaptiveDataUpdateCoordinator.build_diagnostic_data)
+    assert "read_irradiance_unit(" in source
+    assert "irradiance_unit_ok=" in source
+    assert "irradiance_unit=" in source
+
+
+def test_the_accepted_unit_is_home_assistants_own_constant() -> None:
+    """No hardcoded ``"W/m²"`` literal — HA's own enum is the source of truth."""
+    import inspect
+
+    source = inspect.getsource(AdaptiveDataUpdateCoordinator.build_diagnostic_data)
+    assert "UnitOfIrradiance.WATTS_PER_SQUARE_METER" in source
+    assert '"W/m' not in source
+    assert "'W/m" not in source

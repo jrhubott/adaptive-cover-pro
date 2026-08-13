@@ -2198,6 +2198,7 @@ class TestSolarGainDiagnostics:
         "position_pct",
         "position_source",
         "shaded_fraction",
+        "irradiance_unit",
     }
 
     # -- presence -----------------------------------------------------------
@@ -2392,3 +2393,75 @@ class TestSolarGainDiagnostics:
         block = builder.build(_gain_ctx(cover=None))[0]["solar_gain"]
         assert block["gain_w"] is not None
         assert block["cos_aoi"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Unsupported irradiance unit (issue #1280) — refuse to compute, don't convert
+# ---------------------------------------------------------------------------
+
+
+class TestSolarGainIrradianceUnitGate:
+    """``ctx.irradiance_unit_ok`` decides whether ``ctx.irradiance_w_m2`` reaches
+    the estimator at all.
+
+    ``irradiance_unit_ok`` defaults to ``True`` so every context built before
+    this fix existed — including every other test in ``TestSolarGainDiagnostics``
+    above, none of which set it — keeps computing gain exactly as before.
+    """
+
+    def test_defaults_to_admitting_the_reading(self, builder: DiagnosticsBuilder):
+        block = builder.build(_gain_ctx())[0]["solar_gain"]
+        assert block["unknown_reason"] is None
+        assert block["ghi_w_m2"] == pytest.approx(700.0)
+
+    def test_an_unsupported_unit_is_refused(self, builder: DiagnosticsBuilder):
+        from custom_components.adaptive_cover_pro.engine.solar_gain import (
+            UNKNOWN_NO_IRRADIANCE,
+            UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT,
+        )
+
+        block = builder.build(
+            _gain_ctx(irradiance_unit_ok=False, irradiance_unit="BTU/(h⋅ft²)")
+        )[0]["solar_gain"]
+        assert block["gain_w"] is None
+        assert block["unknown_reason"] == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
+        assert block["unknown_reason"] != UNKNOWN_NO_IRRADIANCE
+
+    def test_an_absent_unit_takes_the_same_refusal_path(
+        self, builder: DiagnosticsBuilder
+    ):
+        from custom_components.adaptive_cover_pro.engine.solar_gain import (
+            UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT,
+        )
+
+        block = builder.build(
+            _gain_ctx(irradiance_unit_ok=False, irradiance_unit=None)
+        )[0]["solar_gain"]
+        assert block["unknown_reason"] == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
+
+    def test_the_raw_reading_does_not_leak_into_the_audit_trail(
+        self, builder: DiagnosticsBuilder
+    ):
+        block = builder.build(_gain_ctx(irradiance_unit_ok=False))[0]["solar_gain"]
+        assert block["ghi_w_m2"] is None
+
+    def test_the_observed_unit_is_surfaced_for_audit(self, builder: DiagnosticsBuilder):
+        block = builder.build(
+            _gain_ctx(irradiance_unit_ok=False, irradiance_unit="BTU/(h⋅ft²)")
+        )[0]["solar_gain"]
+        assert block["irradiance_unit"] == "BTU/(h⋅ft²)"
+
+    def test_the_unit_is_surfaced_even_when_supported(
+        self, builder: DiagnosticsBuilder
+    ):
+        block = builder.build(
+            _gain_ctx(irradiance_unit_ok=True, irradiance_unit="W/m²")
+        )[0]["solar_gain"]
+        assert block["irradiance_unit"] == "W/m²"
+
+    def test_the_no_entity_configured_case_is_unaffected(
+        self, builder: DiagnosticsBuilder
+    ):
+        """The gate is orthogonal to the existing entity-not-configured guard."""
+        diag, _ = builder.build(_gain_ctx(config_options={}))
+        assert "solar_gain" not in diag

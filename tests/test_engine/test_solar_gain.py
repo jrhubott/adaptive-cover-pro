@@ -41,6 +41,7 @@ from custom_components.adaptive_cover_pro.engine.solar_gain import (
     UNKNOWN_EFFECTIVE_G,
     UNKNOWN_GLASS_AREA,
     UNKNOWN_NO_IRRADIANCE,
+    UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT,
     SolarGainEstimate,
     erbs_diffuse_fraction,
     estimate_solar_gain,
@@ -572,3 +573,63 @@ class TestEstimateSolarGain:
         est = _estimate(ghi_w_m2=713.7, area_m2=2.37, effective_g=0.583)
         assert est.gain_w != round(est.gain_w)
         assert est.poa_w_m2 != round(est.poa_w_m2, 3)
+
+
+# ---------------------------------------------------------------------------
+# Unsupported irradiance unit (issue #1280) — refuse to compute, don't convert
+# ---------------------------------------------------------------------------
+
+
+class TestUnsupportedIrradianceUnit:
+    """``irradiance_unit_ok=False`` refuses the reading rather than converting it.
+
+    HA's ``irradiance`` device class permits BTU/(h·ft²) as well as W/m² — the
+    unit HA presents on the imperial unit system. 1 BTU/(h·ft²) = 3.15 W/m², so
+    admitting that number as if it were W/m² would silently under-report gain
+    by roughly a factor of 3. Issue #1280's chosen fix is refusal, never
+    conversion, so this parameter only ever nulls the reading out.
+    """
+
+    def test_defaults_to_admitting_the_reading(self) -> None:
+        """Opt-in: every caller that predates this fix is unaffected."""
+        est = _estimate()
+        assert est.unknown_reason is None
+        assert est.gain_w == pytest.approx(3.0 * est.poa_w_m2 * 0.55)
+
+    def test_an_unsupported_unit_is_refused(self) -> None:
+        est = _estimate(irradiance_unit_ok=False)
+        assert est.gain_w is None
+        assert est.unknown_reason == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
+        assert est.unknown_reason != UNKNOWN_NO_IRRADIANCE
+
+    def test_the_raw_reading_is_not_leaked_into_the_audit_trail(self) -> None:
+        """A mis-unit number must not appear under a field labelled W/m²."""
+        est = _estimate(irradiance_unit_ok=False, ghi_w_m2=190.0)
+        assert est.ghi_w_m2 is None
+        assert est.poa_w_m2 is None
+        assert est.dni_w_m2 is None
+        assert est.dhi_w_m2 is None
+
+    def test_unsupported_unit_outranks_every_other_missing_term(self) -> None:
+        """One reason, and it names the unit problem first."""
+        est = _estimate(
+            irradiance_unit_ok=False,
+            area_m2=None,
+            area_source=AREA_SOURCE_UNKNOWN,
+            effective_g=None,
+            effective_g_source="unknown",
+        )
+        assert est.unknown_reason == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
+
+    def test_a_supported_unit_computes_gain_exactly_as_before(self) -> None:
+        """Explicit True is byte-identical to the default — the regression guard."""
+        est_default = _estimate()
+        est_explicit = _estimate(irradiance_unit_ok=True)
+        assert est_explicit.gain_w == pytest.approx(est_default.gain_w)
+        assert est_explicit.unknown_reason is None
+
+    def test_the_sun_too_low_zero_requires_an_admitted_reading(self) -> None:
+        """The 'sun too low' hard zero only applies once a reading is ADMITTED."""
+        est = _estimate(irradiance_unit_ok=False, sol_elev_deg=1.0)
+        assert est.gain_w is None
+        assert est.unknown_reason == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT

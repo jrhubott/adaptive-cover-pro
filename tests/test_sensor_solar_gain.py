@@ -21,11 +21,17 @@ import pytest
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfPower
 
+from homeassistant.const import UnitOfIrradiance
+
 from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
     DiagnosticsBuilder,
 )
-from custom_components.adaptive_cover_pro.engine.solar_gain import estimate_solar_gain
+from custom_components.adaptive_cover_pro.engine.solar_gain import (
+    UNKNOWN_NO_IRRADIANCE,
+    UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT,
+    estimate_solar_gain,
+)
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateProvider
 from custom_components.adaptive_cover_pro.const import (
@@ -342,3 +348,140 @@ def test_a_non_finite_reading_reports_unknown_instead_of_crashing_the_sensor():
         effective_g_source="preset",
     )
     assert _spec().value_fn(_stub_sensor(asdict(estimate))) is None
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ Irradiance unit (issue #1280) — the whole chain, end to end
+#
+# HA's ``irradiance`` device class permits BOTH W/m² and BTU/(h·ft²) — the
+# latter is what HA presents on the imperial unit system — and nothing
+# upstream of this fix ever checked which one an irradiance entity reports.
+# 1 BTU/(h·ft²) = 3.15 W/m², so admitting a BTU reading as W/m² silently
+# under-reports gain by roughly a factor of 3. The chosen fix is REFUSAL, not
+# conversion: an unsupported (or absent) unit must produce ``unknown`` with a
+# reason distinct from "no entity configured".
+#
+# These tests drive the REAL glue the coordinator uses: a ``ClimateProvider``
+# read for the magnitude (unit-blind, exactly as issue #1237 left it) plus its
+# SEPARATE ``read_irradiance_unit`` for the unit, combined via the same
+# ``value is None or unit == WATTS_PER_SQUARE_METER`` formula
+# ``AdaptiveDataUpdateCoordinator.build_diagnostic_data`` uses (locked by
+# ``tests/test_coordinator_solar_gain.py``'s source-inspection tests), then
+# handed to the pure estimator.
+# ---------------------------------------------------------------------------
+
+
+def _mock_irradiance_state(state: str, unit: str | None):
+    s = MagicMock()
+    s.entity_id = "sensor.solar"
+    s.state = state
+    s.attributes = {"unit_of_measurement": unit} if unit is not None else {}
+    return s
+
+
+def _real_chain_estimate(
+    *, entity: str | None, state: str | None = None, unit: str | None = None
+):
+    """Reproduce the coordinator's exact irradiance→gain glue, end to end."""
+    hass = MagicMock()
+    hass.states.get.return_value = (
+        _mock_irradiance_state(state, unit) if entity is not None else None
+    )
+
+    provider = ClimateProvider(hass=hass, logger=MagicMock())
+    readings = provider.read(
+        use_irradiance=True,
+        irradiance_entity=entity,
+        irradiance_threshold=300,
+    )
+    observed_unit = provider.read_irradiance_unit(entity)
+    unit_ok = (
+        readings.irradiance_value is None
+        or observed_unit == UnitOfIrradiance.WATTS_PER_SQUARE_METER
+    )
+    estimate = estimate_solar_gain(
+        ghi_w_m2=readings.irradiance_value,
+        irradiance_unit_ok=unit_ok,
+        irradiance_plane=IRRADIANCE_PLANE_HORIZONTAL,
+        sol_elev_deg=45.0,
+        cos_aoi=0.8,
+        plane_tilt_deg=VERTICAL_GLASS_PITCH_DEG,
+        day_of_year=172,
+        area_m2=3.0,
+        area_source="derived",
+        effective_g=0.55,
+        effective_g_source="preset",
+    )
+    return readings, estimate
+
+
+def test_a_metric_reading_computes_gain_exactly_as_before():
+    """Regression guard: W/m² is the shipped, unaffected happy path."""
+    readings, estimate = _real_chain_estimate(
+        entity="sensor.solar", state="600", unit="W/m²"
+    )
+    assert readings.irradiance_value == pytest.approx(600.0)
+    assert estimate.unknown_reason is None
+    assert estimate.gain_w is not None
+    assert _spec().value_fn(_stub_sensor(asdict(estimate))) is not None
+
+
+def test_an_imperial_reading_is_refused_not_converted():
+    """The BTU number is NOT silently divided by 3 — it is refused outright."""
+    readings, estimate = _real_chain_estimate(
+        entity="sensor.solar", state="190", unit="BTU/(h⋅ft²)"
+    )
+    # The state-layer read stays unit-blind (issue #1237's own contract) —
+    # only the GAIN estimator refuses the number.
+    assert readings.irradiance_value == pytest.approx(190.0)
+    assert estimate.gain_w is None
+    assert estimate.ghi_w_m2 is None
+    assert estimate.unknown_reason == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
+    assert estimate.unknown_reason != UNKNOWN_NO_IRRADIANCE
+    assert _spec().value_fn(_stub_sensor(asdict(estimate))) is None
+
+
+def test_an_absent_unit_takes_the_same_refusal_path():
+    """A sensor with no ``unit_of_measurement`` at all is treated the same way."""
+    readings, estimate = _real_chain_estimate(
+        entity="sensor.solar", state="612.5", unit=None
+    )
+    assert readings.irradiance_value == pytest.approx(612.5)
+    assert estimate.gain_w is None
+    assert estimate.unknown_reason == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
+
+
+def test_no_entity_configured_still_reports_no_irradiance():
+    """Regression guard: the pre-existing 'nothing configured' path is unchanged."""
+    readings, estimate = _real_chain_estimate(entity=None)
+    assert readings.irradiance_value is None
+    assert estimate.gain_w is None
+    assert estimate.unknown_reason == UNKNOWN_NO_IRRADIANCE
+
+
+def test_cloud_suppression_threshold_is_unaffected_by_an_imperial_unit():
+    """The guard that proves the shared threshold path was never touched.
+
+    Cloud suppression compares the raw number against a user-tuned threshold —
+    a BTU-unit user has already calibrated that threshold against the numbers
+    they observe, so this must produce IDENTICAL booleans regardless of unit.
+    """
+
+    def _threshold_reading(unit: str | None):
+        hass = MagicMock()
+        hass.states.get.return_value = _mock_irradiance_state("250", unit)
+        provider = ClimateProvider(hass=hass, logger=MagicMock())
+        return provider.read(
+            use_irradiance=True,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=300,
+        )
+
+    metric = _threshold_reading("W/m²")
+    imperial = _threshold_reading("BTU/(h⋅ft²)")
+    absent = _threshold_reading(None)
+
+    for readings in (metric, imperial, absent):
+        assert readings.irradiance_below_threshold is True
+        assert readings.irradiance_release_cleared is False
+        assert readings.irradiance_value == pytest.approx(250.0)
