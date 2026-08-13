@@ -6,14 +6,21 @@ assert the stable key set per cover type, the guard-branch flags, and that the
 trace is engine-shaped (not borrowed from a super call).
 """
 
+from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
 
+from custom_components.adaptive_cover_pro.config_types import SlidingCurtainConfig
 from custom_components.adaptive_cover_pro.const import (
     TRACE_KEY_GAMMA_DEG,
     TRACE_KEY_POSITION_PCT,
     TRACE_KEY_SOL_ELEV_DEG,
 )
+from custom_components.adaptive_cover_pro.engine.covers import (
+    AdaptiveSlidingCurtainCover,
+)
+from tests.cover_helpers import make_cover_config, make_daytime_sun_data
 
 
 def _check_native_types(obj, path: str = "root") -> list[str]:
@@ -295,6 +302,116 @@ class TestHorizontalTrace:
         horizontal_cover_instance.calculate_position()
         details = horizontal_cover_instance._last_calc_details
         assert details["clamped_to_awn_length"] is True
+
+
+# ---------------------------------------------------------------------------
+# Sliding curtain (cover_sliding_curtain)
+# ---------------------------------------------------------------------------
+
+
+class TestSlidingCurtainTrace:
+    """AdaptiveSlidingCurtainCover raw trace."""
+
+    _KEYS = {
+        TRACE_KEY_SOL_ELEV_DEG,
+        TRACE_KEY_GAMMA_DEG,
+        TRACE_KEY_POSITION_PCT,
+        "calculation_mode",
+        "direct_sun_valid",
+        "slide_direction",
+        "window_width_m",
+        "shade_point1_x_m",
+        "shade_point1_y_m",
+        "shade_point2_x_m",
+        "shade_point2_y_m",
+        "projected_point1_x_m",
+        "projected_point2_x_m",
+        "raw_interval_start_m",
+        "raw_interval_end_m",
+        "covered_interval_start_m",
+        "covered_interval_end_m",
+        "covered_width_m",
+        "interval_status",
+        "position_basis_m",
+        "unclamped_position_pct",
+    }
+
+    def _curtain(
+        self, sc_config: SlidingCurtainConfig | None
+    ) -> AdaptiveSlidingCurtainCover:
+        return AdaptiveSlidingCurtainCover(
+            logger=MagicMock(),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            sun_data=make_daytime_sun_data(),
+            config=make_cover_config(win_azi=180, fov_left=90, fov_right=90),
+            sc_config=sc_config,
+        )
+
+    def test_binary_trace_has_numeric_position(self):
+        curtain = self._curtain(None)
+        result = curtain.calculate_percentage()
+        details = curtain._last_calc_details
+
+        assert result == 0
+        assert set(details) == self._KEYS
+        assert details[TRACE_KEY_POSITION_PCT] == 0.0
+        assert details["calculation_mode"] == "binary"
+        assert details["direct_sun_valid"] is True
+        assert details["interval_status"] == "not_applicable"
+        assert not _check_native_types(details)
+
+    def test_shade_area_trace_exposes_interval_and_percentage_basis(self):
+        curtain = self._curtain(
+            SlidingCurtainConfig(
+                enabled=True,
+                slide_direction="bi_part",
+                window_width=2.0,
+                point1_x=0.4,
+                point1_y=3.0,
+                point2_x=0.8,
+                point2_y=3.0,
+            )
+        )
+        result = curtain.calculate_percentage()
+        details = curtain._last_calc_details
+
+        assert result == pytest.approx(40.0)
+        assert set(details) == self._KEYS
+        assert details["calculation_mode"] == "shade_area"
+        assert details["interval_status"] == "covered"
+        assert details["projected_point1_x_m"] == pytest.approx(0.4)
+        assert details["projected_point2_x_m"] == pytest.approx(0.8)
+        assert details["covered_interval_start_m"] == pytest.approx(0.4)
+        assert details["covered_interval_end_m"] == pytest.approx(0.8)
+        assert details["covered_width_m"] == pytest.approx(0.4)
+        assert details["position_basis_m"] == pytest.approx(0.8)
+        assert details["unclamped_position_pct"] == pytest.approx(40.0)
+        assert details[TRACE_KEY_POSITION_PCT] == pytest.approx(40.0)
+        assert not _check_native_types(details)
+
+    def test_off_window_trace_explains_open_result(self):
+        curtain = self._curtain(
+            SlidingCurtainConfig(
+                enabled=True,
+                slide_direction="left",
+                window_width=2.0,
+                point1_x=3.0,
+                point1_y=3.0,
+                point2_x=4.0,
+                point2_y=3.0,
+            )
+        )
+        result = curtain.calculate_position()
+        details = curtain._last_calc_details
+
+        assert result == 100
+        assert set(details) == self._KEYS
+        assert details["interval_status"] == "outside_window"
+        assert details["raw_interval_start_m"] == pytest.approx(3.0)
+        assert details["covered_interval_start_m"] is None
+        assert details[TRACE_KEY_POSITION_PCT] == 100.0
+        assert not _check_native_types(details)
 
 
 # ---------------------------------------------------------------------------
