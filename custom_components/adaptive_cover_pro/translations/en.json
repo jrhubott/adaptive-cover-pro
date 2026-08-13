@@ -82,6 +82,12 @@
           "window_depth": "Window Depth (Reveal)",
           "sill_height": "Window Sill Height",
           "window_width": "Window Width",
+          "solar_properties_enabled": "Describe solar properties (estimate)",
+          "solar_cover_side": "Cover mounting side",
+          "solar_cover_shade": "Cover shade",
+          "solar_g_total": "Total solar transmittance (g), closed",
+          "solar_g_glazing": "Glazing solar transmittance (g), uncovered",
+          "glass_area": "Glazed area (optional)",
           "length_awning": "Awning Span Length",
           "angle": "Awning Angle",
           "awning_shade_mode": "Awning Shade Mode",
@@ -141,6 +147,12 @@
           "window_depth": "Depth of window reveal/frame from the wall surface. Shown in the unit Home Assistant is configured for. Optional parameter for advanced accuracy — set to 0 (default) to disable. Typical values: Flush mount = 0.05 m / 2 in, Standard frame = 0.10 m / 4 in, Deep reveal = 0.15 m / 6 in. Measure from the outer wall surface to the inner edge of the window frame. The reveal casts its own shadow across the top of the glass — the same area the cover protects from the top. When that shadow alone already covers everything the cover would otherwise have had to cover, the cover can open fully. Short of that, the reveal makes no difference to the calculated position.",
           "sill_height": "Height from the floor to the bottom of your window. Shown in the unit Home Assistant is configured for. Set to 0 (default) for floor-level windows or when unknown. Example: for a sill 1 m / 39 in above the floor, enter that value. Improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0–50 m / 0–1968 in. Measure from the floor to the bottom edge of the glass area (the sill). Note: Window Height is still measured from bottom to top of glass — these are independent measurements.",
           "window_width": "Width of the window opening. Shown in the unit Home Assistant is configured for. Used by glare zones to determine which floor zones can receive direct sunlight based on the sun's horizontal angle. Measure the inside width of the glass area. Examples: Standard window = 0.9–1.2 m / 35–47 in, Double window = 1.5–1.8 m / 59–71 in, Patio door = 2.0–3.0 m / 79–118 in. Only relevant when glare zones are enabled.",
+          "solar_properties_enabled": "Turn on to describe how much solar HEAT this window assembly lets through, so diagnostics can estimate it. Off by default and purely informational — nothing about how the cover moves changes either way. Every figure it produces is an estimate from published glazing and shading-fabric bands, not a measurement of your hardware.",
+          "solar_cover_side": "Where the cover hangs relative to the glass. **External**: outside the glazing, so absorbed heat is re-radiated to the outdoors — typically two to three times more effective at rejecting solar heat. **Internal**: inside the room, so sunlight has already crossed the glass and most of the heat the fabric absorbs stays indoors.",
+          "solar_cover_shade": "How dark the fabric is, optically. **Light** reflects most of what hits it; **Dark** absorbs most of it. Used with the mounting side to look up an estimated solar transmittance from the published bands. Ignored when you enter a Total solar transmittance below.",
+          "solar_g_total": "Optional: the fully-closed assembly's solar transmittance (g-value, 0.0–1.0), if your fabric or blind datasheet quotes one. Leave it empty to use the estimate from the mounting side and shade above. 0.0 means fully opaque to solar energy and is a real value, not 'unset'.",
+          "solar_g_glazing": "Solar transmittance of the glass alone, with the cover fully out of the way (g-value, 0.0–1.0). Default 0.70 is typical of common double glazing; single glazing is nearer 0.85 and modern triple or solar-control glass nearer 0.35–0.50. Check the glazing datasheet if you have one.",
+          "glass_area": "Optional: the glazed area of this window in square metres, used only by the Estimated Solar Gain sensor. Leave it empty to derive the area from the window height and width above — that gives the rough opening, and a frame typically eats 10–25% of it, so enter a measured glass area here if you want a closer figure. Required for cover types that do not record both a window height and a width (awnings, tilt-only blinds, sliding curtains, louvered roofs), which otherwise report the gain as unknown.",
           "length_awning": "Maximum extension length of your awning when fully extended. Shown in the unit Home Assistant is configured for. Measure from mounting point to the end of the fabric when fully out. Examples: Standard patio awning = 2.0–3.0 m / 79–118 in, Small window awning = 1.0–1.5 m / 39–59 in, Large commercial = 4.0 m / 157 in or more. Used to calculate how far the awning needs to extend to block sun.",
           "angle": "Angle of the awning when extended (0-45°). 0° = Horizontal/flat (maximum coverage), 15° = Slight slope (typical for drainage), 30° = Steep slope (strong sun angle), 45° = Very steep (rarely used). Check your awning manufacturer specs. Most awnings are 0-15°. Affects shadow calculation for proper sun blocking.",
           "awning_shade_mode": "Whether the awning shades the window glass or the whole area in front of it. **Shade window glass** (default): extend just far enough to keep direct sun off the window, retracting as the sun moves toward the side of the window — best for cutting glare and heat at the glass. **Shade area in front (patio)**: stay fully extended whenever the sun is in front of the awning, to shade a patio or seating area rather than the window.",
@@ -458,6 +470,12 @@
           "window_depth": "Window Depth (Reveal)",
           "sill_height": "Window Sill Height",
           "window_width": "Window Width",
+          "solar_properties_enabled": "Describe solar properties (estimate)",
+          "solar_cover_side": "Cover mounting side",
+          "solar_cover_shade": "Cover shade",
+          "solar_g_total": "Total solar transmittance (g), closed",
+          "solar_g_glazing": "Glazing solar transmittance (g), uncovered",
+          "glass_area": "Glazed area (optional)",
           "length_awning": "Awning Span Length",
           "angle": "Awning Angle",
           "awning_shade_mode": "Awning Shade Mode",
@@ -517,6 +535,12 @@
           "window_depth": "Depth of window reveal/frame from the wall surface. Shown in the unit Home Assistant is configured for. Optional parameter for advanced accuracy — set to 0 (default) to disable. Typical values: Flush mount = 0.05 m / 2 in, Standard frame = 0.10 m / 4 in, Deep reveal = 0.15 m / 6 in. Measure from the outer wall surface to the inner edge of the window frame. The reveal casts its own shadow across the top of the glass — the same area the cover protects from the top. When that shadow alone already covers everything the cover would otherwise have had to cover, the cover can open fully. Short of that, the reveal makes no difference to the calculated position.",
           "sill_height": "Height from the floor to the bottom of your window. Shown in the unit Home Assistant is configured for. Set to 0 (default) for floor-level windows or when unknown. Example: for a sill 1 m / 39 in above the floor, enter that value. Improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0–50 m / 0–1968 in. Measure from the floor to the bottom edge of the glass area (the sill). Note: Window Height is still measured from bottom to top of glass — these are independent measurements.",
           "window_width": "Width of the window opening. Shown in the unit Home Assistant is configured for. Used by glare zones to determine which floor zones can receive direct sunlight based on the sun's horizontal angle. Measure the inside width of the glass area. Examples: Standard window = 0.9–1.2 m / 35–47 in, Double window = 1.5–1.8 m / 59–71 in, Patio door = 2.0–3.0 m / 79–118 in. Only relevant when glare zones are enabled.",
+          "solar_properties_enabled": "Turn on to describe how much solar HEAT this window assembly lets through, so diagnostics can estimate it. Off by default and purely informational — nothing about how the cover moves changes either way. Every figure it produces is an estimate from published glazing and shading-fabric bands, not a measurement of your hardware.",
+          "solar_cover_side": "Where the cover hangs relative to the glass. **External**: outside the glazing, so absorbed heat is re-radiated to the outdoors — typically two to three times more effective at rejecting solar heat. **Internal**: inside the room, so sunlight has already crossed the glass and most of the heat the fabric absorbs stays indoors.",
+          "solar_cover_shade": "How dark the fabric is, optically. **Light** reflects most of what hits it; **Dark** absorbs most of it. Used with the mounting side to look up an estimated solar transmittance from the published bands. Ignored when you enter a Total solar transmittance below.",
+          "solar_g_total": "Optional: the fully-closed assembly's solar transmittance (g-value, 0.0–1.0), if your fabric or blind datasheet quotes one. Leave it empty to use the estimate from the mounting side and shade above. 0.0 means fully opaque to solar energy and is a real value, not 'unset'.",
+          "solar_g_glazing": "Solar transmittance of the glass alone, with the cover fully out of the way (g-value, 0.0–1.0). Default 0.70 is typical of common double glazing; single glazing is nearer 0.85 and modern triple or solar-control glass nearer 0.35–0.50. Check the glazing datasheet if you have one.",
+          "glass_area": "Optional: the glazed area of this window in square metres, used only by the Estimated Solar Gain sensor. Leave it empty to derive the area from the window height and width above — that gives the rough opening, and a frame typically eats 10–25% of it, so enter a measured glass area here if you want a closer figure. Required for cover types that do not record both a window height and a width (awnings, tilt-only blinds, sliding curtains, louvered roofs), which otherwise report the gain as unknown.",
           "length_awning": "Maximum extension length of your awning when fully extended. Shown in the unit Home Assistant is configured for. Measure from mounting point to the end of the fabric when fully out. Examples: Standard patio awning = 2.0–3.0 m / 79–118 in, Small window awning = 1.0–1.5 m / 39–59 in, Large commercial = 4.0 m / 157 in or more. Used to calculate how far the awning needs to extend to block sun.",
           "angle": "Angle of the awning when extended (0-45°). 0° = Horizontal/flat (maximum coverage), 15° = Slight slope (typical for drainage), 30° = Steep slope (strong sun angle), 45° = Very steep (rarely used). Check your awning manufacturer specs. Most awnings are 0-15°. Affects shadow calculation for proper sun blocking.",
           "awning_shade_mode": "Whether the awning shades the window glass or the whole area in front of it. **Shade window glass** (default): extend just far enough to keep direct sun off the window, retracting as the sun moves toward the side of the window — best for cutting glare and heat at the glass. **Shade area in front (patio)**: stay fully extended whenever the sun is in front of the awning, to shade a patio or seating area rather than the window.",
@@ -895,6 +919,7 @@
           "lux_entity": "Lux sensor (optional)",
           "lux_threshold": "Lux threshold",
           "irradiance_entity": "Irradiance sensor (optional)",
+          "irradiance_plane": "Irradiance measurement plane",
           "irradiance_threshold": "Irradiance threshold",
           "cloud_coverage_entity": "Cloud coverage sensor (optional)",
           "cloud_coverage_threshold": "Cloud coverage threshold",
@@ -915,6 +940,7 @@
           "lux_entity": "Optional illuminance sensor (indoor or outdoor) for precise sun detection. When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Typical direct-sun values: 5,000–10,000 lux. Leave empty if you don't have this sensor.",
           "lux_threshold": "Illuminance level above which the sun is considered present. Below this value the cover returns to its default position instead of tracking the sun. Typical values: 5,000–10,000 lux for direct sunlight, 2,000–3,000 lux for bright indirect light. **Value is interpreted in the configured lux sensor's unit**. Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "irradiance_entity": "Optional solar irradiance sensor (outdoor) for precise sun detection. Measures solar power in W/m². When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Leave empty if you don't have this sensor.",
+          "irradiance_plane": "Which surface the irradiance sensor above measures. **Global horizontal** (default): the sensor lies flat, facing straight up — the usual pyranometer mounting. The Estimated Solar Gain sensor then converts that reading onto this window's own plane. **Window plane**: the sensor sits on or beside the glass and already reads what the window sees, so the reading is used as-is. Affects only the Estimated Solar Gain figure — cloud suppression reads the same sensor unchanged either way.",
           "irradiance_threshold": "Solar irradiance level above which the sun is considered present. Below this value the cover returns to its default position. Typical values: 300–500 W/m² for direct sunlight, 100–200 W/m² for an overcast day. **Value is interpreted in the configured irradiance sensor's unit**. Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
           "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed. For example, 75 means the cover stops sun-tracking when the sky is 75% or more overcast. Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
@@ -1202,6 +1228,9 @@
       "solar_calculation": {
         "name": "Solar Calculation"
       },
+      "solar_gain": {
+        "name": "Estimated Solar Gain"
+      },
       "control_status": {
         "state": {
           "force_override_active": "Force override active",
@@ -1430,6 +1459,25 @@
         "left": "Single leaf — anchored left, closes rightward",
         "right": "Single leaf — anchored right, closes leftward",
         "bi_part": "Centre-parting — two leaves meet in the middle"
+      }
+    },
+    "solar_cover_side": {
+      "options": {
+        "external": "External — mounted outside the glass",
+        "internal": "Internal — mounted inside the room"
+      }
+    },
+    "solar_cover_shade": {
+      "options": {
+        "light": "Light — reflective, pale fabric",
+        "medium": "Medium — mid-tone fabric",
+        "dark": "Dark — absorbent, deep-toned fabric"
+      }
+    },
+    "irradiance_plane": {
+      "options": {
+        "horizontal": "Global horizontal — sensor lies flat, facing up",
+        "window_plane": "Window plane — sensor faces the same way as the glass"
       }
     },
     "template_combine_mode": {

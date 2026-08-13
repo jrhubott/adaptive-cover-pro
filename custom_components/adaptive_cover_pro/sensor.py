@@ -14,7 +14,12 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_FRIENDLY_NAME, MATCH_ALL, PERCENTAGE
+from homeassistant.const import (
+    ATTR_FRIENDLY_NAME,
+    MATCH_ALL,
+    PERCENTAGE,
+    UnitOfPower,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -1050,6 +1055,48 @@ def _solar_calculation_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | Non
     return _solar_calculation_details(s)
 
 
+def _solar_gain_block(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
+    """Read the estimated-solar-gain block from diagnostics (single source).
+
+    The same dict the diagnostics download surfaces, so the sensor and the
+    download can never disagree — mirroring ``_solar_calculation_details``.
+    """
+    diagnostics = s.data.diagnostics if s.data else None
+    if not diagnostics:
+        return None
+    return diagnostics.get("solar_gain") or None
+
+
+def _solar_gain_value(s: _ACPDiagnosticSensor) -> int | None:
+    """State = whole watts, or ``None`` when a term of the estimate is missing.
+
+    Integer watts on purpose: the display precision is 0, the estimate's error
+    band is ±30 %, and rounding here caps recorder churn by pairing with the
+    render-signature write suppression on the entity base. ``0`` is a real
+    value (the sun is down), so the ``is None`` check must not become falsy.
+    """
+    block = _solar_gain_block(s)
+    if block is None:
+        return None
+    gain_w = block.get("gain_w")
+    if gain_w is None:
+        return None
+    return int(round(gain_w))
+
+
+def _solar_gain_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
+    """Attributes = every input and its provenance, minus the state itself.
+
+    This is the "assemble it yourself" escape hatch: irradiance components,
+    clearness index, area, transmittance, plane, model, and the reason a figure
+    is missing — enough for a user to audit any number they do not believe.
+    """
+    block = _solar_gain_block(s)
+    if block is None:
+        return None
+    return {k: v for k, v in block.items() if k != "gain_w"}
+
+
 def _decision_trace_value(s: _ACPDiagnosticSensor) -> str:
     result = s.coordinator._pipeline_result  # noqa: SLF001
     if result is None:
@@ -1520,6 +1567,27 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         # Per-entity dicts that only change when a run does — recording them
         # would store the same blob indefinitely between calibrations.
         unrecorded_attributes=frozenset({"results", "calibration"}),
+    ),
+    _SensorSpec(
+        suffix="solar_gain",
+        display_name="Estimated Solar Gain",
+        icon="mdi:solar-power-variant",
+        translation_key="solar_gain",
+        device_class=SensorDeviceClass.POWER,
+        unit=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=_solar_gain_value,
+        attrs_fn=_solar_gain_attrs,
+        # Only created when the user actually has an irradiance sensor: #1237
+        # ships no clear-sky fallback, so without a reading there is nothing
+        # credible to report and an entity permanently ``unknown`` is worse
+        # than no entity at all.
+        enabled_when=lambda e: bool(e.options.get(CONF_IRRADIANCE_ENTITY)),
+        # Deliberately EMPTY, unlike solar_calculation's MATCH_ALL: these are a
+        # handful of small scalars whose history is exactly what makes the
+        # estimate auditable over a day.
+        unrecorded_attributes=frozenset(),
     ),
     _SensorSpec(
         suffix="climate_status",

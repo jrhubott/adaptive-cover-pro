@@ -9,7 +9,7 @@ from math import ceil, cos, floor, radians
 
 from ...config_context_adapter import ConfigContextAdapter
 from ...config_types import CoverConfig
-from ...const import ReasonCode
+from ...const import VERTICAL_GLASS_PITCH_DEG, ReasonCode
 from ...reason_i18n import Reason, render_en
 from ...sun import SunData
 from ..sun_geometry import SunGeometry, azimuth_within_fov
@@ -163,6 +163,27 @@ class AdaptiveGeneralCover(ABC):
         pitched-plane form. Positive means the sun strikes the outer face.
         """
         return cos(radians(self.sol_elev)) * cos(radians(self.gamma))
+
+    @property
+    def plane_tilt_deg(self) -> float:
+        """Tilt of this cover's working plane FROM HORIZONTAL, in degrees.
+
+        The companion of :attr:`cos_aoi`: that answers "how obliquely does the
+        beam strike this plane?", this answers "how much sky and how much ground
+        does the plane see?" — the two view factors the isotropic sky-diffuse
+        and ground-reflected terms of the solar-gain estimate need (#1237).
+
+        ``0`` = flat (a skylight sees the whole sky, no ground); ``90`` = the
+        default vertical facade (half sky, half ground). Pitched-plane cover
+        types override with their configured roof pitch, so no consumer has to
+        know which family it is holding.
+
+        A PROPERTY on purpose, never a ``_last_calc_details`` key: that trace is
+        #682's shipped contract with exact per-cover-type key sets, and adding a
+        term the position calculation does not use would break it for a value no
+        position consumer reads.
+        """
+        return VERTICAL_GLASS_PITCH_DEG
 
     @property
     def sun_behind_plane(self) -> bool:

@@ -82,6 +82,12 @@
           "window_depth": "Profondeur de la fenêtre (embrasure)",
           "sill_height": "Hauteur de l'appui de fenêtre",
           "window_width": "Largeur de la fenêtre",
+          "solar_properties_enabled": "Décrire les propriétés solaires (estimation)",
+          "solar_cover_side": "Côté de montage du store",
+          "solar_cover_shade": "Teinte du store",
+          "solar_g_total": "Facteur solaire total (g), store fermé",
+          "solar_g_glazing": "Facteur solaire du vitrage (g), sans store",
+          "glass_area": "Surface vitrée (optionnel)",
           "length_awning": "Longueur déployée du store banne",
           "angle": "Angle du store banne",
           "slat_depth": "Profondeur de la lamelle",
@@ -141,6 +147,12 @@
           "window_depth": "Profondeur de la fenêtre/cadre à partir de la surface du mur. Affiché dans l'unité configurée dans Home Assistant. Paramètre facultatif pour une précision avancée — réglez sur 0 (par défaut) pour désactiver. Valeurs typiques : Montage affleurant = 0,05 m / 2 in, Cadre standard = 0,10 m / 4 in, Ressaut profond = 0,15 m / 6 in. Mesurez de la surface du mur extérieur au bord intérieur du cadre de fenêtre. Le ressaut projette sa propre ombre sur le haut de la vitre — la même zone que la protection protège par le haut. Quand cette ombre seule couvre déjà tout ce que la protection aurait dû couvrir, la protection peut s'ouvrir complètement. Autrement, le ressaut ne fait aucune différence à la position calculée.",
           "sill_height": "Hauteur du sol jusqu'au bas de votre fenêtre. Affiché dans l'unité configurée dans Home Assistant. Réglez sur 0 (par défaut) pour les fenêtres au niveau du sol ou lorsque la valeur est inconnue. Exemple : pour un rebord à 1 m / 39 in au-dessus du sol, saisissez cette valeur. Améliore la précision du calcul pour les fenêtres surélevées — sans lui, le store se ferme légèrement plus que nécessaire. Plage : 0–50 m / 0–1968 in. Mesurez du sol au bord inférieur de la zone vitrée (le rebord). Remarque : La hauteur de fenêtre est toujours mesurée de bas en haut de la vitre — ce sont des mesures indépendantes.",
           "window_width": "Largeur de l'ouverture de la fenêtre. Affiché dans l'unité configurée dans Home Assistant. Utilisé par les zones d'éblouissement pour déterminer quelles zones de sol peuvent recevoir la lumière solaire directe en fonction de l'angle horizontal du soleil. Mesurez la largeur intérieure de la zone vitrée. Exemples : Fenêtre standard = 0,9–1,2 m / 35–47 in, Double fenêtre = 1,5–1,8 m / 59–71 in, Porte patio = 2,0–3,0 m / 79–118 in. Pertinent uniquement lorsque les zones d'éblouissement sont activées.",
+          "solar_properties_enabled": "Activez cette option pour décrire la quantité de CHALEUR solaire que laisse passer cet ensemble vitrage + store, afin que les diagnostics puissent l'estimer. Désactivée par défaut et purement informative — le comportement du store ne change pas. Toutes les valeurs produites sont des estimations issues des plages publiées pour les vitrages et les tissus d'occultation, pas des mesures de votre matériel.",
+          "solar_cover_side": "Où le store se trouve par rapport au vitrage. **Extérieur** : devant le vitrage, la chaleur absorbée est réémise vers l'extérieur — généralement deux à trois fois plus efficace contre la chaleur solaire. **Intérieur** : dans la pièce, la lumière a déjà traversé le vitrage et la majeure partie de la chaleur absorbée par le tissu reste à l'intérieur.",
+          "solar_cover_shade": "Teinte optique du tissu. **Clair** réfléchit l'essentiel du rayonnement reçu ; **Foncé** en absorbe l'essentiel. Utilisée avec le côté de montage pour rechercher un facteur solaire estimé dans les plages publiées. Ignorée si vous saisissez un facteur solaire total ci-dessous.",
+          "solar_g_total": "Facultatif : facteur solaire de l'ensemble entièrement fermé (valeur g, 0,0–1,0), si la fiche technique de votre tissu ou de votre store en indique un. Laissez vide pour utiliser l'estimation déduite du côté de montage et de la teinte ci-dessus. 0,0 signifie totalement opaque à l'énergie solaire : c'est une valeur réelle, pas « non renseigné ».",
+          "solar_g_glazing": "Facteur solaire du vitrage seul, store entièrement escamoté (valeur g, 0,0–1,0). La valeur par défaut 0,70 correspond à un double vitrage courant ; un simple vitrage est plus proche de 0,85 et un triple vitrage ou un vitrage de contrôle solaire moderne de 0,35–0,50. Consultez la fiche technique du vitrage si vous en disposez.",
+          "glass_area": "Optionnel : la surface vitrée de cette fenêtre en mètres carrés, utilisée uniquement par le capteur « Apport solaire estimé ». Laissez vide pour déduire la surface de la hauteur et de la largeur de fenêtre ci-dessus — cela donne la baie brute, dont un dormant retire généralement 10 à 25 % ; saisissez ici une surface vitrée mesurée si vous souhaitez une valeur plus juste. Nécessaire pour les types de protection qui n'enregistrent pas à la fois une hauteur et une largeur de fenêtre (stores bannes, stores à lames orientables seules, rideaux coulissants, pergolas à lames), sinon l'apport est signalé comme inconnu.",
           "length_awning": "Longueur maximale d'extension de votre store banne lorsqu'il est complètement déployé. Affiché dans l'unité configurée dans Home Assistant. Mesurez du point de montage à l'extrémité du tissu lorsqu'il est complètement ouvert. Exemples : Store banne de patio standard = 2,0–3,0 m / 79–118 in, Petit store de fenêtre = 1,0–1,5 m / 39–59 in, Commerce grande = 4,0 m / 157 in ou plus. Utilisé pour calculer la distance que le store doit s'étendre pour bloquer le soleil.",
           "angle": "Angle du store banne lorsqu'il est étendu (0-45°). 0° = Horizontal/plat (couverture maximale), 15° = légère pente (typique pour le drainage), 30° = pente raide (angle solaire fort), 45° = très raide (rarement utilisé). Vérifiez les spécifications du fabricant de votre store banne. La plupart des stores bannes sont à 0-15°. Affecte le calcul d'ombre pour un blocage solaire approprié.",
           "slat_depth": "Largeur de chaque lamelle (mesurez une lamelle d'avant en arrière). Affiché dans l'unité configurée dans Home Assistant. Tailles courantes : Mini stores = 2,5 cm / 1 in, Stores standard = 5 cm / 2 in, Larges lamelles = 6,5–7,5 cm / 2,5–3 in. Mesurez une seule lamelle avec une règle pour un calcul de blocage solaire précis.",
@@ -392,6 +404,12 @@
           "window_depth": "Profondeur de la fenêtre (embrasure)",
           "sill_height": "Hauteur de l'appui de fenêtre",
           "window_width": "Largeur de la fenêtre",
+          "solar_properties_enabled": "Décrire les propriétés solaires (estimation)",
+          "solar_cover_side": "Côté de montage du store",
+          "solar_cover_shade": "Teinte du store",
+          "solar_g_total": "Facteur solaire total (g), store fermé",
+          "solar_g_glazing": "Facteur solaire du vitrage (g), sans store",
+          "glass_area": "Surface vitrée (optionnel)",
           "length_awning": "Longueur déployée du store banne",
           "angle": "Angle du store banne",
           "slat_depth": "Profondeur de la lamelle",
@@ -451,6 +469,12 @@
           "window_depth": "Profondeur de la fenêtre/cadre à partir de la surface du mur. Affiché dans l'unité configurée dans Home Assistant. Paramètre facultatif pour une précision avancée — réglez sur 0 (par défaut) pour désactiver. Valeurs typiques : Montage affleurant = 0,05 m / 2 in, Cadre standard = 0,10 m / 4 in, Ressaut profond = 0,15 m / 6 in. Mesurez de la surface du mur extérieur au bord intérieur du cadre de fenêtre. Le ressaut projette sa propre ombre sur le haut de la vitre — la même zone que la protection protège par le haut. Quand cette ombre seule couvre déjà tout ce que la protection aurait dû couvrir, la protection peut s'ouvrir complètement. Autrement, le ressaut ne fait aucune différence à la position calculée.",
           "sill_height": "Hauteur du sol jusqu'au bas de votre fenêtre. Affiché dans l'unité configurée dans Home Assistant. Réglez sur 0 (par défaut) pour les fenêtres au niveau du sol ou lorsque la valeur est inconnue. Exemple : pour un rebord à 1 m / 39 in au-dessus du sol, saisissez cette valeur. Améliore la précision du calcul pour les fenêtres surélevées — sans lui, le store se ferme légèrement plus que nécessaire. Plage : 0–50 m / 0–1968 in. Mesurez du sol au bord inférieur de la zone vitrée (le rebord). Remarque : La hauteur de fenêtre est toujours mesurée de bas en haut de la vitre — ce sont des mesures indépendantes.",
           "window_width": "Largeur de l'ouverture de la fenêtre. Affiché dans l'unité configurée dans Home Assistant. Utilisé par les zones d'éblouissement pour déterminer quelles zones de sol peuvent recevoir la lumière solaire directe en fonction de l'angle horizontal du soleil. Mesurez la largeur intérieure de la zone vitrée. Exemples : Fenêtre standard = 0,9–1,2 m / 35–47 in, Double fenêtre = 1,5–1,8 m / 59–71 in, Porte patio = 2,0–3,0 m / 79–118 in. Pertinent uniquement lorsque les zones d'éblouissement sont activées.",
+          "solar_properties_enabled": "Activez cette option pour décrire la quantité de CHALEUR solaire que laisse passer cet ensemble vitrage + store, afin que les diagnostics puissent l'estimer. Désactivée par défaut et purement informative — le comportement du store ne change pas. Toutes les valeurs produites sont des estimations issues des plages publiées pour les vitrages et les tissus d'occultation, pas des mesures de votre matériel.",
+          "solar_cover_side": "Où le store se trouve par rapport au vitrage. **Extérieur** : devant le vitrage, la chaleur absorbée est réémise vers l'extérieur — généralement deux à trois fois plus efficace contre la chaleur solaire. **Intérieur** : dans la pièce, la lumière a déjà traversé le vitrage et la majeure partie de la chaleur absorbée par le tissu reste à l'intérieur.",
+          "solar_cover_shade": "Teinte optique du tissu. **Clair** réfléchit l'essentiel du rayonnement reçu ; **Foncé** en absorbe l'essentiel. Utilisée avec le côté de montage pour rechercher un facteur solaire estimé dans les plages publiées. Ignorée si vous saisissez un facteur solaire total ci-dessous.",
+          "solar_g_total": "Facultatif : facteur solaire de l'ensemble entièrement fermé (valeur g, 0,0–1,0), si la fiche technique de votre tissu ou de votre store en indique un. Laissez vide pour utiliser l'estimation déduite du côté de montage et de la teinte ci-dessus. 0,0 signifie totalement opaque à l'énergie solaire : c'est une valeur réelle, pas « non renseigné ».",
+          "solar_g_glazing": "Facteur solaire du vitrage seul, store entièrement escamoté (valeur g, 0,0–1,0). La valeur par défaut 0,70 correspond à un double vitrage courant ; un simple vitrage est plus proche de 0,85 et un triple vitrage ou un vitrage de contrôle solaire moderne de 0,35–0,50. Consultez la fiche technique du vitrage si vous en disposez.",
+          "glass_area": "Optionnel : la surface vitrée de cette fenêtre en mètres carrés, utilisée uniquement par le capteur « Apport solaire estimé ». Laissez vide pour déduire la surface de la hauteur et de la largeur de fenêtre ci-dessus — cela donne la baie brute, dont un dormant retire généralement 10 à 25 % ; saisissez ici une surface vitrée mesurée si vous souhaitez une valeur plus juste. Nécessaire pour les types de protection qui n'enregistrent pas à la fois une hauteur et une largeur de fenêtre (stores bannes, stores à lames orientables seules, rideaux coulissants, pergolas à lames), sinon l'apport est signalé comme inconnu.",
           "length_awning": "Longueur maximale d'extension de votre store banne lorsqu'il est complètement déployé. Affiché dans l'unité configurée dans Home Assistant. Mesurez du point de montage à l'extrémité du tissu lorsqu'il est complètement ouvert. Exemples : Store banne de patio standard = 2,0–3,0 m / 79–118 in, Petit store de fenêtre = 1,0–1,5 m / 39–59 in, Commerce grande = 4,0 m / 157 in ou plus. Utilisé pour calculer la distance que le store doit s'étendre pour bloquer le soleil.",
           "angle": "Angle du store banne lorsqu'il est étendu (0-45°). 0° = Horizontal/plat (couverture maximale), 15° = légère pente (typique pour le drainage), 30° = pente raide (angle solaire fort), 45° = très raide (rarement utilisé). Vérifiez les spécifications du fabricant de votre store banne. La plupart des stores bannes sont à 0-15°. Affecte le calcul d'ombre pour un blocage solaire approprié.",
           "slat_depth": "Largeur de chaque lamelle (mesurez une lamelle d'avant en arrière). Affiché dans l'unité configurée dans Home Assistant. Tailles courantes : Mini stores = 2,5 cm / 1 in, Stores standard = 5 cm / 2 in, Larges lamelles = 6,5–7,5 cm / 2,5–3 in. Mesurez une seule lamelle avec une règle pour un calcul de blocage solaire précis.",
@@ -768,6 +792,7 @@
           "lux_entity": "Capteur de lux (optionnel)",
           "lux_threshold": "Seuil de lux",
           "irradiance_entity": "Capteur d'irradiance (optionnel)",
+          "irradiance_plane": "Plan de mesure du capteur d'irradiance",
           "irradiance_threshold": "Seuil d'irradiance",
           "cloud_coverage_entity": "Capteur de couverture nuageuse (optionnel)",
           "cloud_coverage_threshold": "Seuil de couverture nuageuse",
@@ -788,6 +813,7 @@
           "lux_entity": "Capteur d'éclairement optionnel (intérieur ou extérieur) pour une détection précise du soleil. Quand le capteur lit une valeur inférieure au seuil, le soleil direct est absent et le contrôle de l'éblouissement est supprimé. Valeurs typiques en plein soleil : 5 000-10 000 lux. Laissez vide si vous ne disposez pas de ce capteur.",
           "lux_threshold": "Niveau d'illuminance au-dessus duquel le soleil est considéré comme présent. En dessous de cette valeur, la protection revient à sa position par défaut au lieu de suivre le soleil. Valeurs typiques : 5 000–10 000 lux pour la lumière directe, 2 000–3 000 lux pour une lumière indirecte brillante. **La valeur est interprétée dans l'unité du capteur lux configuré**. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "irradiance_entity": "Capteur d'irradiance solaire optionnel (extérieur) pour une détection précise du soleil. Mesure la puissance solaire en W/m². Quand le capteur lit une valeur inférieure au seuil, le soleil direct est absent et le contrôle de l'éblouissement est supprimé. Laissez vide si vous ne disposez pas de ce capteur.",
+          "irradiance_plane": "Quelle surface le capteur d'irradiance ci-dessus mesure. **Global horizontal** (par défaut) : le capteur est posé à plat, orienté vers le haut — le montage habituel d'un pyranomètre. Le capteur « Apport solaire estimé » convertit alors cette mesure vers le plan propre de cette fenêtre. **Plan de la fenêtre** : le capteur est posé sur le vitrage ou à côté et mesure déjà ce que voit la fenêtre, la mesure est donc utilisée telle quelle. N'affecte que l'apport solaire estimé — la suppression pour nuages lit le même capteur sans changement dans les deux cas.",
           "irradiance_threshold": "Niveau d'irradiance solaire au-dessus duquel le soleil est considéré comme présent. En dessous de cette valeur, la protection revient à sa position par défaut. Valeurs typiques : 300–500 W/m² pour la lumière directe, 100–200 W/m² par temps couvert. **La valeur est interprétée dans l'unité du capteur d'irradiance configuré**. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "cloud_coverage_entity": "Capteur de couverture nuageuse optionnel indiquant une valeur de 0 à 100 % (par ex. d'une intégration météo). Quand la valeur atteint le seuil, le contrôle de l'éblouissement est supprimé et le store revient à sa position par défaut. Laissez vide si vous ne disposez pas de ce capteur.",
           "cloud_coverage_threshold": "Pourcentage de couverture nuageuse à partir duquel la suppression de l'éblouissement est désactivée. Par exemple, 75 signifie que la protection cesse de suivre le soleil quand le ciel est couvert à 75 % ou plus. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
@@ -1244,6 +1270,9 @@
       "solar_calculation": {
         "name": "Calcul solaire"
       },
+      "solar_gain": {
+        "name": "Apport solaire estimé"
+      },
       "group_position": {
         "name": "Position du groupe"
       },
@@ -1482,6 +1511,25 @@
         "bi_part": "Ouverture centrale — deux pans se rejoignent au milieu",
         "left": "Un seul pan — ancré à gauche, se ferme vers la droite",
         "right": "Un seul pan — ancré à droite, se ferme vers la gauche"
+      }
+    },
+    "solar_cover_side": {
+      "options": {
+        "external": "Extérieur — monté devant le vitrage",
+        "internal": "Intérieur — monté dans la pièce"
+      }
+    },
+    "solar_cover_shade": {
+      "options": {
+        "light": "Clair — tissu pâle et réfléchissant",
+        "medium": "Moyen — tissu de teinte intermédiaire",
+        "dark": "Foncé — tissu sombre et absorbant"
+      }
+    },
+    "irradiance_plane": {
+      "options": {
+        "horizontal": "Global horizontal — capteur à plat, orienté vers le haut",
+        "window_plane": "Plan de la fenêtre — capteur orienté comme le vitrage"
       }
     },
     "outside_temp_source": {

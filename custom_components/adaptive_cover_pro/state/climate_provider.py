@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from operator import ge, le
 from typing import TYPE_CHECKING, Any
@@ -25,6 +26,26 @@ if TYPE_CHECKING:
     from ..config_context_adapter import ConfigContextAdapter
 
 
+@dataclass(frozen=True, slots=True)
+class ThresholdReading:
+    """One numeric sensor read: its two edges AND the number behind them.
+
+    ``_read_numeric_threshold`` used to return a bare ``(activate, cleared)``
+    tuple, which meant the parsed float died inside the provider. Promoting it
+    to a frozen dataclass (per the project's no-multi-field-tuples rule) lets
+    the estimated-solar-gain feature reuse the SAME read instead of parsing the
+    entity's state a second time.
+
+    ``value`` is ``None`` on every fail-open path — disabled, unconfigured,
+    unavailable, or non-numeric — exactly the paths where the two booleans are
+    ``(False, True)``.
+    """
+
+    activate: bool
+    release_cleared: bool
+    value: float | None = None
+
+
 @dataclass(frozen=True)
 class ClimateReadings:
     """Pre-read climate values — no Home Assistant dependency."""
@@ -46,6 +67,12 @@ class ClimateReadings:
     lux_release_cleared: bool = True
     irradiance_release_cleared: bool = True
     cloud_coverage_release_cleared: bool = True
+    # Raw plane-of-measurement irradiance in W/m² (issue #1237). Admitted on its
+    # OWN rule — whenever the entity is configured — because the estimated solar
+    # gain must not depend on cloud suppression being enabled. ``None`` when no
+    # entity is configured or its state is unavailable / non-numeric. Defaulted
+    # so every existing construction site (and every test double) is unaffected.
+    irradiance_value: float | None = None
     # Temperature-season crossings consumed by ClimateSmoothingManager's Schmitt
     # latches (issue #917). Each ``*_release_cleared`` is True once the value has
     # passed the release edge so the latch may drop; with a blank release edge it
@@ -433,6 +460,45 @@ class ClimateProvider:
         self._logger.debug("is_sunny(): No weather condition defined")
         return True
 
+    def _read_float(self, entity: str | None, label: str) -> float | None:
+        """Read one threshold or irradiance entity's state as a float, or ``None``.
+
+        The single place a *threshold or irradiance* entity is read and parsed
+        in this provider (issue #1237) — the threshold reader below and the
+        raw-irradiance admission both go through it, so there is one
+        unavailable/non-numeric contract and one debug log, not two copies
+        drifting apart. The parse itself delegates to :meth:`_coerce_float`, the
+        provider's only float-coercion primitive; this wrapper adds the entity
+        read, the finiteness guard, and the non-numeric debug log on top of it.
+
+        The TEMPERATURE readers are a separate, older path and do not come
+        through here: :meth:`_read_live_outside` and
+        :meth:`_read_inside_temperature` do their own entity/attribute reads,
+        and :meth:`_read_outside_temperature` parses their results with
+        :meth:`_coerce_float` directly — so they carry neither the finiteness
+        guard nor this log.
+
+        **Finiteness is part of "numeric" here.** ``float()`` happily accepts
+        the strings ``nan``, ``inf`` and ``-inf``, and every consumer downstream
+        assumes real arithmetic: NaN compares False against BOTH threshold edges
+        (so a garbage reading could pin the cloud-suppression latch on), and it
+        survives ``max(x, 0.0)`` all the way into the solar-gain sensor's
+        ``int(round(...))``, which then raises on every update. Treating a
+        non-finite reading exactly like a non-numeric one — ``None``, same debug
+        log — puts it back on the existing fail-open path for every caller.
+        """
+        if entity is None:
+            return None
+        value = get_safe_state(self._hass, entity)
+        parsed = self._coerce_float(value)
+        if parsed is not None and not math.isfinite(parsed):
+            parsed = None
+        if parsed is None and value is not None:
+            self._logger.debug(
+                "%s entity %s returned non-numeric value: %r", label, entity, value
+            )
+        return parsed
+
     def _read_numeric_threshold(
         self,
         *,
@@ -443,37 +509,37 @@ class ClimateProvider:
         release_threshold: float | None,
         release_comparison: Callable[[float, float], bool],
         label: str,
-    ) -> tuple[bool, bool]:
+    ) -> ThresholdReading:
         """Compare an entity's numeric state to its activate + release edges.
 
-        Returns ``(activate_met, release_cleared)`` from a SINGLE read (issue
-        #864). ``activate_met`` is the existing single-crossing comparison
-        against ``threshold``. ``release_cleared`` is True when the value has
-        passed the ``release_threshold`` edge (via ``release_comparison``), so a
-        downstream Schmitt latch may drop.
+        Returns a :class:`ThresholdReading` from a SINGLE read (issue #864).
+        ``activate`` is the existing single-crossing comparison against
+        ``threshold``. ``release_cleared`` is True when the value has passed the
+        ``release_threshold`` edge (via ``release_comparison``), so a downstream
+        Schmitt latch may drop. ``value`` carries the parsed float through for
+        consumers that need the magnitude rather than the crossing (#1237).
 
         A blank ``release_threshold`` collapses the band to zero width →
-        ``release_cleared = not activate_met``, reproducing today's
-        instantaneous behaviour. A disabled / unavailable / non-numeric read
+        ``release_cleared = not activate``, reproducing today's instantaneous
+        behaviour. A disabled / unconfigured / unavailable / non-numeric read
         reports ``(False, True)`` — inactive and cleared, so no latch is created
         or held (fail-open: sensor failure never strands the cover suppressed).
+
+        The early-return ORDER is load-bearing and unchanged: a disabled or
+        unconfigured trigger must short-circuit before the state is touched, so
+        turning a trigger off costs no HA read.
         """
         if not enabled or entity is None or threshold is None:
-            return False, True
-        value = get_safe_state(self._hass, entity)
-        if value is None:
-            return False, True
-        try:
-            fvalue = float(value)
-        except (ValueError, TypeError):
-            self._logger.debug(
-                "%s entity %s returned non-numeric value: %r", label, entity, value
-            )
-            return False, True
+            return ThresholdReading(False, True)
+        fvalue = self._read_float(entity, label)
+        if fvalue is None:
+            return ThresholdReading(False, True)
         activate_met = comparison(fvalue, threshold)
         if release_threshold is None:
-            return activate_met, not activate_met
-        return activate_met, release_comparison(fvalue, release_threshold)
+            return ThresholdReading(activate_met, not activate_met, fvalue)
+        return ThresholdReading(
+            activate_met, release_comparison(fvalue, release_threshold), fvalue
+        )
 
     def _read_lux(
         self,
@@ -483,7 +549,7 @@ class ClimateProvider:
         lux_release_threshold: float | None = None,
     ) -> dict[str, bool]:
         """Read lux activate (at/below threshold) + release-cleared (issue #864)."""
-        activate, cleared = self._read_numeric_threshold(
+        reading = self._read_numeric_threshold(
             enabled=use_lux,
             entity=lux_entity,
             threshold=lux_threshold,
@@ -493,8 +559,8 @@ class ClimateProvider:
             label="Lux",
         )
         return {
-            "lux_below_threshold": activate,
-            "lux_release_cleared": cleared,
+            "lux_below_threshold": reading.activate,
+            "lux_release_cleared": reading.release_cleared,
         }
 
     def _read_irradiance(
@@ -503,9 +569,19 @@ class ClimateProvider:
         irradiance_entity: str | None,
         irradiance_threshold: int | None,
         irradiance_release_threshold: float | None = None,
-    ) -> dict[str, bool]:
-        """Read irradiance activate (at/below) + release-cleared (issue #864)."""
-        activate, cleared = self._read_numeric_threshold(
+    ) -> dict[str, Any]:
+        """Read irradiance activate (at/below) + release-cleared (issue #864).
+
+        Also admits the RAW W/m² (issue #1237) under a separate rule: the
+        estimated-solar-gain sensor needs the magnitude and must work with cloud
+        suppression switched off, whereas the two booleans keep their existing
+        ``use_irradiance`` gate byte-for-byte.
+
+        Still exactly one HA read per cycle: the extra read fires only when the
+        threshold path short-circuited BEFORE touching the state, so the two are
+        mutually exclusive.
+        """
+        reading = self._read_numeric_threshold(
             enabled=use_irradiance,
             entity=irradiance_entity,
             threshold=irradiance_threshold,
@@ -514,9 +590,13 @@ class ClimateProvider:
             release_comparison=ge,
             label="Irradiance",
         )
+        value = reading.value
+        if value is None and not (use_irradiance and irradiance_threshold is not None):
+            value = self._read_float(irradiance_entity, "Irradiance")
         return {
-            "irradiance_below_threshold": activate,
-            "irradiance_release_cleared": cleared,
+            "irradiance_below_threshold": reading.activate,
+            "irradiance_release_cleared": reading.release_cleared,
+            "irradiance_value": value,
         }
 
     def _read_cloud_coverage(
@@ -531,7 +611,7 @@ class ClimateProvider:
         The cloud band is inverted vs lux/irradiance — activate is "at or above"
         (overcast), so the release edge clears "at or below" a lower value.
         """
-        activate, cleared = self._read_numeric_threshold(
+        reading = self._read_numeric_threshold(
             enabled=use_cloud_coverage,
             entity=cloud_coverage_entity,
             threshold=cloud_coverage_threshold,
@@ -541,6 +621,6 @@ class ClimateProvider:
             label="Cloud coverage",
         )
         return {
-            "cloud_coverage_above_threshold": activate,
-            "cloud_coverage_release_cleared": cleared,
+            "cloud_coverage_above_threshold": reading.activate,
+            "cloud_coverage_release_cleared": reading.release_cleared,
         }

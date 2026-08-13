@@ -15,9 +15,37 @@ from ..const import (
     CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_WINDOW_DEPTH,
+    CONF_WINDOW_WIDTH,
     TiltMode,
 )
 from ._summary_labels import GEOMETRY_LABELS_EN
+
+
+def window_glass_area_m2(options: dict[str, Any]) -> float | None:
+    """Glazed area in m² from the stored window height × width, or ``None``.
+
+    The one place the rough-aperture area is computed (#1237). Only the cover
+    types whose geometry step collects BOTH dimensions delegate to it — the
+    rest inherit ``CoverTypePolicy.glass_area_m2``'s ``None``, which the
+    solar-gain estimate reports as ``glass_area_unknown`` rather than guessing.
+
+    ``None`` for any missing, non-numeric or non-positive dimension: an area of
+    zero is not an area, and reporting 0 W as a fact would be worse than
+    reporting "unknown".
+
+    This is the ROUGH aperture, not the glazed area — frames typically eat
+    10-25 %. Users who care set ``CONF_GLASS_AREA``, which wins at the
+    diagnostics layer so the override works for every cover type, including
+    the ones this helper cannot answer for.
+    """
+    try:
+        height = float(options.get(CONF_HEIGHT_WIN))  # type: ignore[arg-type]
+        width = float(options.get(CONF_WINDOW_WIDTH))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if height <= 0 or width <= 0:
+        return None
+    return height * width
 
 
 def window_dimensions_lines(

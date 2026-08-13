@@ -44,6 +44,7 @@ from ..helpers import (
     should_use_tilt,
     state_attr,
 )
+from ..position_utils import covered_fraction
 from ._summary_labels import AXIS_LABELS_EN
 
 if TYPE_CHECKING:
@@ -1393,6 +1394,36 @@ class CoverTypePolicy(ABC):
             return POSITION_CLOSED if primary.open_blocks_sun else POSITION_OPEN
         return POSITION_OPEN if primary.open_blocks_sun else POSITION_CLOSED
 
+    def shaded_glass_fraction(self, position: float) -> float | None:
+        """Share of the glazing this cover shades at ``position`` (0.0-1.0).
+
+        The position-dependent term of the solar-transmittance estimate
+        (#1236). Polymorphic through ``axes[0].open_blocks_sun`` for exactly
+        the same reason as :meth:`position_for_intent` — an awning shades MORE
+        as it extends, a blind shades more as it drops — so no consumer has to
+        know which family it is holding.
+
+        ``position`` is the LOGICAL, HA-semantics value (0 = closed): the
+        pipeline's target, never the post-inverse-state wire value. Feeding a
+        post-inversion number here silently reports the complement of the truth
+        on every inverse-state install.
+
+        ``None`` means "this cover has no area-coverage axis, do not guess":
+
+        * tilt-only types (``cover_tilt``, ``cover_louvered_roof``) override to
+          ``None`` — a slat angle is a rotation, not a covered fraction;
+        * axis-less virtual policies (group, building profile, command queue)
+          get ``None`` from the guard below, so an unknown registered policy is
+          safe by default.
+
+        v1 limitation: for a venetian the answer is the CARRIAGE coverage on
+        the primary lift axis only — the slat angle does not modulate the
+        shaded g-value yet.
+        """
+        if not self.axes:
+            return None
+        return covered_fraction(position, open_blocks_sun=self.axes[0].open_blocks_sun)
+
     def position_for_scene(self, scene: GroupScene) -> int:
         """Map a cover-group scene to this cover type's primary-axis position.
 
@@ -1612,6 +1643,11 @@ class CoverTypePolicy(ABC):
                     hass, include_distance=self.includes_shaded_distance()
                 ).schema
             )
+            # Optional solar-transmittance description (#1236) — universal for
+            # the same reason as the window-facing fields above, and composed
+            # through the same single seam so it lands in ``live_option_keys``
+            # for every cover type without a per-policy schema edit.
+            base = base.extend(cd.solar_properties_schema(hass, opts).schema)
         elif name == cf.SECTION_SUN_TRACKING:
             base = cd.sun_tracking_schema(hass)
         elif name == cf.SECTION_BLIND_SPOT:
@@ -1714,6 +1750,29 @@ class CoverTypePolicy(ABC):
         (tilt-only). The Target Position sensor multiplies this by the
         published position percentage to expose a physical-distance attribute
         alongside the existing percentage value.
+        """
+        return None
+
+    def glass_area_m2(
+        self,
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,  # noqa: ARG002
+    ) -> float | None:
+        """Glazed area of this window in m², or ``None`` when unknowable.
+
+        The area term of the estimated-solar-gain figure (#1237), shaped
+        exactly like :meth:`lift_travel_metres` so the consumer pattern is the
+        same: ask the policy, and treat ``None`` as "do not report a number".
+
+        Default ``None`` — and deliberately so. Only five cover types collect
+        both a window height and a window width; an awning has no width, a
+        sliding curtain no height, and a louvered roof no glass at all. Inventing
+        a dimension for them would put a confidently wrong wattage on a sensor,
+        so they report ``unknown`` with a reason instead.
+
+        The user's ``CONF_GLASS_AREA`` override is applied ABOVE this hook, at
+        the diagnostics layer, so it works for every cover type — including the
+        ones this method cannot answer for.
         """
         return None
 

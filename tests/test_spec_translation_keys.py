@@ -77,6 +77,7 @@ _EXPECTED_SENSOR_TRANSLATION_KEYS: frozenset[str] = frozenset(
         "motion_status",
         "position_forecast",
         "solar_calculation",
+        "solar_gain",
         "travel_calibration",
     }
 )
@@ -236,6 +237,11 @@ _WITHHELD_FROM_NAMESPACE: dict[str, frozenset[str]] = {
             "solar_calculation",
             "decision_trace",
             "position_forecast",
+            # A ±30 %-band physics ESTIMATE (#1237). Exposing it in the acp
+            # namespace would invite templates that branch on a number whose
+            # error bars are widest exactly where a threshold would sit; the
+            # entity is readable directly for anyone who wants it anyway.
+            "solar_gain",
             # Setup-time measurement state. Nothing an automation would branch
             # on: it reports whether a calibration pass is running, which is a
             # thing a human does from the options flow once per install.

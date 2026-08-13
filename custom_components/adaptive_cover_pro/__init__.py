@@ -1132,6 +1132,19 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # clamping at night again.
     new_minor = _advance_noop_minor(new_version, new_minor, 18)
 
+    # v3.18 → v3.19: added the additive optional solar options — the
+    # transmittance description solar_properties_enabled / solar_cover_side /
+    # solar_cover_shade / solar_g_total / solar_g_glazing (issue #1236) and the
+    # estimated-solar-gain inputs glass_area / irradiance_plane (issue #1237).
+    # An absent solar_properties_enabled already reads as "feature off", which
+    # is exactly what every existing install does today, so nothing needs
+    # seeding; this is a no-op minor bump kept only to advance entries sitting
+    # at minor 18 to 19 so they stop re-triggering migration every restart (the
+    # v3.17 → v3.18 precedent). Rollback-safe: an older build finds every key
+    # exactly as it left it and ignores the ones it does not know, so the
+    # diagnostics block and the gain sensor simply disappear again.
+    new_minor = _advance_noop_minor(new_version, new_minor, 19)
+
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
     )

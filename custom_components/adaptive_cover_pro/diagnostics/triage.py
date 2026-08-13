@@ -70,13 +70,19 @@ from ..const import (
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     DEFAULT_DEFAULT_HEIGHT,
+    DEFAULT_SOLAR_COVER_SHADE,
     GLARE_ZONE_SLOTS,
     POSITION_CLOSED,
     POSITION_OPEN,
     POSITION_TOLERANCE_PERCENT,
+    SOLAR_COVER_SIDE_EXTERNAL,
+    SOLAR_COVER_SIDE_INTERNAL,
+    SOLAR_G_PRESETS,
+    SOLAR_WEAK_REJECTION_THRESHOLD,
     ControlStatus,
     TriageCode,
 )
+from ..engine.solar_transmittance import SOURCE_DIRECT
 from ..reason_i18n import Reason, render
 from ..troubleshoot_i18n import load_troubleshoot_labels
 
@@ -107,9 +113,16 @@ _MANUAL_OVERRIDE_PRIORITY = 80
 
 # Fragment TriageCodes: they carry a template but NO rule row — they render only
 # as nested params of another finding's template (the skip "N minutes ago" clause
-# is spliced into the three skip templates). Mirrors ReasonCode's FRAGMENT_*
-# members; excluded from the rule-table bijection lock.
-_TRIAGE_FRAGMENT_CODES: frozenset[str] = frozenset({TriageCode.SKIP_AGE})
+# is spliced into the three skip templates; rule 27's two preset-only clauses are
+# spliced into its). Mirrors ReasonCode's FRAGMENT_* members; excluded from the
+# rule-table bijection lock.
+_TRIAGE_FRAGMENT_CODES: frozenset[str] = frozenset(
+    {
+        TriageCode.SKIP_AGE,
+        TriageCode.SOLAR_SHADE_WORD,
+        TriageCode.SOLAR_EXTERNAL_COMPARISON,
+    }
+)
 
 # A shaded distance below this (metres) makes the geometry near-binary: the
 # projected shade sweeps the window over so short a throw that the position
@@ -693,6 +706,66 @@ def _check_weather_override_inverted(data: Mapping) -> Iterable[Mapping]:
             "override": override,
             "safe": 0 if open_blocks_sun else 100,
         }
+
+
+def _check_solar_internal_cover_weak_rejection(data: Mapping) -> Iterable[Mapping]:
+    """Rule 27 — an internal-mounted cover rejects little solar energy (#1236).
+
+    Glass in front of the fabric means the heat is already inside the room by
+    the time the cover absorbs it, so an internal blind re-radiates most of what
+    it stops. The finding quantifies that against the same shade mounted
+    externally, so the user can judge whether re-mounting is worth it.
+
+    Gated on the NUMBER, not merely ``side == internal``: below
+    ``SOLAR_WEAK_REJECTION_THRESHOLD`` an internal cover is doing a reasonable
+    job and a permanent banner would just be noise. Informational only — there
+    is no option to change, hence ``fix_step=None``.
+
+    **Provenance decides the wording.** The headline fact — a fully-closed
+    internal cover still lets most of the heat through — holds however
+    ``g_shaded`` was arrived at, so the rule fires for both. But the shade WORD
+    and the external comparison are quotes from the ``(side, shade)`` preset
+    table, and a user who typed ``solar_g_total`` by hand never came from that
+    table: their ``cover_shade`` is very likely the untouched ``medium``
+    default. Naming it back at them, and comparing their number against a
+    preset row, would be inventing provenance. Both clauses are therefore
+    nested fragments, dropped entirely on the ``direct`` path.
+
+    That single check is enough because ``source`` carries provenance and
+    NOTHING else — a tilt or louvered-roof cover, which has no coverage axis to
+    blend along, still reports the real origin of its ``g_shaded`` and is gated
+    by exactly the same condition. Its axis-less-ness lives in
+    ``shaded_fraction``, which this rule has no reason to read.
+    """
+    block = _get(data, "solar_transmittance")
+    if not isinstance(block, Mapping):
+        return
+    if block.get("cover_side") != SOLAR_COVER_SIDE_INTERNAL:
+        return
+    g_shaded = block.get("g_shaded")
+    if not isinstance(g_shaded, int | float) or isinstance(g_shaded, bool):
+        return
+    if g_shaded <= SOLAR_WEAK_REJECTION_THRESHOLD:
+        return
+    shade_word: object = ""
+    comparison: object = ""
+    if block.get("source") != SOURCE_DIRECT:
+        shade = block.get("cover_shade", DEFAULT_SOLAR_COVER_SHADE)
+        external = SOLAR_G_PRESETS.get(
+            (SOLAR_COVER_SIDE_EXTERNAL, shade),
+            SOLAR_G_PRESETS[(SOLAR_COVER_SIDE_EXTERNAL, DEFAULT_SOLAR_COVER_SHADE)],
+        )
+        shade_word = Reason(TriageCode.SOLAR_SHADE_WORD, {"shade": shade})
+        comparison = Reason(
+            TriageCode.SOLAR_EXTERNAL_COMPARISON,
+            {"external_admitted": round(external * 100)},
+        )
+    yield {
+        "shade_word": shade_word,
+        "g_shaded": g_shaded,
+        "admitted": round(g_shaded * 100),
+        "comparison": comparison,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1337,6 +1410,19 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         wiki="Troubleshooting-Findings#weather-override-inverted",
         issues=(953, 1094),
         check=_check_weather_override_inverted,
+    ),
+    TriageRule(
+        code=TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION,
+        severity=Severity.INFO,
+        # CONFIG: the answer is a pure function of the configured material and
+        # mounting side, not of anything that changes cycle to cycle.
+        inputs=RuleInput.CONFIG,
+        # Informational — there is no misconfiguration to correct, so no step
+        # to send the user to.
+        fix_step=None,
+        wiki="Troubleshooting-Findings#solar-internal-cover-weak-rejection",
+        issues=(1236,),
+        check=_check_solar_internal_cover_weak_rejection,
     ),
 )
 

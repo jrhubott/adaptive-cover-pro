@@ -75,6 +75,11 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
         return self.roof_config.roof_pitch
 
     @property
+    def plane_tilt_deg(self) -> float:
+        """Louvered roof: the working plane IS the roof plane (#1237)."""
+        return self.roof_pitch
+
+    @property
     def cos_aoi(self) -> float:
         """Cosine of the angle of incidence on the roof plane (``s·n``).
 

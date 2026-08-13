@@ -40,13 +40,16 @@ from math import atan, cos, degrees, radians, sin, tan
 import numpy as np
 
 from ...config_types import RoofWindowConfig
+from ...const import VERTICAL_GLASS_PITCH_DEG as _VERTICAL_GLASS_PITCH_DEG
 from ..sun_geometry import foreshortened_slope
 from .vertical import AdaptiveVerticalCover
 
-# --- Numeric guards (file-local) ---
+# --- Numeric guards ---
 # Pitch (from horizontal) at which the glass is vertical and the geometry
-# collapses to the vertical engine exactly.
-VERTICAL_GLASS_PITCH_DEG = 90.0
+# collapses to the vertical engine exactly. Promoted to ``const.py`` on its
+# third consumer (#1237 gave ``AdaptiveGeneralCover`` a ``plane_tilt_deg``);
+# re-exported here so this module's existing importers keep resolving it.
+VERTICAL_GLASS_PITCH_DEG = _VERTICAL_GLASS_PITCH_DEG
 # Minimum |slope denominator| (s·n scaled by cos elev·cos Δazi) before the
 # projection divides. The denominator is the cosine of the angle of incidence
 # normalised by the FOV foreshortening; it is strictly positive across the
@@ -149,6 +152,11 @@ class AdaptiveRoofWindowCover(AdaptiveVerticalCover):
     def roof_height_above(self) -> float:
         """Along-slope roof above the window in metres (0 disables ridge gate)."""
         return self.roof_config.roof_height_above
+
+    @property
+    def plane_tilt_deg(self) -> float:
+        """Pitched glass: the working plane IS the roof plane (#1237)."""
+        return self.roof_pitch
 
     # ------------------------------------------------------------------
     # Sun-on-glass geometry

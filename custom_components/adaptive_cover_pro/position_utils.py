@@ -7,6 +7,8 @@ import math
 import numpy as np
 
 from .const import (
+    POSITION_CLOSED,
+    POSITION_OPEN,
     VENETIAN_TILT_TRANSFORM_CLAMP,
     VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
 )
@@ -15,6 +17,35 @@ from .const import (
 def inverse_state(state: int) -> int:
     """Inverse state."""
     return 100 - state
+
+
+def covered_fraction(position: float, *, open_blocks_sun: bool) -> float:
+    """Share of the aperture an axis covers at ``position`` (0.0-1.0).
+
+    The one place the position→coverage-share arithmetic is written (#1236).
+    Two families, one primitive:
+
+    * ``open_blocks_sun=False`` (blind, venetian, roof window, day/night, dual
+      panel, sliding curtain) — the carriage covers more as the position falls,
+      so ``100 %`` covers nothing and ``0 %`` covers everything.
+    * ``open_blocks_sun=True`` (awning, oscillating awning) — extending the
+      fabric covers more, so the polarity is the plain identity.
+
+    ``position`` is the LOGICAL (HA-semantics, pre-inverse-state) value; a
+    caller holding a wire-frame read must pass it through :func:`flip_if`
+    first. Floats are accepted and not truncated — HA publishes fractional
+    positions — and the input is clamped to ``[0, 100]`` so a stray value can
+    never yield a fraction outside the unit interval.
+
+    Lives here beside :func:`inverse_state` / :func:`flip_if` rather than on a
+    policy so the pure engine modules can reach it without importing
+    ``cover_types``; the "which polarity does this cover have?" answer is the
+    caller's, sourced from ``axes[0].open_blocks_sun``.
+    """
+    clamped = min(max(float(position), POSITION_CLOSED), POSITION_OPEN)
+    if open_blocks_sun:
+        return clamped / POSITION_OPEN
+    return (POSITION_OPEN - clamped) / POSITION_OPEN
 
 
 def flip_if(value: float, *, inverted: bool) -> float:

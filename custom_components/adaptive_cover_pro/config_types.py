@@ -12,6 +12,9 @@ from .const import (
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MOTION_TEMPLATE_MODE,
+    DEFAULT_SOLAR_COVER_SHADE,
+    DEFAULT_SOLAR_COVER_SIDE,
+    DEFAULT_SOLAR_G_GLAZING,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WEATHER_ENABLED,
     VENETIAN_TILT_TRANSFORM_CLAMP,
@@ -540,6 +543,59 @@ class DayNightShadeConfig:
             blackout_threshold=_int_or(
                 CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
                 DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SolarPropertiesConfig:
+    """Optional description of the assembly's solar-energy transmittance (#1236).
+
+    All five values are user-declared ESTIMATES, never measurements.
+    ``enabled`` is the master toggle — absent options read as off, and the
+    engine then returns ``None`` so every downstream surface stays inert.
+
+    ``g_total`` is an optional DIRECT override of the fully-covered assembly
+    g-value. Its presence (not a separate mode select) is what switches the
+    engine from the ``(cover_side, cover_shade)`` preset lookup to the declared
+    number, so it must be read with ``is not None`` — ``0.0`` is a real,
+    fully-opaque value.
+    """
+
+    enabled: bool = False
+    cover_side: str = DEFAULT_SOLAR_COVER_SIDE
+    cover_shade: str = DEFAULT_SOLAR_COVER_SHADE
+    g_total: float | None = None
+    g_glazing: float = DEFAULT_SOLAR_G_GLAZING
+
+    @classmethod
+    def from_options(cls, options: dict) -> SolarPropertiesConfig:
+        """Build from a config-entry options dict, applying defaults.
+
+        Every absent key resolves to its shipped default, and ``enabled``
+        defaults to ``False`` — which is what makes an untouched install
+        byte-identical to before the feature existed.
+        """
+        from .const import (
+            CONF_SOLAR_COVER_SHADE,
+            CONF_SOLAR_COVER_SIDE,
+            CONF_SOLAR_G_GLAZING,
+            CONF_SOLAR_G_TOTAL,
+            CONF_SOLAR_PROPERTIES_ENABLED,
+        )
+
+        g_total = options.get(CONF_SOLAR_G_TOTAL)
+        g_glazing = options.get(CONF_SOLAR_G_GLAZING)
+        return cls(
+            enabled=bool(options.get(CONF_SOLAR_PROPERTIES_ENABLED, False)),
+            cover_side=options.get(CONF_SOLAR_COVER_SIDE) or DEFAULT_SOLAR_COVER_SIDE,
+            cover_shade=options.get(CONF_SOLAR_COVER_SHADE)
+            or DEFAULT_SOLAR_COVER_SHADE,
+            # ``is not None`` on purpose: 0.0 is a real fully-opaque override,
+            # and its presence (not a mode select) chooses the direct path.
+            g_total=float(g_total) if g_total is not None else None,
+            g_glazing=(
+                float(g_glazing) if g_glazing is not None else DEFAULT_SOLAR_G_GLAZING
             ),
         )
 

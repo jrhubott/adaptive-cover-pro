@@ -55,6 +55,7 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum, StrEnum
+from types import MappingProxyType
 from typing import Any
 
 # =============================================================================
@@ -2277,11 +2278,20 @@ class TriageCode(StrEnum):
     ENDPOINT_POSITION_NOT_TRACKING = "triage.endpoint_position_not_tracking"
     # -- rule 26: a weather override deploys the cover instead of protecting it
     WEATHER_OVERRIDE_INVERTED = "triage.weather_override_inverted"
+    # -- rule 27: an internal-mounted cover rejects little solar energy (#1236)
+    SOLAR_INTERNAL_COVER_WEAK_REJECTION = "triage.solar_internal_cover_weak_rejection"
     # -- fragment (NOT a rule): the localized "N minutes ago" clause the three
     # skip findings splice in when a skip timestamp is known. Rendered only as a
     # nested param of the skip templates, never emitted as a top-level finding —
     # so it has a template but no rule row (mirrors ReasonCode's FRAGMENT_*).
     SKIP_AGE = "triage.skip_age"
+    # -- fragments (NOT rules): rule 27's two PRESET-ONLY clauses. Both quote the
+    # ``(side, shade)`` preset table, so both are omitted when the user declared
+    # ``solar_g_total`` by hand — their shade select is very likely the untouched
+    # default and the table their number never came from has no standing against
+    # it. Spliced as nested params, exactly like SKIP_AGE.
+    SOLAR_SHADE_WORD = "triage.solar_shade_word"
+    SOLAR_EXTERNAL_COMPARISON = "triage.solar_external_comparison"
 
 
 # =============================================================================
@@ -2342,6 +2352,107 @@ SAFETY_MARGIN_USER_SLACK_MAX = SAFETY_MARGIN_GAMMA_MAX + max(
 # Same shape and rationale as ``engine.covers.oscillating._COVERAGE_PLATEAU_EPS``,
 # which treats two coverage-floor heights as equal for the same reason.
 COVERAGE_DISTANCE_TIE_EPS = 1e-6
+
+
+# =============================================================================
+# Solar transmittance (issue #1236)
+# =============================================================================
+# Optional, opt-in description of how much solar ENERGY the glazing+cover
+# assembly lets through — orthogonal to the geometry the calc engines already
+# model (where the beam lands) and to the day/night shade's ``opacity_*`` keys,
+# which describe LIGHT opacity for one cover type only.
+#
+# Every value here is an ESTIMATE drawn from the EN ISO 52022 / EN 13363 bands,
+# never a measurement of the user's hardware. Absent keys ⇒ feature off ⇒ the
+# integration behaves byte-identically to before.
+CONF_SOLAR_PROPERTIES_ENABLED = "solar_properties_enabled"  # bool master toggle
+CONF_SOLAR_COVER_SIDE = "solar_cover_side"  # external | internal mounting
+CONF_SOLAR_COVER_SHADE = "solar_cover_shade"  # light | medium | dark
+CONF_SOLAR_G_TOTAL = "solar_g_total"  # optional direct g_total override (0-1)
+CONF_SOLAR_G_GLAZING = "solar_g_glazing"  # unshaded glazing g-value (0-1)
+
+SOLAR_COVER_SIDE_EXTERNAL = "external"
+SOLAR_COVER_SIDE_INTERNAL = "internal"
+SOLAR_COVER_SIDES = (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SIDE_INTERNAL)
+
+SOLAR_COVER_SHADE_LIGHT = "light"
+SOLAR_COVER_SHADE_MEDIUM = "medium"
+SOLAR_COVER_SHADE_DARK = "dark"
+SOLAR_COVER_SHADES = (
+    SOLAR_COVER_SHADE_LIGHT,
+    SOLAR_COVER_SHADE_MEDIUM,
+    SOLAR_COVER_SHADE_DARK,
+)
+
+DEFAULT_SOLAR_COVER_SIDE = SOLAR_COVER_SIDE_EXTERNAL
+DEFAULT_SOLAR_COVER_SHADE = SOLAR_COVER_SHADE_MEDIUM
+# Glazing alone, no shading device. Midpoint of the 0.65-0.75 band for common
+# double glazing. The SINGLE constant for "how much energy bare glass admits" —
+# it is both the default ``g_unshaded`` here and the fallback assembly g-value
+# for the estimated-solar-gain sensor, so there is no second default to drift.
+DEFAULT_SOLAR_G_GLAZING = 0.70
+
+# ``(cover_side, cover_shade) -> g_total`` for the fully-covered assembly.
+# Midpoints of the normative bands (external light 0.10-0.15, external dark
+# 0.20-0.25, internal 0.45-0.55); "medium" is interpolated. One frozen mapping,
+# read by the pure engine and by the triage rule — never re-tabulated.
+SOLAR_G_PRESETS: dict[tuple[str, str], float] = MappingProxyType(
+    {
+        (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SHADE_LIGHT): 0.12,
+        (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SHADE_MEDIUM): 0.18,
+        (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SHADE_DARK): 0.22,
+        (SOLAR_COVER_SIDE_INTERNAL, SOLAR_COVER_SHADE_LIGHT): 0.45,
+        (SOLAR_COVER_SIDE_INTERNAL, SOLAR_COVER_SHADE_MEDIUM): 0.50,
+        (SOLAR_COVER_SIDE_INTERNAL, SOLAR_COVER_SHADE_DARK): 0.55,
+    }
+)
+
+# Above this fully-covered g-value an internal-mounted cover is admitting more
+# solar energy than most users expect, so the troubleshoot surface says so once.
+# Gating on the number (rather than merely "side == internal") keeps the finding
+# from becoming a permanent banner for every internal-mount install.
+SOLAR_WEAK_REJECTION_THRESHOLD = 0.40
+
+
+# =============================================================================
+# Estimated solar gain (issue #1237)
+# =============================================================================
+# Turning a measured irradiance reading into watts through the glass needs three
+# published physical constants plus one numeric guard. Every value here is
+# standard textbook physics, not a tunable — the tunables are options.
+#
+# Tilt of a plane FROM HORIZONTAL: 0 = flat, 90 = vertical. Promoted here from
+# ``engine/covers/roof_window.py`` on its third consumer (roof window, louvered
+# roof, and now ``AdaptiveGeneralCover.plane_tilt_deg``); that module re-exports
+# it so its existing imports keep resolving.
+VERTICAL_GLASS_PITCH_DEG = 90.0
+
+# Solar irradiance at the top of the atmosphere at 1 AU, WMO/ASTM value.
+SOLAR_CONSTANT_W_M2 = 1367.0
+
+# Ground reflectance for the isotropic transposition's ground-reflected term.
+# 0.2 is the standard default for ordinary vegetated / built ground (snow would
+# be 0.6-0.8, which the model deliberately does not try to detect).
+DEFAULT_GROUND_ALBEDO = 0.2
+
+# Below this sun elevation the decomposition's ``1 / sin h`` term is numerically
+# unstable and the true gain is negligible anyway, so the estimate reports a
+# hard 0 W rather than a large, meaningless number.
+MIN_GAIN_SUN_ELEVATION_DEG = 3.0
+
+# Which plane the user's irradiance sensor measures. A pyranometer lies flat
+# (global horizontal); a cell taped to the glass already reads the window plane
+# and needs no transposition at all.
+CONF_IRRADIANCE_PLANE = "irradiance_plane"
+IRRADIANCE_PLANE_HORIZONTAL = "horizontal"
+IRRADIANCE_PLANE_WINDOW = "window_plane"
+IRRADIANCE_PLANES = (IRRADIANCE_PLANE_HORIZONTAL, IRRADIANCE_PLANE_WINDOW)
+DEFAULT_IRRADIANCE_PLANE = IRRADIANCE_PLANE_HORIZONTAL
+
+# Optional override of the glazed area in m². Blank = derive it from the window
+# geometry the cover type already carries; set it when the frame eats enough of
+# the rough aperture to matter (typically 10-25 %).
+CONF_GLASS_AREA = "glass_area"
 
 
 # =============================================================================
@@ -2510,6 +2621,15 @@ _RANGE_TILT = (0, 100)  # per-slot/default/sunset tilt, percent
 # Day/Night shade (#993): fabric opacity + blackout-engage threshold, all percent.
 _RANGE_DAY_NIGHT_OPACITY = (0, 100)
 _RANGE_DAY_NIGHT_BLACKOUT_THRESHOLD = (0, 100)
+
+# Solar transmittance (#1236): g-values are dimensionless 0-1 ratios, shared by
+# CONF_SOLAR_G_TOTAL and CONF_SOLAR_G_GLAZING.
+_RANGE_SOLAR_G = (0.0, 1.0)
+
+# Estimated solar gain (#1237): the optional glazed-area override, in m². The
+# ceiling comfortably covers a full-height patio door wall without letting a
+# stray keystroke report kilowatts through a bedroom window.
+_RANGE_GLASS_AREA = (0.1, 50.0)
 
 # Motion.
 _RANGE_MOTION_TIMEOUT = (30, 3600)  # CONF_MOTION_TIMEOUT, seconds

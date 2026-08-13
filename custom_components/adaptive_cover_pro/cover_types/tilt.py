@@ -240,6 +240,18 @@ class TiltPolicy(CoverTypePolicy, register=True):
         """Slat-tilt geometry page."""
         return "Configuration-Tilt"
 
+    def shaded_glass_fraction(self, position: float) -> float | None:  # noqa: ARG002
+        """No area-coverage axis — a slat angle is a rotation (#1236).
+
+        The base default would read the tilt percentage as a covered share of
+        the glazing, which is meaningless here: a tilt-only cover spans the
+        whole opening at every angle and modulates transmission by rotating,
+        not by uncovering glass. ``None`` tells the transmittance engine to fall
+        back to the fully-covered g-value rather than blend against a fraction
+        it invented.
+        """
+        return None
+
     def display_label(self, labels: dict[str, str] | None = None) -> str:
         """User-facing label for tilt-only covers."""
         L = {**COVER_TYPE_LABELS_EN, **(labels or {})}

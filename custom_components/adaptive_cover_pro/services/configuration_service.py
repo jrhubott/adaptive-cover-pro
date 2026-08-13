@@ -15,6 +15,7 @@ from ..config_types import (
     GlareZone,
     GlareZonesConfig,
     HorizontalConfig,
+    SolarPropertiesConfig,
     TiltConfig,
     VerticalConfig,
 )
@@ -90,6 +91,15 @@ class ConfigurationService:
 
         """
         return CoverConfig.from_options(options)
+
+    def get_solar_properties(self, options: dict) -> SolarPropertiesConfig:
+        """Extract the optional solar-transmittance description (issue #1236).
+
+        Returns:
+            SolarPropertiesConfig — ``enabled=False`` when the feature is unset
+
+        """
+        return SolarPropertiesConfig.from_options(options)
 
     def get_vertical_data(self, options: dict) -> VerticalConfig:
         """Extract vertical blind configuration.

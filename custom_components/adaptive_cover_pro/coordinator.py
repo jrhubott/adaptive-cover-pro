@@ -43,6 +43,16 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .config_types import CoverConfig, RuntimeConfig
+from .engine.solar_gain import (
+    AREA_SOURCE_CONFIGURED,
+    AREA_SOURCE_DERIVED,
+    AREA_SOURCE_UNKNOWN,
+    GlassArea,
+)
+from .engine.solar_transmittance import (
+    SolarTransmittance,
+    solar_transmittance as _compute_solar_transmittance,
+)
 from .helpers import (
     _read_current_effective_default,
     _read_sun_boundary_options,
@@ -84,6 +94,7 @@ from .const import (
     CONF_ENTITIES,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
+    CONF_GLASS_AREA,
     CONF_INTERP,
     CONF_INVERSE_STATE,
     CONF_INVERSE_TILT,
@@ -4874,6 +4885,66 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             caps=rolled, labels=labels, options=self.config_entry.options
         )
 
+    def solar_transmittance(self, *, position: int | None) -> SolarTransmittance | None:
+        """Estimated transmittance of the glazing + cover assembly (issue #1236).
+
+        The single HA-side gathering point for the three inputs the pure engine
+        needs: the options, the cover type's coverage polarity, and the
+        position. Computed once per cycle at the diagnostics construction site
+        and carried on the context, so every consumer reads the same value.
+
+        ⚠️ ``position`` MUST be the LOGICAL (pre-inverse-state) position — i.e.
+        ``PipelineResult.position``. NEVER ``self.state`` or
+        ``DiagnosticContext.final_state``, both of which are post-inversion
+        (see ``diagnostics/builder.py``'s ``final_state`` note). The two frames
+        agree on every normal install and are complements on an inverse-state
+        one, so the wrong frame here reads as a silent, install-specific
+        inversion of ``effective_g``.
+
+        ``position=None`` (no pipeline result yet) yields ``shaded_fraction
+        None`` — no blend — rather than a guessed one. That says nothing about
+        where ``g_shaded`` came from, so ``source`` still reports the real
+        provenance. Returns ``None`` when the feature is not enabled.
+        """
+        cfg = self._config_service.get_solar_properties(self.config_entry.options)
+        fraction = (
+            self._policy.shaded_glass_fraction(position)
+            if position is not None
+            else None
+        )
+        return _compute_solar_transmittance(cfg, shaded_fraction=fraction)
+
+    def glass_area(self) -> GlassArea:
+        """Glazed area for the solar-gain estimate, and where it came from (#1237).
+
+        Resolution order, and the reason for it:
+
+        1. ``CONF_GLASS_AREA`` — the user's explicit override. Applied HERE
+           rather than inside the policy so it reaches every cover type,
+           including the ones whose geometry carries no glass dimensions at all.
+        2. ``CoverTypePolicy.glass_area_m2`` — height × width, for the five
+           types that collect both.
+        3. ``unknown`` — say so. The sensor then reports ``unknown`` with a
+           reason instead of a confidently wrong wattage.
+
+        A stored override that is blank, non-numeric or non-positive falls
+        through to the derived value: a cleared field must not be read as
+        "zero square metres".
+        """
+        options = self.config_entry.options
+        configured = options.get(CONF_GLASS_AREA)
+        if configured is not None:
+            try:
+                area = float(configured)
+            except (TypeError, ValueError):
+                area = 0.0
+            if area > 0:
+                return GlassArea(area, AREA_SOURCE_CONFIGURED)
+        derived = self._policy.glass_area_m2(self._config_service, dict(options))
+        if derived is not None:
+            return GlassArea(derived, AREA_SOURCE_DERIVED)
+        return GlassArea(None, AREA_SOURCE_UNKNOWN)
+
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""
         result = self._pipeline_result
@@ -4912,6 +4983,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         _last_exc = self.last_exception
 
         _temp_readings = self._weather_readings
+        _glass_area = self.glass_area()
         ctx = DiagnosticContext(
             pos_sun=self.pos_sun,
             cover=self._cover_data,
@@ -4954,6 +5026,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             use_interpolation=self._use_interpolation,
             position_axis_inverted=self.position_axis_inverted,
             final_state=self.state,
+            # The LOGICAL target, never ``self.state`` on the line above — that
+            # one is post-inversion (#1236 / the #1028 invariant).
+            solar_transmittance=self.solar_transmittance(
+                position=result.position if result is not None else None
+            ),
+            # Estimated-solar-gain inputs (#1237). The raw W/m² comes from the
+            # SAME climate read the cloud-suppression latch uses — no second HA
+            # read — and the day of year comes from HA's clock frame, never the
+            # host's, so a host in another timezone cannot shift the orbital
+            # eccentricity term by a day.
+            irradiance_w_m2=(
+                _temp_readings.irradiance_value if _temp_readings is not None else None
+            ),
+            day_of_year=dt_util.now().timetuple().tm_yday,
+            glass_area_m2=_glass_area.area_m2,
+            glass_area_source=_glass_area.source,
             config_options=dict(self.config_entry.options),
             resolved_options=dict(self._resolved_options),
             hass=self.hass,
