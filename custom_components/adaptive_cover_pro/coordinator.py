@@ -43,6 +43,10 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .config_types import CoverConfig, RuntimeConfig
+from .engine.solar_transmittance import (
+    SolarTransmittance,
+    solar_transmittance as _compute_solar_transmittance,
+)
 from .helpers import (
     _read_current_effective_default,
     _read_sun_boundary_options,
@@ -4874,6 +4878,34 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             caps=rolled, labels=labels, options=self.config_entry.options
         )
 
+    def solar_transmittance(self, *, position: int | None) -> SolarTransmittance | None:
+        """Estimated transmittance of the glazing + cover assembly (issue #1236).
+
+        The single HA-side gathering point for the three inputs the pure engine
+        needs: the options, the cover type's coverage polarity, and the
+        position. Computed once per cycle at the diagnostics construction site
+        and carried on the context, so every consumer reads the same value.
+
+        ⚠️ ``position`` MUST be the LOGICAL (pre-inverse-state) position — i.e.
+        ``PipelineResult.position``. NEVER ``self.state`` or
+        ``DiagnosticContext.final_state``, both of which are post-inversion
+        (see ``diagnostics/builder.py``'s ``final_state`` note). The two frames
+        agree on every normal install and are complements on an inverse-state
+        one, so the wrong frame here reads as a silent, install-specific
+        inversion of ``effective_g``.
+
+        ``position=None`` (no pipeline result yet) yields ``shaded_fraction
+        None`` and the ``shaded_only`` source rather than a guessed blend.
+        Returns ``None`` when the feature is not enabled.
+        """
+        cfg = self._config_service.get_solar_properties(self.config_entry.options)
+        fraction = (
+            self._policy.shaded_glass_fraction(position)
+            if position is not None
+            else None
+        )
+        return _compute_solar_transmittance(cfg, shaded_fraction=fraction)
+
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""
         result = self._pipeline_result
@@ -4954,6 +4986,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             use_interpolation=self._use_interpolation,
             position_axis_inverted=self.position_axis_inverted,
             final_state=self.state,
+            # The LOGICAL target, never ``self.state`` on the line above — that
+            # one is post-inversion (#1236 / the #1028 invariant).
+            solar_transmittance=self.solar_transmittance(
+                position=result.position if result is not None else None
+            ),
             config_options=dict(self.config_entry.options),
             resolved_options=dict(self._resolved_options),
             hass=self.hass,

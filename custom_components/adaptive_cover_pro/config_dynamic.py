@@ -265,6 +265,44 @@ def window_facing_schema(
     return vol.Schema(fields)
 
 
+def solar_properties_schema(
+    hass: HomeAssistant | None = None, options: Mapping | None = None
+) -> vol.Schema:
+    """Build the optional solar-transmittance description fields (#1236).
+
+    Five fields — a master toggle, mounting side, shade darkness, an optional
+    direct ``g_total`` override and the unshaded glazing g-value — composed onto
+    EVERY cover type's geometry step through this single seam, exactly like
+    :func:`window_facing_schema`. How much solar energy the fabric rejects is a
+    property of the assembly, not of the drive mechanism, so there is no
+    per-policy branch and no key duplicated into ten geometry schemas.
+
+    Markers and selectors come straight from the ``config_fields`` registry so
+    the bounds, defaults and validators stay single-sourced; this function owns
+    only the grouping and the order.
+    """
+    from .config_fields import (
+        CONF_SOLAR_COVER_SHADE,
+        CONF_SOLAR_COVER_SIDE,
+        CONF_SOLAR_G_GLAZING,
+        CONF_SOLAR_G_TOTAL,
+        CONF_SOLAR_PROPERTIES_ENABLED,
+        FIELD_SPECS,
+    )
+
+    fields: dict = {}
+    for key in (
+        CONF_SOLAR_PROPERTIES_ENABLED,
+        CONF_SOLAR_COVER_SIDE,
+        CONF_SOLAR_COVER_SHADE,
+        CONF_SOLAR_G_TOTAL,
+        CONF_SOLAR_G_GLAZING,
+    ):
+        marker, sel = FIELD_SPECS[key].to_marker(hass, dict(options or {}))
+        fields[marker] = sel
+    return vol.Schema(fields)
+
+
 def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     """Sun-tracking (behavioural) schema. ``hass=None`` → metric labels.
 

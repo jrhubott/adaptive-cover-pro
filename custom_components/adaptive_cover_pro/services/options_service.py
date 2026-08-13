@@ -137,7 +137,12 @@ from ..const import (
     CONF_SLIDING_POINT2_X,
     CONF_SLIDING_POINT2_Y,
     CONF_SLIDING_SLIDE_DIRECTION,
+    CONF_SOLAR_COVER_SHADE,
+    CONF_SOLAR_COVER_SIDE,
+    CONF_SOLAR_G_GLAZING,
+    CONF_SOLAR_G_TOTAL,
     CONF_SOLAR_PRIORITY,
+    CONF_SOLAR_PROPERTIES_ENABLED,
     CONF_START_ENTITY,
     CONF_START_TIME,
     CONF_SUNRISE_OFFSET,
@@ -180,6 +185,8 @@ from ..const import (
     MANUAL_OVERRIDE_DURATION_MODES,
     MIN_USABLE_SLAT_ANGLE_DEG,
     SLIDING_SLIDE_DIRECTIONS,
+    SOLAR_COVER_SHADES,
+    SOLAR_COVER_SIDES,
     VENETIAN_MODES,
     VENETIAN_POST_SETTLE_MODES,
     VENETIAN_TILT_RESET_DIRECTIONS,
@@ -465,6 +472,12 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # Geometry — dual-panel shade (#996)
     CONF_DUAL_PANEL_FRONT_ENTITY: _entity_v(),
     CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: _list_subset_v(*DUAL_PANEL_BLACKOUT_TRIGGERS),
+    # Geometry — optional solar-transmittance description (#1236)
+    CONF_SOLAR_PROPERTIES_ENABLED: _bool_v(),
+    CONF_SOLAR_COVER_SIDE: _select_v(*SOLAR_COVER_SIDES),
+    CONF_SOLAR_COVER_SHADE: _select_v(*SOLAR_COVER_SHADES),
+    CONF_SOLAR_G_TOTAL: _range(CONF_SOLAR_G_TOTAL),
+    CONF_SOLAR_G_GLAZING: _range(CONF_SOLAR_G_GLAZING),
     # Geometry — tilt/venetian
     CONF_TILT_DEPTH: _range(CONF_TILT_DEPTH),
     CONF_TILT_DISTANCE: _range(CONF_TILT_DISTANCE),
@@ -963,6 +976,20 @@ _SECTION_GEOMETRY_DUAL_PANEL = frozenset(
         CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
     }
 )
+# Optional solar-transmittance description (#1236). Universal rather than
+# per-cover-type: it describes the window assembly, not the drive mechanism, so
+# it renders on every geometry step and every one of these keys carries a
+# FIELD_VALIDATORS entry — which under the convention above means each must be
+# service-settable or the validator is dead code.
+_SECTION_GEOMETRY_SOLAR = frozenset(
+    {
+        CONF_SOLAR_PROPERTIES_ENABLED,
+        CONF_SOLAR_COVER_SIDE,
+        CONF_SOLAR_COVER_SHADE,
+        CONF_SOLAR_G_TOTAL,
+        CONF_SOLAR_G_GLAZING,
+    }
+)
 _SECTION_GEOMETRY_ALL = (
     _SECTION_GEOMETRY_VERTICAL
     | _SECTION_GEOMETRY_AWNING
@@ -972,6 +999,7 @@ _SECTION_GEOMETRY_ALL = (
     | _SECTION_GEOMETRY_SLIDING
     | _SECTION_GEOMETRY_DAY_NIGHT
     | _SECTION_GEOMETRY_DUAL_PANEL
+    | _SECTION_GEOMETRY_SOLAR
 )
 
 _SECTION_VENETIAN = frozenset(

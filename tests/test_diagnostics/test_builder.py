@@ -1955,3 +1955,167 @@ class TestLinearPosition:
         """No pipeline result -> linear_position defaults to 0, like calculated_position."""
         diag, _ = builder.build(_base_ctx(pipeline_result=None))
         assert diag["linear_position"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Solar transmittance (issue #1236) — a top-level block, present only when the
+# feature is configured. Deliberately NOT inside ``calculation_details``: that
+# dict is #682's geometry trace and the ``solar_calculation`` sensor's attribute
+# payload, so keeping it byte-identical whether this feature is on or off is a
+# strictly stronger guarantee.
+# ---------------------------------------------------------------------------
+
+
+_SOLAR_OPTIONS_ON = {
+    "solar_properties_enabled": True,
+    "solar_cover_side": "internal",
+    "solar_cover_shade": "dark",
+}
+
+
+def _transmittance(*, shaded_fraction, side="internal", shade="dark", g_total=None):
+    from custom_components.adaptive_cover_pro.config_types import (
+        SolarPropertiesConfig,
+    )
+    from custom_components.adaptive_cover_pro.engine.solar_transmittance import (
+        solar_transmittance,
+    )
+
+    return solar_transmittance(
+        SolarPropertiesConfig(
+            enabled=True, cover_side=side, cover_shade=shade, g_total=g_total
+        ),
+        shaded_fraction=shaded_fraction,
+    )
+
+
+class TestSolarTransmittanceDiagnostics:
+    """The opt-in solar-transmittance estimate's diagnostics payload."""
+
+    def test_block_absent_when_the_feature_is_off(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(_base_ctx())
+        assert "solar_transmittance" not in diag
+
+    def test_no_solar_keys_leak_anywhere_when_off(self, builder: DiagnosticsBuilder):
+        """Inert by default: not one new key appears in the whole payload."""
+        diag, _ = builder.build(_base_ctx())
+        assert not [k for k in diag if "solar_transmittance" in k]
+        assert not [
+            k for k in diag.get("calculation_details", {}) if k.startswith("solar_")
+        ]
+
+    def test_calculation_details_is_byte_identical_on_and_off(
+        self, builder: DiagnosticsBuilder
+    ):
+        """#682's trace must not move when this feature is switched on."""
+        cover = _make_cover(
+            calc_details={"sol_elev_deg": 30.0, "gamma_deg": 10.0, "position_pct": 25}
+        )
+        off, _ = builder.build(_base_ctx(cover=cover))
+        on, _ = builder.build(
+            _base_ctx(
+                cover=cover,
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=_transmittance(shaded_fraction=0.75),
+                pipeline_result=_make_pr(position=25),
+            )
+        )
+        assert on["calculation_details"] == off["calculation_details"]
+
+    def test_block_carries_every_key(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=_transmittance(shaded_fraction=0.75),
+                pipeline_result=_make_pr(position=25),
+            )
+        )
+        block = diag["solar_transmittance"]
+        assert set(block) == {
+            "effective_g",
+            "g_unshaded",
+            "g_shaded",
+            "shaded_fraction",
+            "position_pct",
+            "cover_side",
+            "cover_shade",
+            "source",
+            "is_estimate",
+        }
+
+    def test_block_values(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=_transmittance(shaded_fraction=0.75),
+                pipeline_result=_make_pr(position=25),
+            )
+        )
+        block = diag["solar_transmittance"]
+        # internal/dark → g_shaded 0.55; 0.75·0.55 + 0.25·0.70 = 0.5875 → 0.588
+        assert block["effective_g"] == 0.588
+        assert block["g_unshaded"] == 0.7
+        assert block["g_shaded"] == 0.55
+        assert block["shaded_fraction"] == 0.75
+        assert block["position_pct"] == 25
+        assert block["cover_side"] == "internal"
+        assert block["cover_shade"] == "dark"
+        assert block["source"] == "preset"
+        assert block["is_estimate"] is True
+
+    def test_floats_are_rounded_to_three_decimals_here_and_only_here(
+        self, builder: DiagnosticsBuilder
+    ):
+        """The presentation boundary owns the rounding; the engine keeps precision."""
+        raw = _transmittance(shaded_fraction=0.3333, g_total=0.1234)
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=raw,
+                pipeline_result=_make_pr(position=67),
+            )
+        )
+        block = diag["solar_transmittance"]
+        assert block["effective_g"] == round(raw.effective_g, 3)
+        assert block["shaded_fraction"] == round(raw.shaded_fraction, 3)
+        assert raw.effective_g != block["effective_g"]  # engine kept full precision
+
+    def test_shaded_only_reports_a_null_fraction(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=_transmittance(shaded_fraction=None),
+                pipeline_result=_make_pr(position=40),
+            )
+        )
+        block = diag["solar_transmittance"]
+        assert block["shaded_fraction"] is None
+        assert block["source"] == "shaded_only"
+        assert block["effective_g"] == block["g_shaded"]
+
+    def test_position_pct_is_none_without_a_pipeline_result(
+        self, builder: DiagnosticsBuilder
+    ):
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=_transmittance(shaded_fraction=None),
+                pipeline_result=None,
+            )
+        )
+        assert diag["solar_transmittance"]["position_pct"] is None
+
+    def test_cover_side_and_shade_default_when_unset(self, builder: DiagnosticsBuilder):
+        """A direct g_total override leaves the selects at their shipped defaults."""
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options={"solar_properties_enabled": True},
+                solar_transmittance=_transmittance(
+                    shaded_fraction=1.0, side="external", shade="medium"
+                ),
+                pipeline_result=_make_pr(position=0),
+            )
+        )
+        block = diag["solar_transmittance"]
+        assert block["cover_side"] == "external"
+        assert block["cover_shade"] == "medium"

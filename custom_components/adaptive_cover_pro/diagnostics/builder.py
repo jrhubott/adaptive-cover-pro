@@ -30,6 +30,10 @@ _SENSOR_STATE_AVAILABLE = "available"
 # HA state strings that count as "no real value" for a configured entity.
 _UNAVAILABLE_HA_STATES = ("unavailable", "unknown")
 
+# Display precision for the solar-transmittance block's 0-1 ratios (#1236).
+# Matches ``_round_trace_value``'s default so the two solar surfaces agree.
+_SOLAR_G_DECIMALS = 3
+
 
 @dataclass(frozen=True, slots=True)
 class SensorSource:
@@ -101,6 +105,14 @@ class DiagnosticContext:
     # Solar-tracking-only forecast for the rest of today (issue #437 cache).
     # Optional — None when the background recompute hasn't produced one yet.
     position_forecast: Any = None  # Forecast | None
+
+    # Estimated solar transmittance of the glazing + cover assembly at this
+    # cycle's LOGICAL target position (issue #1236). Computed once by
+    # ``coordinator.solar_transmittance`` at the single construction site;
+    # ``None`` when the feature is not configured, which is what keeps the
+    # payload byte-identical for every existing install. Defaulted so contexts
+    # built without it (tests, older callers) are unaffected.
+    solar_transmittance: Any = None  # SolarTransmittance | None
 
     # Configuration snapshot
     config_options: dict = field(default_factory=dict)
@@ -243,6 +255,7 @@ class DiagnosticsBuilder:
         diagnostics: dict = {}
         diagnostics.update(self._build_meta(ctx))
         diagnostics.update(self._build_solar(ctx))
+        diagnostics.update(self._build_solar_transmittance(ctx))
         diagnostics.update(self._build_position(ctx))
         diagnostics.update(self._build_decision_trace(ctx))
         diagnostics.update(self._build_handler_priorities(ctx))
@@ -283,6 +296,55 @@ class DiagnosticsBuilder:
             diagnostics["gamma"] = round(ctx.cover.gamma, 1)
 
         return diagnostics
+
+    @staticmethod
+    def _build_solar_transmittance(ctx: DiagnosticContext) -> dict:
+        """Estimated solar transmittance of the window assembly (issue #1236).
+
+        A TOP-LEVEL block rather than six keys inside ``calculation_details``:
+        that dict is #682's geometric trace and doubles as the
+        ``solar_calculation`` sensor's attribute payload, so leaving it
+        untouched whether this feature is on or off is a stronger guarantee
+        than adding conditional keys to it. A stable dotted path also gives the
+        triage rule something to read.
+
+        Returns ``{}`` — no key at all — when the feature is unconfigured, so
+        an existing install's diagnostics are byte-identical to before.
+
+        This is the presentation boundary: the three-decimal rounding happens
+        HERE and nowhere upstream. ``position_pct`` is the LOGICAL pipeline
+        target the fraction was derived from, so the block is self-describing.
+        """
+        result = ctx.solar_transmittance
+        if result is None:
+            return {}
+
+        from ..config_types import SolarPropertiesConfig
+
+        # Read the selects through the same single reader the engine input came
+        # from rather than re-spelling the option keys and their defaults here.
+        cfg = SolarPropertiesConfig.from_options(ctx.config_options or {})
+        return {
+            "solar_transmittance": {
+                "effective_g": round(result.effective_g, _SOLAR_G_DECIMALS),
+                "g_unshaded": round(result.g_unshaded, _SOLAR_G_DECIMALS),
+                "g_shaded": round(result.g_shaded, _SOLAR_G_DECIMALS),
+                "shaded_fraction": (
+                    round(result.shaded_fraction, _SOLAR_G_DECIMALS)
+                    if result.shaded_fraction is not None
+                    else None
+                ),
+                "position_pct": (
+                    ctx.pipeline_result.position
+                    if ctx.pipeline_result is not None
+                    else None
+                ),
+                "cover_side": cfg.cover_side,
+                "cover_shade": cfg.cover_shade,
+                "source": result.source,
+                "is_estimate": result.is_estimate,
+            }
+        }
 
     @staticmethod
     def _get_control_state_reason(ctx: DiagnosticContext) -> str:

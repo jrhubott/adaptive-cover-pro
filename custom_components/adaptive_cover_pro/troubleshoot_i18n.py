@@ -211,6 +211,13 @@ _TRIAGE_TEMPLATES_EN: dict[str, str] = {
         "safety retraction; on this cover type the retracted position is {safe}%. "
         "As configured, wind or rain will deploy the cover instead of protecting it."
     ),
+    # Rule 27
+    TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION: (
+        "ℹ️ Internal-mounted {shade} cover: fully closed, this window still "
+        "admits an estimated {admitted}% of incident solar energy (g≈{g_shaded}). "
+        "An external cover of the same shade would admit about "
+        "{external_admitted}%. Estimate only — not a measurement."
+    ),
 }
 
 

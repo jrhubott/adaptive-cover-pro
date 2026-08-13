@@ -1020,3 +1020,100 @@ def test_display_label(cover_type: str, label: str) -> None:
     pre-refactor labels so existing UI tests / screenshots still match.
     """
     assert get_policy(cover_type).display_label() == label
+
+
+# ---------------------------------------------------------------------------
+# shaded_glass_fraction — position -> covered share of the glazing (#1236)
+# ---------------------------------------------------------------------------
+
+
+class TestShadedGlassFraction:
+    """Policy hook mapping a logical position to the share of glass it shades.
+
+    Mirrors ``TestLiftTravelMetres``: the contract is per-policy and lives on
+    ``CoverTypePolicy`` so the solar-transmittance estimate never branches on a
+    cover-type string. Blind-family types cover more as the position falls;
+    awnings cover more as they extend; tilt-only types (a rotation, not an area
+    coverage) and axis-less virtual policies return ``None`` so the caller
+    cannot guess a fraction that does not exist.
+    """
+
+    _BLIND_FAMILY = (
+        "cover_blind",
+        "cover_venetian",
+        "cover_dual_panel",
+        "cover_day_night_shade",
+        "cover_sliding_curtain",
+        "cover_roof_window",
+    )
+    _AWNING_FAMILY = ("cover_awning", "cover_oscillating_awning")
+    _TILT_ONLY = ("cover_tilt", "cover_louvered_roof")
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("cover_type", _BLIND_FAMILY)
+    @pytest.mark.parametrize("position", [0, 25, 50, 100])
+    def test_blind_family_covers_as_position_falls(
+        self, cover_type: str, position: int
+    ) -> None:
+        assert get_policy(cover_type).shaded_glass_fraction(position) == pytest.approx(
+            (100 - position) / 100
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("cover_type", _AWNING_FAMILY)
+    @pytest.mark.parametrize("position", [0, 25, 50, 100])
+    def test_awning_family_covers_as_it_extends(
+        self, cover_type: str, position: int
+    ) -> None:
+        # Sign-flip guard: an awning at 25 % shades a QUARTER, not three
+        # quarters. Getting this backwards would only ever surface as a wrong
+        # watt figure downstream.
+        assert get_policy(cover_type).shaded_glass_fraction(position) == pytest.approx(
+            position / 100
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("cover_type", _TILT_ONLY)
+    @pytest.mark.parametrize("position", [0, 50, 100])
+    def test_tilt_only_types_report_none(self, cover_type: str, position: int) -> None:
+        assert get_policy(cover_type).shaded_glass_fraction(position) is None
+
+    @pytest.mark.unit
+    def test_every_registered_cover_type_is_classified(self) -> None:
+        # Completeness: a new cover type must be added to one of the three
+        # groups above rather than silently inheriting whatever the base does.
+        classified = (
+            set(self._BLIND_FAMILY) | set(self._AWNING_FAMILY) | set(self._TILT_ONLY)
+        )
+        registered = {
+            key
+            for key, cls in POLICY_REGISTRY.items()
+            if cls.controls_cover and not cls.is_orchestrator
+        }
+        assert registered == classified
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("cover_type", ["cover_group", "cover_building_profile"])
+    def test_axis_less_policies_report_none(self, cover_type: str) -> None:
+        # GroupPolicy / BuildingProfilePolicy / CommandQueuePolicy declare zero
+        # axes; the base hook must guard rather than index ``axes[0]``.
+        policy = POLICY_REGISTRY.get(cover_type)
+        if policy is None:
+            pytest.skip(f"{cover_type} not registered")
+        assert policy().shaded_glass_fraction(50) is None
+
+    @pytest.mark.unit
+    def test_stub_fifth_type_policies_are_safe(self) -> None:
+        from tests.test_cover_types.stub_policy import (
+            StubDualAxisPolicy,
+            StubSingleAxisPolicy,
+        )
+
+        assert StubSingleAxisPolicy().shaded_glass_fraction(25) == pytest.approx(0.75)
+        assert StubDualAxisPolicy().shaded_glass_fraction(25) == pytest.approx(0.75)
+
+    @pytest.mark.unit
+    def test_fraction_clamped_for_out_of_range_positions(self) -> None:
+        policy = get_policy("cover_blind")
+        assert policy.shaded_glass_fraction(-20) == pytest.approx(1.0)
+        assert policy.shaded_glass_fraction(140) == pytest.approx(0.0)

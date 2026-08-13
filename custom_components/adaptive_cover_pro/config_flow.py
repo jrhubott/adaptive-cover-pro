@@ -380,6 +380,7 @@ from .config_dynamic import (  # noqa: E402
     glare_zone_slot_schema,
     glare_zones_schema as _glare_zones_schema,
     light_cloud_schema,
+    solar_properties_schema,
     sun_tracking_schema,
     temperature_climate_schema,
     weather_override_schema,
@@ -4369,7 +4370,8 @@ def _get_geometry_schema(
 
             base = geometry_vertical_schema(hass)
         # Unknown type has no policy → plain window-facing fields, no FOV button.
-        return base.extend(window_facing_schema(hass).schema)
+        base = base.extend(window_facing_schema(hass).schema)
+        return base.extend(solar_properties_schema(hass, options).schema)
     policy = get_policy(sensor_type)
     # Compose the shared per-window facing fields (azimuth / FOV / distance)
     # onto the policy's geometry schema, then layer the FOV-from-measurements
@@ -4383,6 +4385,9 @@ def _get_geometry_schema(
             hass, include_distance=policy.includes_shaded_distance()
         ).schema
     )
+    # Optional solar-transmittance description (#1236) — appended last so the
+    # pinned azimuth → FOV → shaded-distance order above is untouched.
+    base = base.extend(solar_properties_schema(hass, options).schema)
     return policy.fov_compute_schema(base)
 
 
@@ -4690,7 +4695,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # v3.14→v3.15 block is a no-op bump and nothing else.
     # 3.18 (issue #943 item B): the same shape once more for the additive
     # per-slot custom_position_outside_window_N flag — absent reads as "off".
-    MINOR_VERSION = 18
+    # 3.19 (issues #1236 + #1237): the same shape again for the additive
+    # optional solar options (solar_properties_enabled / solar_cover_side /
+    # solar_cover_shade / solar_g_total / solar_g_glazing, plus glass_area and
+    # irradiance_plane) — absent reads as "feature off", so the v3.18 → v3.19
+    # block seeds nothing.
+    MINOR_VERSION = 19
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

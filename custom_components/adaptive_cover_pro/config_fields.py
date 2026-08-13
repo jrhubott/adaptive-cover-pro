@@ -158,6 +158,11 @@ from .const import (
     CONF_SLIDING_POINT2_X,
     CONF_SLIDING_POINT2_Y,
     CONF_SLIDING_SLIDE_DIRECTION,
+    CONF_SOLAR_COVER_SHADE,
+    CONF_SOLAR_COVER_SIDE,
+    CONF_SOLAR_G_GLAZING,
+    CONF_SOLAR_G_TOTAL,
+    CONF_SOLAR_PROPERTIES_ENABLED,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
     CONF_TEMP_EXTREME_HEAT,
@@ -2002,6 +2007,56 @@ _GEOMETRY_SPECS = _spec(
         CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
         SECTION_GEOMETRY,
         ValidatorKind.BOOL,
+    ),
+    # Optional solar-transmittance description (#1236). Rendered for every
+    # cover type by ``config_dynamic.solar_properties_schema``; these specs
+    # single-source the bounds / validator entries for OPTION_RANGES +
+    # FIELD_VALIDATORS. ``solar_g_total`` is clearable so a cleared override
+    # round-trips back to the preset lookup rather than sticking at 0 (#1267).
+    FieldSpec(
+        CONF_SOLAR_PROPERTIES_ENABLED,
+        SECTION_GEOMETRY,
+        ValidatorKind.BOOL,
+        default=False,
+        make_selector=_bool(),
+    ),
+    FieldSpec(
+        CONF_SOLAR_COVER_SIDE,
+        SECTION_GEOMETRY,
+        ValidatorKind.SELECT,
+        select_options=const.SOLAR_COVER_SIDES,
+        default=const.DEFAULT_SOLAR_COVER_SIDE,
+        make_selector=_select(
+            *const.SOLAR_COVER_SIDES, translation_key=CONF_SOLAR_COVER_SIDE
+        ),
+    ),
+    FieldSpec(
+        CONF_SOLAR_COVER_SHADE,
+        SECTION_GEOMETRY,
+        ValidatorKind.SELECT,
+        select_options=const.SOLAR_COVER_SHADES,
+        default=const.DEFAULT_SOLAR_COVER_SHADE,
+        make_selector=_select(
+            *const.SOLAR_COVER_SHADES, translation_key=CONF_SOLAR_COVER_SHADE
+        ),
+    ),
+    # SLIDER (not BOX) and no default: BOX saves 0 on clear, and an absent
+    # value is what selects the preset lookup, so it must round-trip absent.
+    FieldSpec(
+        CONF_SOLAR_G_TOTAL,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SOLAR_G,
+        clearable=True,
+        make_selector=_number(minimum=0.0, maximum=1.0, step=0.01),
+    ),
+    FieldSpec(
+        CONF_SOLAR_G_GLAZING,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SOLAR_G,
+        default=const.DEFAULT_SOLAR_G_GLAZING,
+        make_selector=_number(minimum=0.0, maximum=1.0, step=0.01),
     ),
     FieldSpec(
         CONF_TILT_DEPTH,

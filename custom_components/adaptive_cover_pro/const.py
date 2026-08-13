@@ -55,6 +55,7 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum, StrEnum
+from types import MappingProxyType
 from typing import Any
 
 # =============================================================================
@@ -2277,6 +2278,8 @@ class TriageCode(StrEnum):
     ENDPOINT_POSITION_NOT_TRACKING = "triage.endpoint_position_not_tracking"
     # -- rule 26: a weather override deploys the cover instead of protecting it
     WEATHER_OVERRIDE_INVERTED = "triage.weather_override_inverted"
+    # -- rule 27: an internal-mounted cover rejects little solar energy (#1236)
+    SOLAR_INTERNAL_COVER_WEAK_REJECTION = "triage.solar_internal_cover_weak_rejection"
     # -- fragment (NOT a rule): the localized "N minutes ago" clause the three
     # skip findings splice in when a skip timestamp is known. Rendered only as a
     # nested param of the skip templates, never emitted as a top-level finding —
@@ -2342,6 +2345,66 @@ SAFETY_MARGIN_USER_SLACK_MAX = SAFETY_MARGIN_GAMMA_MAX + max(
 # Same shape and rationale as ``engine.covers.oscillating._COVERAGE_PLATEAU_EPS``,
 # which treats two coverage-floor heights as equal for the same reason.
 COVERAGE_DISTANCE_TIE_EPS = 1e-6
+
+
+# =============================================================================
+# Solar transmittance (issue #1236)
+# =============================================================================
+# Optional, opt-in description of how much solar ENERGY the glazing+cover
+# assembly lets through — orthogonal to the geometry the calc engines already
+# model (where the beam lands) and to the day/night shade's ``opacity_*`` keys,
+# which describe LIGHT opacity for one cover type only.
+#
+# Every value here is an ESTIMATE drawn from the EN ISO 52022 / EN 13363 bands,
+# never a measurement of the user's hardware. Absent keys ⇒ feature off ⇒ the
+# integration behaves byte-identically to before.
+CONF_SOLAR_PROPERTIES_ENABLED = "solar_properties_enabled"  # bool master toggle
+CONF_SOLAR_COVER_SIDE = "solar_cover_side"  # external | internal mounting
+CONF_SOLAR_COVER_SHADE = "solar_cover_shade"  # light | medium | dark
+CONF_SOLAR_G_TOTAL = "solar_g_total"  # optional direct g_total override (0-1)
+CONF_SOLAR_G_GLAZING = "solar_g_glazing"  # unshaded glazing g-value (0-1)
+
+SOLAR_COVER_SIDE_EXTERNAL = "external"
+SOLAR_COVER_SIDE_INTERNAL = "internal"
+SOLAR_COVER_SIDES = (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SIDE_INTERNAL)
+
+SOLAR_COVER_SHADE_LIGHT = "light"
+SOLAR_COVER_SHADE_MEDIUM = "medium"
+SOLAR_COVER_SHADE_DARK = "dark"
+SOLAR_COVER_SHADES = (
+    SOLAR_COVER_SHADE_LIGHT,
+    SOLAR_COVER_SHADE_MEDIUM,
+    SOLAR_COVER_SHADE_DARK,
+)
+
+DEFAULT_SOLAR_COVER_SIDE = SOLAR_COVER_SIDE_EXTERNAL
+DEFAULT_SOLAR_COVER_SHADE = SOLAR_COVER_SHADE_MEDIUM
+# Glazing alone, no shading device. Midpoint of the 0.65-0.75 band for common
+# double glazing. The SINGLE constant for "how much energy bare glass admits" —
+# it is both the default ``g_unshaded`` here and the fallback assembly g-value
+# for the estimated-solar-gain sensor, so there is no second default to drift.
+DEFAULT_SOLAR_G_GLAZING = 0.70
+
+# ``(cover_side, cover_shade) -> g_total`` for the fully-covered assembly.
+# Midpoints of the normative bands (external light 0.10-0.15, external dark
+# 0.20-0.25, internal 0.45-0.55); "medium" is interpolated. One frozen mapping,
+# read by the pure engine and by the triage rule — never re-tabulated.
+SOLAR_G_PRESETS: dict[tuple[str, str], float] = MappingProxyType(
+    {
+        (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SHADE_LIGHT): 0.12,
+        (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SHADE_MEDIUM): 0.18,
+        (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SHADE_DARK): 0.22,
+        (SOLAR_COVER_SIDE_INTERNAL, SOLAR_COVER_SHADE_LIGHT): 0.45,
+        (SOLAR_COVER_SIDE_INTERNAL, SOLAR_COVER_SHADE_MEDIUM): 0.50,
+        (SOLAR_COVER_SIDE_INTERNAL, SOLAR_COVER_SHADE_DARK): 0.55,
+    }
+)
+
+# Above this fully-covered g-value an internal-mounted cover is admitting more
+# solar energy than most users expect, so the troubleshoot surface says so once.
+# Gating on the number (rather than merely "side == internal") keeps the finding
+# from becoming a permanent banner for every internal-mount install.
+SOLAR_WEAK_REJECTION_THRESHOLD = 0.40
 
 
 # =============================================================================
@@ -2510,6 +2573,10 @@ _RANGE_TILT = (0, 100)  # per-slot/default/sunset tilt, percent
 # Day/Night shade (#993): fabric opacity + blackout-engage threshold, all percent.
 _RANGE_DAY_NIGHT_OPACITY = (0, 100)
 _RANGE_DAY_NIGHT_BLACKOUT_THRESHOLD = (0, 100)
+
+# Solar transmittance (#1236): g-values are dimensionless 0-1 ratios, shared by
+# CONF_SOLAR_G_TOTAL and CONF_SOLAR_G_GLAZING.
+_RANGE_SOLAR_G = (0.0, 1.0)
 
 # Motion.
 _RANGE_MOTION_TIMEOUT = (30, 3600)  # CONF_MOTION_TIMEOUT, seconds

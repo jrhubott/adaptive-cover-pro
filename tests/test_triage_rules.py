@@ -1630,6 +1630,89 @@ _COVER_MENU_STEPS: frozenset[str] = frozenset(
 )
 
 
+# ---------------------------------------------------------------------------
+# Rule 27 — SOLAR_INTERNAL_COVER_WEAK_REJECTION (issue #1236)
+# ---------------------------------------------------------------------------
+
+
+def _solar_view(**overrides) -> dict:
+    block = {
+        "effective_g": 0.55,
+        "g_unshaded": 0.7,
+        "g_shaded": 0.55,
+        "shaded_fraction": 1.0,
+        "position_pct": 0,
+        "cover_side": "internal",
+        "cover_shade": "dark",
+        "source": "preset",
+        "is_estimate": True,
+    }
+    block.update(overrides)
+    return {"options": {}, "solar_transmittance": block}
+
+
+def test_solar_weak_rejection_fires_for_a_weak_internal_cover() -> None:
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _solar_view())
+    assert len(findings) == 1
+    params = _params(findings)[0]
+    assert params["shade"] == "dark"
+    assert params["g_shaded"] == 0.55
+    # 55 % of the incident energy gets through a fully-closed internal cover;
+    # the same shade mounted externally admits ~22 %.
+    assert params["admitted"] == 55
+    assert params["external_admitted"] == 22
+
+
+def test_solar_weak_rejection_severity_and_wiring() -> None:
+    rule = _RULES_BY_CODE[TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION]
+    assert rule.severity is Severity.INFO
+    assert rule.inputs is RuleInput.CONFIG
+    assert rule.fix_step is None
+    assert rule.issues == (1236,)
+
+
+def test_solar_weak_rejection_does_not_fire_for_an_external_cover() -> None:
+    view = _solar_view(cover_side="external", cover_shade="dark", g_shaded=0.22)
+    assert _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view) == []
+
+
+def test_solar_weak_rejection_does_not_fire_below_the_threshold() -> None:
+    """An internal cover that still rejects most of the heat is not a finding."""
+    view = _solar_view(g_shaded=0.38)
+    assert _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view) == []
+
+
+def test_solar_weak_rejection_does_not_fire_exactly_at_the_threshold() -> None:
+    view = _solar_view(g_shaded=0.40)
+    assert _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view) == []
+
+
+def test_solar_weak_rejection_does_not_fire_when_the_feature_is_off() -> None:
+    """No block ⇒ no finding — the whole feature stays invisible when unset."""
+    assert _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, {"options": {}}) == []
+
+
+def test_solar_weak_rejection_survives_a_junk_block() -> None:
+    view = _solar_view(g_shaded="not-a-number")
+    assert _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view) == []
+
+
+def test_solar_weak_rejection_renders_and_says_estimate() -> None:
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _solar_view())
+    text = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert "estimate" in text.lower()
+    assert "55" in text
+    assert "22" in text
+
+
+def test_solar_weak_rejection_fires_for_a_direct_override_too() -> None:
+    """A hand-declared g_total above the threshold is the same warning."""
+    view = _solar_view(source="direct", g_shaded=0.62, cover_shade="light")
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view)
+    assert len(findings) == 1
+    assert _params(findings)[0]["external_admitted"] == 12
+
+
 _WIKI_RE = re.compile(r"^[A-Za-z0-9-]+#[a-z0-9-]+$")
 
 

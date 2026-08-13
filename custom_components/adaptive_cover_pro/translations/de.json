@@ -82,6 +82,11 @@
           "window_depth": "Fenstertiefe (Laibung)",
           "sill_height": "Fensterbretthöhe",
           "window_width": "Fensterbreite",
+          "solar_properties_enabled": "Solare Eigenschaften beschreiben (Schätzung)",
+          "solar_cover_side": "Montageseite der Beschattung",
+          "solar_cover_shade": "Farbtiefe der Beschattung",
+          "solar_g_total": "Gesamtenergiedurchlassgrad (g), geschlossen",
+          "solar_g_glazing": "Energiedurchlassgrad der Verglasung (g), unbeschattet",
           "length_awning": "Markisenlänge",
           "angle": "Markisenwinkel",
           "slat_depth": "Lamellentiefe",
@@ -141,6 +146,11 @@
           "window_depth": "Tiefe des Fensterausbruchs/Rahmens von der Wandoberfläche. In der von Home Assistant konfigurierten Einheit angezeigt. Optionaler Parameter für erweiterte Genauigkeit — auf 0 (Standard) stellen, um zu deaktivieren. Typische Werte: Bündige Montage = 0,05 m / 2 in, Standard-Rahmen = 0,10 m / 4 in, Tiefe Ausnehmung = 0,15 m / 6 in. Messen Sie von der äußeren Wandoberfläche bis zur inneren Kante des Fensterrahmens. Der Fensterausbruch wirft seinen eigenen Schatten über die Oberseite des Glases — den gleichen Bereich, den die Beschattung von oben schützt. Wenn dieser Schatten allein bereits alles abdeckt, was die Beschattung andernfalls hätte abdecken müssen, kann die Beschattung vollständig geöffnet werden. Darunter macht der Fensterausbruch keinen Unterschied für die berechnete Position.",
           "sill_height": "Höhe vom Boden bis zur Unterseite Ihres Fensters. In der von Home Assistant konfigurierten Einheit angezeigt. Stellen Sie auf 0 (Standard) für bodenebene Fenster oder wenn unbekannt. Beispiel: Für eine Fensterbank 1 m / 39 in über dem Boden geben Sie diesen Wert ein. Verbessert die Berechnungsgenauigkeit für erhöhte Fenster — ohne sie schließt sich die Jalousie leicht mehr als nötig. Bereich: 0–50 m / 0–1968 in. Messen Sie vom Boden bis zur unteren Kante des Glasbereichs (der Fensterbank). Hinweis: Fensterhöhe wird weiterhin von unten bis oben des Glases gemessen — dies sind unabhängige Messungen.",
           "window_width": "Breite der Fensteröffnung. In der von Home Assistant konfigurierten Einheit angezeigt. Wird von Blendungszonen verwendet, um zu bestimmen, welche Bodenzonen basierend auf dem horizontalen Sonnenwinkel direktes Sonnenlicht erhalten können. Messen Sie die Innenbreite des Glasbereichs. Beispiele: Standard-Fenster = 0,9–1,2 m / 35–47 in, Doppelfenster = 1,5–1,8 m / 59–71 in, Terrassentür = 2,0–3,0 m / 79–118 in. Nur relevant, wenn Blendungszonen aktiviert sind.",
+          "solar_properties_enabled": "Einschalten, um zu beschreiben, wie viel Sonnen-WÄRME dieser Fensteraufbau durchlässt, damit die Diagnose sie schätzen kann. Standardmäßig aus und rein informativ — am Fahrverhalten der Beschattung ändert sich dadurch nichts. Alle Werte sind Schätzungen aus veröffentlichten Bandbreiten für Verglasungen und Beschattungsstoffe, keine Messungen an Ihrer Hardware.",
+          "solar_cover_side": "Wo die Beschattung relativ zur Scheibe hängt. **Außen**: vor der Verglasung, sodass aufgenommene Wärme nach draußen abgestrahlt wird — meist zwei- bis dreimal wirksamer gegen solare Wärme. **Innen**: im Raum, sodass das Sonnenlicht die Scheibe bereits passiert hat und der größte Teil der vom Stoff aufgenommenen Wärme drinnen bleibt.",
+          "solar_cover_shade": "Wie dunkel der Stoff optisch ist. **Hell** reflektiert den größten Teil des auftreffenden Lichts; **Dunkel** nimmt den größten Teil auf. Wird zusammen mit der Montageseite verwendet, um einen geschätzten Energiedurchlassgrad aus den veröffentlichten Bandbreiten nachzuschlagen. Wird ignoriert, wenn Sie unten einen Gesamtenergiedurchlassgrad eintragen.",
+          "solar_g_total": "Optional: der Energiedurchlassgrad des vollständig geschlossenen Aufbaus (g-Wert, 0,0–1,0), falls Ihr Stoff- oder Beschattungsdatenblatt einen angibt. Leer lassen, um die Schätzung aus Montageseite und Farbtiefe oben zu verwenden. 0,0 bedeutet vollständig undurchlässig für Sonnenenergie und ist ein echter Wert, nicht „nicht gesetzt“.",
+          "solar_g_glazing": "Energiedurchlassgrad der Scheibe allein, mit vollständig zurückgefahrener Beschattung (g-Wert, 0,0–1,0). Der Standardwert 0,70 ist typisch für gängige Zweifachverglasung; Einfachverglasung liegt näher bei 0,85, moderne Dreifach- oder Sonnenschutzverglasung eher bei 0,35–0,50. Sehen Sie im Datenblatt der Verglasung nach, falls vorhanden.",
           "length_awning": "Maximale Ausfahrlänge Ihrer Markise bei vollständiger Ausdehnung. In der von Home Assistant konfigurierten Einheit angezeigt. Messen Sie vom Befestigungspunkt bis zum Ende des Tuchs, wenn es vollständig ausgefahren ist. Beispiele: Standard-Terrasse-Markise = 2,0–3,0 m / 79–118 in, Kleine Fenster-Markise = 1,0–1,5 m / 39–59 in, Großer Gewerbebereich = 4,0 m / 157 in oder mehr. Wird verwendet, um zu berechnen, wie weit die Markise ausfahren muss, um die Sonne zu blockieren.",
           "angle": "Winkel der Markise im ausgefahrenen Zustand (0-45°). 0° = Horizontal/flach (maximale Abdeckung), 15° = leichte Neigung (typisch für Drainage), 30° = steile Neigung (großer Sonnenwinkel), 45° = sehr steil (selten verwendet). Überprüfen Sie die Spezifikationen des Markisenherstellers. Die meisten Markisen sind 0-15°. Beeinflusst die Schattenberechnung für ordnungsgemäße Sonnenblockerung.",
           "slat_depth": "Breite jeder Lamelle (messen Sie eine Lamelle von vorne nach hinten). In der von Home Assistant konfigurierten Einheit angezeigt. Häufige Größen: Mini-Jalousien = 2,5 cm / 1 in, Standard-Jalousien = 5 cm / 2 in, Breite Lamellen = 6,5–7,5 cm / 2,5–3 in. Messen Sie eine einzelne Lamelle mit einem Lineal für eine genaue Sonnenschutzberechnung.",
@@ -392,6 +402,11 @@
           "window_depth": "Fenstertiefe (Laibung)",
           "sill_height": "Fensterbretthöhe",
           "window_width": "Fensterbreite",
+          "solar_properties_enabled": "Solare Eigenschaften beschreiben (Schätzung)",
+          "solar_cover_side": "Montageseite der Beschattung",
+          "solar_cover_shade": "Farbtiefe der Beschattung",
+          "solar_g_total": "Gesamtenergiedurchlassgrad (g), geschlossen",
+          "solar_g_glazing": "Energiedurchlassgrad der Verglasung (g), unbeschattet",
           "length_awning": "Markisenlänge",
           "angle": "Markisenwinkel",
           "slat_depth": "Lamellentiefe",
@@ -451,6 +466,11 @@
           "window_depth": "Tiefe des Fensterausbruchs/Rahmens von der Wandoberfläche. In der von Home Assistant konfigurierten Einheit angezeigt. Optionaler Parameter für erweiterte Genauigkeit — auf 0 (Standard) stellen, um zu deaktivieren. Typische Werte: Bündige Montage = 0,05 m / 2 in, Standard-Rahmen = 0,10 m / 4 in, Tiefe Ausnehmung = 0,15 m / 6 in. Messen Sie von der äußeren Wandoberfläche bis zur inneren Kante des Fensterrahmens. Der Fensterausbruch wirft seinen eigenen Schatten über die Oberseite des Glases — den gleichen Bereich, den die Beschattung von oben schützt. Wenn dieser Schatten allein bereits alles abdeckt, was die Beschattung andernfalls hätte abdecken müssen, kann die Beschattung vollständig geöffnet werden. Darunter macht der Fensterausbruch keinen Unterschied für die berechnete Position.",
           "sill_height": "Höhe vom Boden bis zur Unterseite Ihres Fensters. In der von Home Assistant konfigurierten Einheit angezeigt. Stellen Sie auf 0 (Standard) für bodenebene Fenster oder wenn unbekannt. Beispiel: Für eine Fensterbank 1 m / 39 in über dem Boden geben Sie diesen Wert ein. Verbessert die Berechnungsgenauigkeit für erhöhte Fenster — ohne sie schließt sich die Jalousie leicht mehr als nötig. Bereich: 0–50 m / 0–1968 in. Messen Sie vom Boden bis zur unteren Kante des Glasbereichs (der Fensterbank). Hinweis: Fensterhöhe wird weiterhin von unten bis oben des Glases gemessen — dies sind unabhängige Messungen.",
           "window_width": "Breite der Fensteröffnung. In der von Home Assistant konfigurierten Einheit angezeigt. Wird von Blendungszonen verwendet, um zu bestimmen, welche Bodenzonen basierend auf dem horizontalen Sonnenwinkel direktes Sonnenlicht erhalten können. Messen Sie die Innenbreite des Glasbereichs. Beispiele: Standard-Fenster = 0,9–1,2 m / 35–47 in, Doppelfenster = 1,5–1,8 m / 59–71 in, Terrassentür = 2,0–3,0 m / 79–118 in. Nur relevant, wenn Blendungszonen aktiviert sind.",
+          "solar_properties_enabled": "Einschalten, um zu beschreiben, wie viel Sonnen-WÄRME dieser Fensteraufbau durchlässt, damit die Diagnose sie schätzen kann. Standardmäßig aus und rein informativ — am Fahrverhalten der Beschattung ändert sich dadurch nichts. Alle Werte sind Schätzungen aus veröffentlichten Bandbreiten für Verglasungen und Beschattungsstoffe, keine Messungen an Ihrer Hardware.",
+          "solar_cover_side": "Wo die Beschattung relativ zur Scheibe hängt. **Außen**: vor der Verglasung, sodass aufgenommene Wärme nach draußen abgestrahlt wird — meist zwei- bis dreimal wirksamer gegen solare Wärme. **Innen**: im Raum, sodass das Sonnenlicht die Scheibe bereits passiert hat und der größte Teil der vom Stoff aufgenommenen Wärme drinnen bleibt.",
+          "solar_cover_shade": "Wie dunkel der Stoff optisch ist. **Hell** reflektiert den größten Teil des auftreffenden Lichts; **Dunkel** nimmt den größten Teil auf. Wird zusammen mit der Montageseite verwendet, um einen geschätzten Energiedurchlassgrad aus den veröffentlichten Bandbreiten nachzuschlagen. Wird ignoriert, wenn Sie unten einen Gesamtenergiedurchlassgrad eintragen.",
+          "solar_g_total": "Optional: der Energiedurchlassgrad des vollständig geschlossenen Aufbaus (g-Wert, 0,0–1,0), falls Ihr Stoff- oder Beschattungsdatenblatt einen angibt. Leer lassen, um die Schätzung aus Montageseite und Farbtiefe oben zu verwenden. 0,0 bedeutet vollständig undurchlässig für Sonnenenergie und ist ein echter Wert, nicht „nicht gesetzt“.",
+          "solar_g_glazing": "Energiedurchlassgrad der Scheibe allein, mit vollständig zurückgefahrener Beschattung (g-Wert, 0,0–1,0). Der Standardwert 0,70 ist typisch für gängige Zweifachverglasung; Einfachverglasung liegt näher bei 0,85, moderne Dreifach- oder Sonnenschutzverglasung eher bei 0,35–0,50. Sehen Sie im Datenblatt der Verglasung nach, falls vorhanden.",
           "length_awning": "Maximale Ausfahrlänge Ihrer Markise bei vollständiger Ausdehnung. In der von Home Assistant konfigurierten Einheit angezeigt. Messen Sie vom Befestigungspunkt bis zum Ende des Tuchs, wenn es vollständig ausgefahren ist. Beispiele: Standard-Terrasse-Markise = 2,0–3,0 m / 79–118 in, Kleine Fenster-Markise = 1,0–1,5 m / 39–59 in, Großer Gewerbebereich = 4,0 m / 157 in oder mehr. Wird verwendet, um zu berechnen, wie weit die Markise ausfahren muss, um die Sonne zu blockieren.",
           "angle": "Winkel der Markise im ausgefahrenen Zustand (0-45°). 0° = Horizontal/flach (maximale Abdeckung), 15° = leichte Neigung (typisch für Drainage), 30° = steile Neigung (großer Sonnenwinkel), 45° = sehr steil (selten verwendet). Überprüfen Sie die Spezifikationen des Markisenherstellers. Die meisten Markisen sind 0-15°. Beeinflusst die Schattenberechnung für ordnungsgemäße Sonnenblockerung.",
           "slat_depth": "Breite jeder Lamelle (messen Sie eine Lamelle von vorne nach hinten). In der von Home Assistant konfigurierten Einheit angezeigt. Häufige Größen: Mini-Jalousien = 2,5 cm / 1 in, Standard-Jalousien = 5 cm / 2 in, Breite Lamellen = 6,5–7,5 cm / 2,5–3 in. Messen Sie eine einzelne Lamelle mit einem Lineal für eine genaue Sonnenschutzberechnung.",
@@ -1482,6 +1502,19 @@
         "bi_part": "Mittig öffnend – zwei Flügel treffen sich in der Mitte",
         "left": "Einflügelig – am linken Rand befestigt, schließt nach rechts",
         "right": "Einflügelig – am rechten Rand befestigt, schließt nach links"
+      }
+    },
+    "solar_cover_side": {
+      "options": {
+        "external": "Außen – vor der Verglasung montiert",
+        "internal": "Innen – im Raum montiert"
+      }
+    },
+    "solar_cover_shade": {
+      "options": {
+        "light": "Hell – reflektierender, heller Stoff",
+        "medium": "Mittel – mitteltoniger Stoff",
+        "dark": "Dunkel – absorbierender, dunkler Stoff"
       }
     },
     "outside_temp_source": {
