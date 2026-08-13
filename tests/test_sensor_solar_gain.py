@@ -12,7 +12,9 @@ sensor reads ``calculation_details``. One computation, one source.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -23,8 +25,14 @@ from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
     DiagnosticsBuilder,
 )
+from custom_components.adaptive_cover_pro.engine.solar_gain import estimate_solar_gain
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.state.climate_provider import ClimateProvider
+from custom_components.adaptive_cover_pro.const import (
+    ControlMethod,
+    IRRADIANCE_PLANE_HORIZONTAL,
+    VERTICAL_GLASS_PITCH_DEG,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -294,3 +302,43 @@ def test_the_watt_figure_moves_with_the_cover_position():
     open_diag, _ = builder.build(_gain_ctx(inverse_state=False, logical_position=100))
     shut_diag, _ = builder.build(_gain_ctx(inverse_state=False, logical_position=0))
     assert shut_diag["solar_gain"]["gain_w"] < open_diag["solar_gain"]["gain_w"]
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ Non-finite irradiance — the whole chain, end to end
+# ---------------------------------------------------------------------------
+
+
+def test_a_non_finite_reading_reports_unknown_instead_of_crashing_the_sensor():
+    """A sensor publishing ``nan`` must produce ``unknown``, not a ValueError.
+
+    Driven through the REAL chain — a ``ClimateProvider`` read, then the pure
+    estimator, then the sensor's own ``value_fn`` — because that is exactly the
+    route the crash took: ``float("nan")`` parses, survives ``max(nan, 0.0)``
+    inside the transposition, multiplies into ``gain_w``, and detonates in
+    ``int(round(gain_w))`` on every update, forever. A unit test on any single
+    link would have stayed green while the assembled path was broken.
+    """
+    hass = MagicMock()
+    state = MagicMock()
+    state.entity_id = "sensor.solar"
+    state.state = "nan"
+    state.attributes = {}
+    hass.states.get.return_value = state
+
+    provider = ClimateProvider(hass=hass, logger=MagicMock())
+    readings = provider.read(use_irradiance=False, irradiance_entity="sensor.solar")
+
+    estimate = estimate_solar_gain(
+        ghi_w_m2=readings.irradiance_value,
+        irradiance_plane=IRRADIANCE_PLANE_HORIZONTAL,
+        sol_elev_deg=45.0,
+        cos_aoi=0.8,
+        plane_tilt_deg=VERTICAL_GLASS_PITCH_DEG,
+        day_of_year=172,
+        area_m2=3.0,
+        area_source="derived",
+        effective_g=0.55,
+        effective_g_source="preset",
+    )
+    assert _spec().value_fn(_stub_sensor(asdict(estimate))) is None

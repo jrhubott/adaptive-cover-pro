@@ -218,9 +218,15 @@ def plane_of_array_irradiance(
     vertical window (β = 90) sees half of each. ``max(cos AOI, 0)`` is what
     keeps the sun behind the plane from subtracting energy.
 
-    Beam is clamped at zero and the ``1/sin h`` division is guarded, so the
+    Beam is bounded at both ends and the ``1/sin h`` division is guarded, so the
     result is finite and non-negative for every input — including a sun below
     the horizon, which the caller should normally have short-circuited already.
+
+    The upper beam bound is ``I0`` itself: clamping ``kt`` does NOT bound the
+    beam, because ``DNI`` is recovered from the RAW reading, and a mis-scaled
+    sensor — or a tilted one left on the ``horizontal`` setting — divided by a
+    small ``sin h`` yields a physically impossible ``DNI > I0`` that multiplies
+    straight into POA at exactly the low-sun geometry where it does most damage.
     """
     ghi_clamped = max(float(ghi), 0.0)
     safe_sin = max(float(sin_elev), _MIN_SIN_ELEVATION)
@@ -228,7 +234,7 @@ def plane_of_array_irradiance(
 
     kt = min(max(ghi_clamped / (i0 * safe_sin), 0.0), 1.0)
     dhi = erbs_diffuse_fraction(kt) * ghi_clamped
-    dni = max((ghi_clamped - dhi) / safe_sin, 0.0)
+    dni = min(max((ghi_clamped - dhi) / safe_sin, 0.0), i0)
 
     cos_tilt = math.cos(math.radians(float(plane_tilt_deg)))
     sky_view = (1.0 + cos_tilt) / 2.0
@@ -268,9 +274,15 @@ def estimate_solar_gain(
     straight through — zero transposition error. Otherwise it is treated as
     global horizontal and run through the decomposition + transposition above.
 
-    Below ``MIN_GAIN_SUN_ELEVATION_DEG`` the gain is reported as a hard
-    ``0.0`` with ``model_note='sun_too_low'``: the true figure is negligible
+    Below ``MIN_GAIN_SUN_ELEVATION_DEG`` the TRANSPOSED gain is reported as a
+    hard ``0.0`` with ``model_note='sun_too_low'``: the true figure is negligible
     and the ``1/sin h`` term is unstable, so a zero is both truthful and safe.
+    That guard is about the decomposition's arithmetic, and the decomposition
+    does not run in ``window_plane`` mode — there the sensor already measured
+    the plane-of-array irradiance, so a genuine 15 W/m² at dusk is reported as
+    the 15 W/m² it is rather than overwritten with a zero that would also leave
+    ``gain_w=0.0`` sitting beside ``poa_w_m2=None``.
+
     A genuinely MISSING term still wins over that zero — an install that can
     never produce a number must say so rather than report 0 W all night and
     ``unknown`` all day.
@@ -279,7 +291,9 @@ def estimate_solar_gain(
     """
     passthrough = irradiance_plane == IRRADIANCE_PLANE_WINDOW
     model = MODEL_PASSTHROUGH if passthrough else MODEL_ISOTROPIC_ERBS
-    sun_too_low = (
+    # The guard protects the ``1/sin h`` decomposition, which only the
+    # transposition model runs — hence ``not passthrough``.
+    sun_too_low = not passthrough and (
         sol_elev_deg is None or float(sol_elev_deg) < MIN_GAIN_SUN_ELEVATION_DEG
     )
     model_note = NOTE_SUN_TOO_LOW if sun_too_low else None

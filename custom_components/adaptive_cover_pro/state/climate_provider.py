@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from operator import ge, le
 from typing import TYPE_CHECKING, Any
@@ -467,13 +468,24 @@ class ClimateProvider:
         admission both go through it, so there is one unavailable/non-numeric
         contract and one debug log, not two copies drifting apart. The parse
         itself delegates to :meth:`_coerce_float`, the provider's only
-        float-coercion primitive; this wrapper adds the entity read and the
-        non-numeric debug log on top of it.
+        float-coercion primitive; this wrapper adds the entity read, the
+        finiteness guard, and the non-numeric debug log on top of it.
+
+        **Finiteness is part of "numeric" here.** ``float()`` happily accepts
+        the strings ``nan``, ``inf`` and ``-inf``, and every consumer downstream
+        assumes real arithmetic: NaN compares False against BOTH threshold edges
+        (so a garbage reading could pin the cloud-suppression latch on), and it
+        survives ``max(x, 0.0)`` all the way into the solar-gain sensor's
+        ``int(round(...))``, which then raises on every update. Treating a
+        non-finite reading exactly like a non-numeric one — ``None``, same debug
+        log — puts it back on the existing fail-open path for every caller.
         """
         if entity is None:
             return None
         value = get_safe_state(self._hass, entity)
         parsed = self._coerce_float(value)
+        if parsed is not None and not math.isfinite(parsed):
+            parsed = None
         if parsed is None and value is not None:
             self._logger.debug(
                 "%s entity %s returned non-numeric value: %r", label, entity, value

@@ -1655,12 +1655,13 @@ def test_solar_weak_rejection_fires_for_a_weak_internal_cover() -> None:
     findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _solar_view())
     assert len(findings) == 1
     params = _params(findings)[0]
-    assert params["shade"] == "dark"
     assert params["g_shaded"] == 0.55
     # 55 % of the incident energy gets through a fully-closed internal cover;
-    # the same shade mounted externally admits ~22 %.
+    # the same shade mounted externally admits ~22 %. Both preset-derived facts
+    # ride in nested fragments, because a hand-entered g has neither.
     assert params["admitted"] == 55
-    assert params["external_admitted"] == 22
+    assert params["shade_word"].params["shade"] == "dark"
+    assert params["comparison"].params["external_admitted"] == 22
 
 
 def test_solar_weak_rejection_severity_and_wiring() -> None:
@@ -1705,12 +1706,74 @@ def test_solar_weak_rejection_renders_and_says_estimate() -> None:
     assert "22" in text
 
 
-def test_solar_weak_rejection_fires_for_a_direct_override_too() -> None:
-    """A hand-declared g_total above the threshold is the same warning."""
-    view = _solar_view(source="direct", g_shaded=0.62, cover_shade="light")
-    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view)
+_PRESET_TEXT_EN = (
+    "ℹ️ Internal-mounted dark cover: fully closed, this window still admits an "
+    "estimated 55% of incident solar energy (g≈0.55). An external cover of the "
+    "same shade would admit about 22%. Estimate only — not a measurement."
+)
+
+_DIRECT_TEXT_EN = (
+    "ℹ️ Internal-mounted cover: fully closed, this window still admits an "
+    "estimated 62% of incident solar energy (g≈0.62). Estimate only — not a "
+    "measurement."
+)
+
+
+def test_solar_weak_rejection_preset_wording_is_unchanged() -> None:
+    """The preset finding is byte-identical to what it has always rendered."""
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _solar_view())
+    assert render(findings[0].reason, load_troubleshoot_labels("en")) == _PRESET_TEXT_EN
+
+
+def _direct_view() -> dict:
+    """Build a view for a user who typed their own ``solar_g_total``.
+
+    Their ``cover_shade`` is whatever the select happened to hold — never a
+    choice they made about this number.
+    """
+    return _solar_view(source="direct", g_shaded=0.62, cover_shade="light")
+
+
+def test_solar_weak_rejection_still_fires_for_a_hand_entered_g() -> None:
+    """The warning is still true — an internal cover rejects little heat."""
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _direct_view())
     assert len(findings) == 1
-    assert _params(findings)[0]["external_admitted"] == 12
+    params = _params(findings)[0]
+    assert params["g_shaded"] == 0.62
+    assert params["admitted"] == 62
+
+
+def test_a_hand_entered_g_drops_the_shade_word_and_the_preset_comparison() -> None:
+    """The number came from the user, so no preset may be quoted against it.
+
+    ``cover_shade`` still holds its untouched ``medium``/``light`` default, and
+    the external figure comes from a table the user's own number never came
+    from — so the finding used to describe a "light cover" that admits 12 %
+    externally to someone who typed 0.62 by hand and never picked a shade.
+    """
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _direct_view())
+    params = _params(findings)[0]
+    assert params["shade_word"] == ""
+    assert params["comparison"] == ""
+    text = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert text == _DIRECT_TEXT_EN
+    assert "light" not in text
+    assert "external" not in text.lower()
+
+
+@pytest.mark.parametrize("language", ["de", "fr"])
+def test_the_hand_entered_variant_drops_the_comparison_in_every_language(
+    language: str,
+) -> None:
+    """A translated bundle must not smuggle the preset clause back in."""
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _direct_view())
+    preset = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _solar_view())
+    labels = load_troubleshoot_labels(language)
+    direct_text = render(findings[0].reason, labels)
+    preset_text = render(preset[0].reason, labels)
+    assert len(direct_text) < len(preset_text)
+    assert "12" not in direct_text
+    assert "62" in direct_text
 
 
 _WIKI_RE = re.compile(r"^[A-Za-z0-9-]+#[a-z0-9-]+$")

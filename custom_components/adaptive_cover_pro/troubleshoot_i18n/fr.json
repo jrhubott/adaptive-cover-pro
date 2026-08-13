@@ -30,6 +30,8 @@
     "mixed_temp_units": "🛑 Le capteur de température intérieure indique {inside_unit} mais le capteur de température extérieure indique {outside_unit}. Adaptive Cover Pro ne convertit pas entre les unités, les comparaisons climatiques seront donc erronées. Réglez les deux capteurs de température sur la même unité.",
     "endpoint_position_not_tracking": "⚠️ La commande {service} a été envoyée à {entity} pour la fin de course {target}% et il se signale {state}, mais son attribut de position reste à {current}%. Ce store ne met pas à jour sa position signalée lors des commandes d'ouverture/fermeture. Désactivez « Utiliser les commandes d'ouverture/fermeture aux fins de course » pour que l'intégration envoie plutôt set_cover_position.",
     "weather_override_inverted": "⚠️ La dérogation météo déplace le store à {override}%, ce qui est plus fermé que sa position par défaut de {default}%. La dérogation météo est un repli de sécurité ; pour ce type de store, la position repliée (sûre) est {safe}%. Tel que configuré, le vent ou la pluie déploieront le store au lieu de le protéger.",
-    "solar_internal_cover_weak_rejection": "ℹ️ Store monté à l'intérieur ({shade}) : même entièrement fermé, cette fenêtre laisse encore passer environ {admitted}% de l'énergie solaire incidente (g≈{g_shaded}). Un store extérieur de la même teinte n'en laisserait passer qu'environ {external_admitted}%. Estimation seulement — pas une mesure."
+    "solar_internal_cover_weak_rejection": "ℹ️ Store monté à l'intérieur{shade_word} : même entièrement fermé, cette fenêtre laisse encore passer environ {admitted}% de l'énergie solaire incidente (g≈{g_shaded}).{comparison} Estimation seulement — pas une mesure.",
+    "solar_shade_word": " ({shade})",
+    "solar_external_comparison": " Un store extérieur de la même teinte n'en laisserait passer qu'environ {external_admitted}%."
   }
 }

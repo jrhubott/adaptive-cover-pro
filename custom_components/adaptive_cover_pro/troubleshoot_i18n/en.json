@@ -30,6 +30,8 @@
     "mixed_temp_units": "🛑 The inside temperature sensor reports {inside_unit} but the outside temperature sensor reports {outside_unit}. Adaptive Cover Pro does not convert between units, so climate comparisons will be wrong. Set both temperature sensors to the same unit.",
     "endpoint_position_not_tracking": "⚠️ {entity} was sent {service} for the {target}% endpoint and reports itself {state}, but its position attribute is still {current}%. This cover doesn't update its reported position from open/close commands. Turn off 'Use open/close at endpoints' so the integration sends set_cover_position instead.",
     "weather_override_inverted": "⚠️ The weather override moves the cover to {override}%, which is further closed than its default position of {default}%. Weather override is a safety retraction; on this cover type the retracted position is {safe}%. As configured, wind or rain will deploy the cover instead of protecting it.",
-    "solar_internal_cover_weak_rejection": "ℹ️ Internal-mounted {shade} cover: fully closed, this window still admits an estimated {admitted}% of incident solar energy (g≈{g_shaded}). An external cover of the same shade would admit about {external_admitted}%. Estimate only — not a measurement."
+    "solar_internal_cover_weak_rejection": "ℹ️ Internal-mounted {shade_word}cover: fully closed, this window still admits an estimated {admitted}% of incident solar energy (g≈{g_shaded}).{comparison} Estimate only — not a measurement.",
+    "solar_shade_word": "{shade} ",
+    "solar_external_comparison": " An external cover of the same shade would admit about {external_admitted}%."
   }
 }

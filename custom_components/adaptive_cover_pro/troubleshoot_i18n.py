@@ -211,12 +211,21 @@ _TRIAGE_TEMPLATES_EN: dict[str, str] = {
         "safety retraction; on this cover type the retracted position is {safe}%. "
         "As configured, wind or rain will deploy the cover instead of protecting it."
     ),
-    # Rule 27
+    # Rule 27. ``shade_word`` and ``comparison`` are nested fragments on the
+    # preset path and empty strings when the user declared g_total by hand — see
+    # ``_check_solar_internal_cover_weak_rejection``. With both fragments spliced
+    # in this renders byte-identically to the single-variant template it replaces.
     TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION: (
-        "ℹ️ Internal-mounted {shade} cover: fully closed, this window still "
-        "admits an estimated {admitted}% of incident solar energy (g≈{g_shaded}). "
-        "An external cover of the same shade would admit about "
-        "{external_admitted}%. Estimate only — not a measurement."
+        "ℹ️ Internal-mounted {shade_word}cover: fully closed, this window still "
+        "admits an estimated {admitted}% of incident solar energy (g≈{g_shaded})."
+        "{comparison} Estimate only — not a measurement."
+    ),
+    # Rule 27 fragment — the preset shade, with the spacing the sentence needs.
+    TriageCode.SOLAR_SHADE_WORD: "{shade} ",
+    # Rule 27 fragment — the preset-table comparison, leading space included.
+    TriageCode.SOLAR_EXTERNAL_COMPARISON: (
+        " An external cover of the same shade would admit about "
+        "{external_admitted}%."
     ),
 }
 

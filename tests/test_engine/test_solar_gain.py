@@ -255,6 +255,63 @@ class TestPlaneOfArrayIrradiance:
         )
         assert plane.clearness_index == pytest.approx(1.0)
 
+    # -- the beam is bounded by physics, not just by the clearness index ----
+
+    def test_dni_cannot_exceed_the_extraterrestrial_beam(self) -> None:
+        """No surface can receive more direct beam than the top of the atmosphere.
+
+        Clamping ``kt`` alone does not bound ``DNI``: the beam is
+        ``(GHI − DHI) / sin h`` computed from the RAW reading, so a mis-scaled
+        sensor — or a tilted one left on the ``horizontal`` setting — divides a
+        far-too-large number by a small ``sin h`` and invents beam energy that
+        multiplies straight into POA.
+        """
+        day = 172
+        i0 = extraterrestrial_normal_irradiance(day)
+        plane = plane_of_array_irradiance(
+            ghi=5000.0,
+            sin_elev=math.sin(math.radians(10.0)),
+            cos_aoi=1.0,
+            plane_tilt_deg=VERTICAL_GLASS_PITCH_DEG,
+            day_of_year=day,
+            albedo=DEFAULT_GROUND_ALBEDO,
+        )
+        assert plane.dni_w_m2 <= i0
+
+    @pytest.mark.parametrize("ghi", [1500.0, 5000.0, 100_000.0])
+    @pytest.mark.parametrize("elevation_deg", [0.5, 3.0, 10.0, 45.0])
+    def test_beam_stays_bounded_for_any_over_scaled_reading(
+        self, ghi: float, elevation_deg: float
+    ) -> None:
+        day = 200
+        i0 = extraterrestrial_normal_irradiance(day)
+        plane = plane_of_array_irradiance(
+            ghi=ghi,
+            sin_elev=math.sin(math.radians(elevation_deg)),
+            cos_aoi=1.0,
+            plane_tilt_deg=VERTICAL_GLASS_PITCH_DEG,
+            day_of_year=day,
+            albedo=DEFAULT_GROUND_ALBEDO,
+        )
+        assert plane.dni_w_m2 <= i0
+        assert math.isfinite(plane.poa_w_m2)
+        # The beam term is capped at I0, the sky and ground terms at the reading
+        # itself — so POA cannot run away with a bad number.
+        assert plane.poa_w_m2 <= i0 + ghi
+
+    def test_the_clamp_leaves_a_plausible_reading_untouched(self) -> None:
+        """The bound must bite only on nonsense, never on a real clear day."""
+        sin_elev = math.sin(math.radians(55.0))
+        plane = plane_of_array_irradiance(
+            ghi=820.0,
+            sin_elev=sin_elev,
+            cos_aoi=0.8,
+            plane_tilt_deg=VERTICAL_GLASS_PITCH_DEG,
+            day_of_year=172,
+            albedo=DEFAULT_GROUND_ALBEDO,
+        )
+        assert plane.dni_w_m2 * sin_elev + plane.dhi_w_m2 == pytest.approx(820.0)
+
     def test_overcast_reading_is_almost_all_diffuse(self) -> None:
         sin_elev = math.sin(math.radians(45.0))
         plane = plane_of_array_irradiance(
@@ -424,6 +481,54 @@ class TestEstimateSolarGain:
     def test_unknown_plane_string_falls_back_to_the_model(self) -> None:
         """A hand-edited entry must not silently become a passthrough."""
         assert _estimate(irradiance_plane="nonsense").model == MODEL_ISOTROPIC_ERBS
+
+    # -- the low-sun guard belongs to the decomposition, not to the reading --
+
+    def test_a_passthrough_reading_survives_a_low_sun(self) -> None:
+        """A window-plane sensor at dusk is reporting a MEASUREMENT, not noise.
+
+        The guard exists because ``1/sin h`` is numerically meaningless near the
+        horizon — and that term appears nowhere on this path. Zeroing here threw
+        away a real reading and produced an internally contradictory result:
+        ``gain_w=0.0`` sitting next to ``poa_w_m2=None``.
+        """
+        est = _estimate(
+            irradiance_plane=IRRADIANCE_PLANE_WINDOW, sol_elev_deg=1.0, ghi_w_m2=15.0
+        )
+        assert est.poa_w_m2 == pytest.approx(15.0)
+        assert est.gain_w == pytest.approx(3.0 * 15.0 * 0.55)
+        assert est.model_note is None
+        assert est.unknown_reason is None
+
+    def test_the_low_sun_guard_still_zeroes_the_transposition_model(self) -> None:
+        """Same dusk reading, horizontal sensor: the unstable path is unchanged."""
+        est = _estimate(
+            irradiance_plane=IRRADIANCE_PLANE_HORIZONTAL,
+            sol_elev_deg=1.0,
+            ghi_w_m2=15.0,
+        )
+        assert est.gain_w == 0.0
+        assert est.model_note == NOTE_SUN_TOO_LOW
+        assert est.poa_w_m2 is None
+
+    @pytest.mark.parametrize("elevation", [None, -20.0, 0.0, 2.99])
+    def test_passthrough_never_pairs_a_gain_with_a_missing_poa(
+        self, elevation: float | None
+    ) -> None:
+        """Internal consistency: a reported wattage always has POA behind it."""
+        est = _estimate(
+            irradiance_plane=IRRADIANCE_PLANE_WINDOW, sol_elev_deg=elevation
+        )
+        assert est.poa_w_m2 is not None
+        assert est.gain_w == pytest.approx(3.0 * est.poa_w_m2 * 0.55)
+
+    def test_passthrough_at_night_still_reports_zero_when_the_sensor_does(self) -> None:
+        """The honest zero comes from the reading itself, not from a guard."""
+        est = _estimate(
+            irradiance_plane=IRRADIANCE_PLANE_WINDOW, sol_elev_deg=-10.0, ghi_w_m2=0.0
+        )
+        assert est.gain_w == 0.0
+        assert est.poa_w_m2 == 0.0
 
     # -- totality -----------------------------------------------------------
 

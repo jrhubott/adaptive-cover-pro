@@ -82,6 +82,7 @@ from ..const import (
     ControlStatus,
     TriageCode,
 )
+from ..engine.solar_transmittance import SOURCE_DIRECT
 from ..reason_i18n import Reason, render
 from ..troubleshoot_i18n import load_troubleshoot_labels
 
@@ -112,9 +113,16 @@ _MANUAL_OVERRIDE_PRIORITY = 80
 
 # Fragment TriageCodes: they carry a template but NO rule row — they render only
 # as nested params of another finding's template (the skip "N minutes ago" clause
-# is spliced into the three skip templates). Mirrors ReasonCode's FRAGMENT_*
-# members; excluded from the rule-table bijection lock.
-_TRIAGE_FRAGMENT_CODES: frozenset[str] = frozenset({TriageCode.SKIP_AGE})
+# is spliced into the three skip templates; rule 27's two preset-only clauses are
+# spliced into its). Mirrors ReasonCode's FRAGMENT_* members; excluded from the
+# rule-table bijection lock.
+_TRIAGE_FRAGMENT_CODES: frozenset[str] = frozenset(
+    {
+        TriageCode.SKIP_AGE,
+        TriageCode.SOLAR_SHADE_WORD,
+        TriageCode.SOLAR_EXTERNAL_COMPARISON,
+    }
+)
 
 # A shaded distance below this (metres) makes the geometry near-binary: the
 # projected shade sweeps the window over so short a throw that the position
@@ -712,6 +720,16 @@ def _check_solar_internal_cover_weak_rejection(data: Mapping) -> Iterable[Mappin
     ``SOLAR_WEAK_REJECTION_THRESHOLD`` an internal cover is doing a reasonable
     job and a permanent banner would just be noise. Informational only — there
     is no option to change, hence ``fix_step=None``.
+
+    **Provenance decides the wording.** The headline fact — a fully-closed
+    internal cover still lets most of the heat through — holds however
+    ``g_shaded`` was arrived at, so the rule fires for both. But the shade WORD
+    and the external comparison are quotes from the ``(side, shade)`` preset
+    table, and a user who typed ``solar_g_total`` by hand never came from that
+    table: their ``cover_shade`` is very likely the untouched ``medium``
+    default. Naming it back at them, and comparing their number against a
+    preset row, would be inventing provenance. Both clauses are therefore
+    nested fragments, dropped entirely on the ``direct`` path.
     """
     block = _get(data, "solar_transmittance")
     if not isinstance(block, Mapping):
@@ -723,16 +741,24 @@ def _check_solar_internal_cover_weak_rejection(data: Mapping) -> Iterable[Mappin
         return
     if g_shaded <= SOLAR_WEAK_REJECTION_THRESHOLD:
         return
-    shade = block.get("cover_shade", DEFAULT_SOLAR_COVER_SHADE)
-    external = SOLAR_G_PRESETS.get(
-        (SOLAR_COVER_SIDE_EXTERNAL, shade),
-        SOLAR_G_PRESETS[(SOLAR_COVER_SIDE_EXTERNAL, DEFAULT_SOLAR_COVER_SHADE)],
-    )
+    shade_word: object = ""
+    comparison: object = ""
+    if block.get("source") != SOURCE_DIRECT:
+        shade = block.get("cover_shade", DEFAULT_SOLAR_COVER_SHADE)
+        external = SOLAR_G_PRESETS.get(
+            (SOLAR_COVER_SIDE_EXTERNAL, shade),
+            SOLAR_G_PRESETS[(SOLAR_COVER_SIDE_EXTERNAL, DEFAULT_SOLAR_COVER_SHADE)],
+        )
+        shade_word = Reason(TriageCode.SOLAR_SHADE_WORD, {"shade": shade})
+        comparison = Reason(
+            TriageCode.SOLAR_EXTERNAL_COMPARISON,
+            {"external_admitted": round(external * 100)},
+        )
     yield {
-        "shade": shade,
+        "shade_word": shade_word,
         "g_shaded": g_shaded,
         "admitted": round(g_shaded * 100),
-        "external_admitted": round(external * 100),
+        "comparison": comparison,
     }
 
 

@@ -2285,6 +2285,13 @@ class TriageCode(StrEnum):
     # nested param of the skip templates, never emitted as a top-level finding —
     # so it has a template but no rule row (mirrors ReasonCode's FRAGMENT_*).
     SKIP_AGE = "triage.skip_age"
+    # -- fragments (NOT rules): rule 27's two PRESET-ONLY clauses. Both quote the
+    # ``(side, shade)`` preset table, so both are omitted when the user declared
+    # ``solar_g_total`` by hand — their shade select is very likely the untouched
+    # default and the table their number never came from has no standing against
+    # it. Spliced as nested params, exactly like SKIP_AGE.
+    SOLAR_SHADE_WORD = "triage.solar_shade_word"
+    SOLAR_EXTERNAL_COMPARISON = "triage.solar_external_comparison"
 
 
 # =============================================================================
