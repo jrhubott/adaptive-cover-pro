@@ -238,6 +238,22 @@ class PerEntityState:
     # frame to describe.
     dispatch_token: Any = None
     sent_at: dt.datetime | None = None
+    # The raw axis value read at the moment ``target`` was dispatched (issue
+    # #1139) — the SAME ``prior_position`` value both ``sent_at`` writers
+    # (``CoverCommandService._prepare_service_call``,
+    # ``CoverCommandService.send_my_position``) already compute, stamped in
+    # the same breath. Lets ``StateClassifier`` distinguish "this cover has
+    # not reacted to the command at all" (still resting exactly where it
+    # stood at dispatch) from "this cover moved, then stalled somewhere
+    # else" — the #172/#518 guard tests hinge on exactly that distinction;
+    # see the equal-distance arm in ``state_classifier.py``. ``None`` means
+    # "no dispatch origin recorded": every row before its first command, and
+    # every target ``restore_target`` rehydrates after a reload (a
+    # rehydration is not a dispatch, so it must not let the classifier
+    # suppress a clear). Read only by ``StateClassifier``, via
+    # ``CoverCommandService.get_position_at_send`` — dropped with the whole
+    # row by ``discard_target``, no bespoke clearing needed.
+    position_at_send: int | None = None
     waiting: bool = False
     last_progress_at: dt.datetime | None = None
     retry_count: int = 0
