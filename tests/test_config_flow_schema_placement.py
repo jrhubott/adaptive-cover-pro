@@ -682,3 +682,88 @@ def test_solar_fields_render_after_the_window_facing_fields() -> None:
     # is appended, so the pinned azimuth → fov → distance order is untouched.
     keys = [str(k) for k in cf._get_geometry_schema("cover_blind").schema]
     assert keys.index("distance_shaded_area") < keys.index("solar_properties_enabled")
+
+
+# ---------------------------------------------------------------------------
+# Estimated solar gain (#1237): the glazed-area override sits with the other
+# solar fields on the geometry step (it is a property of the window, so it
+# renders for every cover type — including the ones whose geometry cannot
+# derive an area, which is exactly who needs the override). The plane select
+# sits with the irradiance entity it describes, on the light & cloud step.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cover_type", _ALL_GEOMETRY_TYPES)
+def test_glass_area_on_geometry_step(cover_type) -> None:
+    keys = _schema_keys(cf._get_geometry_schema(cover_type))
+    assert "glass_area" in keys
+
+
+@pytest.mark.parametrize("cover_type", _ALL_GEOMETRY_TYPES)
+def test_glass_area_is_a_live_option_key(cover_type) -> None:
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    assert "glass_area" in get_policy(cover_type).live_option_keys()
+
+
+def test_glass_area_has_no_default_so_unset_round_trips() -> None:
+    """Blank means "derive from geometry", so it must stay absent (#1267)."""
+    import voluptuous as vol_
+
+    schema = cf._get_geometry_schema("cover_blind")
+    marker = next(k for k in schema.schema if str(k) == "glass_area")
+    assert isinstance(marker, vol_.Optional)
+    assert marker.default is vol_.UNDEFINED
+    assert "glass_area" not in schema({})
+
+
+def test_glass_area_renders_with_the_other_solar_fields() -> None:
+    keys = [str(k) for k in cf._get_geometry_schema("cover_blind").schema]
+    assert keys.index("solar_properties_enabled") < keys.index("glass_area")
+
+
+def test_irradiance_plane_on_light_cloud_step() -> None:
+    from custom_components.adaptive_cover_pro.config_dynamic import light_cloud_schema
+
+    assert "irradiance_plane" in _schema_keys(light_cloud_schema())
+
+
+def test_irradiance_plane_renders_beside_the_irradiance_entity() -> None:
+    from custom_components.adaptive_cover_pro.config_dynamic import light_cloud_schema
+
+    keys = [str(k) for k in light_cloud_schema().schema]
+    assert keys.index("irradiance_plane") == keys.index("irradiance_entity") + 1
+
+
+def test_irradiance_plane_uses_a_selector_with_a_translation_key() -> None:
+    from homeassistant.helpers import selector as ha_selector
+
+    from custom_components.adaptive_cover_pro.config_dynamic import light_cloud_schema
+
+    schema = light_cloud_schema()
+    marker = next(k for k in schema.schema if str(k) == "irradiance_plane")
+    validator = schema.schema[marker]
+    assert isinstance(validator, ha_selector.SelectSelector)
+    assert validator.config.get("translation_key") == "irradiance_plane"
+
+
+def test_irradiance_plane_defaults_to_horizontal() -> None:
+    """Most users own a flat-mounted pyranometer, so that is the safe default."""
+    from custom_components.adaptive_cover_pro.config_dynamic import light_cloud_schema
+    from custom_components.adaptive_cover_pro.const import DEFAULT_IRRADIANCE_PLANE
+
+    schema = light_cloud_schema()
+    marker = next(k for k in schema.schema if str(k) == "irradiance_plane")
+    assert marker.default() == DEFAULT_IRRADIANCE_PLANE == "horizontal"
+
+
+def test_irradiance_plane_is_a_live_option_key() -> None:
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    assert "irradiance_plane" in get_policy("cover_blind").live_option_keys()
+
+
+def test_irradiance_plane_is_not_on_the_geometry_step() -> None:
+    assert "irradiance_plane" not in _schema_keys(
+        cf._get_geometry_schema("cover_blind")
+    )

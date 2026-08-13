@@ -70,7 +70,7 @@ from ...managers.manual_override import (
 from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
 from ...position_utils import flip_if
-from .._helpers import window_dimensions_lines
+from .._helpers import window_dimensions_lines, window_glass_area_m2
 from .._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from ..base import (
     CAP_HAS_SET_POSITION,
@@ -687,6 +687,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
     ) -> float | None:
         """Return the configured window height the carriage travels."""
         return config_service.get_vertical_data(options).h_win
+
+    def glass_area_m2(
+        self,
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,
+    ) -> float | None:
+        """Height × width — both dimensions are on the geometry step (#1237)."""
+        return window_glass_area_m2(options)
 
     # ---- Calculation engine ------------------------------------------- #
 

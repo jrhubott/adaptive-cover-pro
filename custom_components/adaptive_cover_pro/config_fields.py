@@ -1574,6 +1574,20 @@ _LIGHT_CLOUD_SPECS = _spec(
         ValidatorKind.ENTITY,
         clearable=True,
     ),
+    # Which plane the sensor above measures (#1237). Declared immediately after
+    # it so the two render together: the reading is meaningless to the
+    # solar-gain estimate without knowing its plane, and it changes nothing
+    # about the cloud-suppression threshold the same entity feeds.
+    FieldSpec(
+        const.CONF_IRRADIANCE_PLANE,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.SELECT,
+        select_options=const.IRRADIANCE_PLANES,
+        default=const.DEFAULT_IRRADIANCE_PLANE,
+        make_selector=_select(
+            *const.IRRADIANCE_PLANES, translation_key=const.CONF_IRRADIANCE_PLANE
+        ),
+    ),
     FieldSpec(
         CONF_CLOUD_COVERAGE_ENTITY,
         SECTION_LIGHT_CLOUD,
@@ -2057,6 +2071,23 @@ _GEOMETRY_SPECS = _spec(
         rng=const._RANGE_SOLAR_G,
         default=const.DEFAULT_SOLAR_G_GLAZING,
         make_selector=_number(minimum=0.0, maximum=1.0, step=0.01),
+    ),
+    # Optional glazed-area override for the solar-gain estimate (#1237).
+    # SLIDER + clearable + no default for the same reason as ``solar_g_total``:
+    # blank means "derive it from the window geometry", and a BOX would save 0
+    # on clear, which the estimate would then have to read as an area.
+    FieldSpec(
+        const.CONF_GLASS_AREA,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_GLASS_AREA,
+        clearable=True,
+        make_selector=_number(
+            minimum=const._RANGE_GLASS_AREA[0],
+            maximum=const._RANGE_GLASS_AREA[1],
+            step=0.1,
+            unit="m²",
+        ),
     ),
     FieldSpec(
         CONF_TILT_DEPTH,

@@ -15,6 +15,11 @@ from typing import Any
 
 from ..const import ControlStatus
 from ..const import (
+    CONF_IRRADIANCE_ENTITY,
+    CONF_IRRADIANCE_PLANE,
+    DEFAULT_IRRADIANCE_PLANE,
+    DEFAULT_SOLAR_G_GLAZING,
+    VERTICAL_GLASS_PITCH_DEG,
     ClimateStrategy,
     ControlMethod,
     FORECAST_STEP_MINUTES,
@@ -33,6 +38,23 @@ _UNAVAILABLE_HA_STATES = ("unavailable", "unknown")
 # Display precision for the solar-transmittance block's 0-1 ratios (#1236).
 # Matches ``_round_trace_value``'s default so the two solar surfaces agree.
 _SOLAR_G_DECIMALS = 3
+
+# Display precision per solar-gain field (#1237). Energy-flux quantities get
+# one decimal — the sensor shows whole watts, and a tenth is already below what
+# a ±30 % estimate can justify; everything else keeps the shared ratio
+# precision. Keys absent here fall through to ``_SOLAR_G_DECIMALS``.
+_GAIN_DECIMALS = {
+    "gain_w": 1,
+    "poa_w_m2": 1,
+    "dni_w_m2": 1,
+    "dhi_w_m2": 1,
+    "ghi_w_m2": 1,
+    "plane_tilt_deg": 1,
+}
+
+# ``position_source`` on the solar-gain block: the pipeline's TARGET position,
+# not a live cover read.
+_GAIN_POSITION_SOURCE_TARGET = "target"
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +135,17 @@ class DiagnosticContext:
     # payload byte-identical for every existing install. Defaulted so contexts
     # built without it (tests, older callers) are unaffected.
     solar_transmittance: Any = None  # SolarTransmittance | None
+
+    # Estimated-solar-gain inputs (issue #1237). All four are gathered once per
+    # cycle by the coordinator — the raw irradiance reading in W/m², the HA-frame
+    # day of year for the orbital eccentricity term, and the glazed area with
+    # its provenance ("configured" | "derived" | "unknown"). Defaulted so
+    # contexts built without them (tests, older callers) stay unaffected, and so
+    # the block is simply absent for the installs that cannot produce it.
+    irradiance_w_m2: float | None = None
+    day_of_year: int = 1
+    glass_area_m2: float | None = None
+    glass_area_source: str = "unknown"
 
     # Configuration snapshot
     config_options: dict = field(default_factory=dict)
@@ -256,6 +289,7 @@ class DiagnosticsBuilder:
         diagnostics.update(self._build_meta(ctx))
         diagnostics.update(self._build_solar(ctx))
         diagnostics.update(self._build_solar_transmittance(ctx))
+        diagnostics.update(self._build_solar_gain(ctx))
         diagnostics.update(self._build_position(ctx))
         diagnostics.update(self._build_decision_trace(ctx))
         diagnostics.update(self._build_handler_priorities(ctx))
@@ -345,6 +379,94 @@ class DiagnosticsBuilder:
                 "is_estimate": result.is_estimate,
             }
         }
+
+    @staticmethod
+    def _build_solar_gain(ctx: DiagnosticContext) -> dict:
+        """Estimated instantaneous solar gain through the window (issue #1237).
+
+        Present only when an irradiance entity is configured — there is no
+        credible watt figure without a measured reading, and #1237 deliberately
+        does not ship a clear-sky fallback. Absent means absent: an install
+        without the sensor sees no new key at all.
+
+        ``effective_g`` is read from the SAME per-cycle ``ctx.solar_transmittance``
+        the #1236 block presents, never re-derived: one computation, two
+        presentations, no chance of the two blocks disagreeing. When that
+        feature is off, the bare-glazing default stands in under the explicit
+        ``default`` provenance label so the number is never silently
+        position-independent.
+
+        This is the presentation boundary — the ONLY place these figures are
+        rounded (#140). Watt / W-m⁻² quantities to 0.1, dimensionless ratios to
+        0.001, matching what the sensor's display precision can actually show.
+        """
+        options = ctx.config_options or {}
+        if not options.get(CONF_IRRADIANCE_ENTITY):
+            return {}
+
+        from ..engine.solar_gain import (
+            EFFECTIVE_G_SOURCE_DEFAULT,
+            estimate_solar_gain,
+        )
+
+        transmittance = ctx.solar_transmittance
+        effective_g = (
+            transmittance.effective_g
+            if transmittance is not None
+            else DEFAULT_SOLAR_G_GLAZING
+        )
+        effective_g_source = (
+            transmittance.source
+            if transmittance is not None
+            else EFFECTIVE_G_SOURCE_DEFAULT
+        )
+
+        # ``cos_aoi`` is the cover engine's own polymorphic answer for its own
+        # plane; before the first calculation cycle there is no engine, so the
+        # beam term drops out and only the sky/ground terms remain.
+        cos_aoi = getattr(ctx.cover, "cos_aoi", None)
+        plane_tilt_deg = getattr(ctx.cover, "plane_tilt_deg", VERTICAL_GLASS_PITCH_DEG)
+        _, sun_elevation = ctx.pos_sun
+
+        estimate = estimate_solar_gain(
+            ghi_w_m2=ctx.irradiance_w_m2,
+            irradiance_plane=options.get(
+                CONF_IRRADIANCE_PLANE, DEFAULT_IRRADIANCE_PLANE
+            ),
+            sol_elev_deg=sun_elevation,
+            cos_aoi=cos_aoi if cos_aoi is not None else 0.0,
+            plane_tilt_deg=plane_tilt_deg,
+            day_of_year=ctx.day_of_year,
+            area_m2=ctx.glass_area_m2,
+            area_source=ctx.glass_area_source,
+            effective_g=effective_g,
+            effective_g_source=effective_g_source,
+        )
+
+        block = {
+            key: DiagnosticsBuilder._round_gain_value(key, value)
+            for key, value in asdict(estimate).items()
+        }
+        block["position_pct"] = (
+            ctx.pipeline_result.position if ctx.pipeline_result is not None else None
+        )
+        # The figure describes where ACP WANTS the cover, not where it is: the
+        # two diverge mid-travel and while automatic control is off. Labelled so
+        # the choice can change later without breaking a consumer.
+        block["position_source"] = _GAIN_POSITION_SOURCE_TARGET
+        block["shaded_fraction"] = (
+            round(transmittance.shaded_fraction, _SOLAR_G_DECIMALS)
+            if transmittance is not None and transmittance.shaded_fraction is not None
+            else None
+        )
+        return {"solar_gain": block}
+
+    @staticmethod
+    def _round_gain_value(key: str, value: Any) -> Any:
+        """Round one solar-gain field for display, leaving labels untouched."""
+        if not isinstance(value, float):
+            return value
+        return round(value, _GAIN_DECIMALS.get(key, _SOLAR_G_DECIMALS))
 
     @staticmethod
     def _get_control_state_reason(ctx: DiagnosticContext) -> str:

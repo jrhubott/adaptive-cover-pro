@@ -2408,6 +2408,47 @@ SOLAR_WEAK_REJECTION_THRESHOLD = 0.40
 
 
 # =============================================================================
+# Estimated solar gain (issue #1237)
+# =============================================================================
+# Turning a measured irradiance reading into watts through the glass needs three
+# published physical constants plus one numeric guard. Every value here is
+# standard textbook physics, not a tunable — the tunables are options.
+#
+# Tilt of a plane FROM HORIZONTAL: 0 = flat, 90 = vertical. Promoted here from
+# ``engine/covers/roof_window.py`` on its third consumer (roof window, louvered
+# roof, and now ``AdaptiveGeneralCover.plane_tilt_deg``); that module re-exports
+# it so its existing imports keep resolving.
+VERTICAL_GLASS_PITCH_DEG = 90.0
+
+# Solar irradiance at the top of the atmosphere at 1 AU, WMO/ASTM value.
+SOLAR_CONSTANT_W_M2 = 1367.0
+
+# Ground reflectance for the isotropic transposition's ground-reflected term.
+# 0.2 is the standard default for ordinary vegetated / built ground (snow would
+# be 0.6-0.8, which the model deliberately does not try to detect).
+DEFAULT_GROUND_ALBEDO = 0.2
+
+# Below this sun elevation the decomposition's ``1 / sin h`` term is numerically
+# unstable and the true gain is negligible anyway, so the estimate reports a
+# hard 0 W rather than a large, meaningless number.
+MIN_GAIN_SUN_ELEVATION_DEG = 3.0
+
+# Which plane the user's irradiance sensor measures. A pyranometer lies flat
+# (global horizontal); a cell taped to the glass already reads the window plane
+# and needs no transposition at all.
+CONF_IRRADIANCE_PLANE = "irradiance_plane"
+IRRADIANCE_PLANE_HORIZONTAL = "horizontal"
+IRRADIANCE_PLANE_WINDOW = "window_plane"
+IRRADIANCE_PLANES = (IRRADIANCE_PLANE_HORIZONTAL, IRRADIANCE_PLANE_WINDOW)
+DEFAULT_IRRADIANCE_PLANE = IRRADIANCE_PLANE_HORIZONTAL
+
+# Optional override of the glazed area in m². Blank = derive it from the window
+# geometry the cover type already carries; set it when the frame eats enough of
+# the rough aperture to matter (typically 10-25 %).
+CONF_GLASS_AREA = "glass_area"
+
+
+# =============================================================================
 # Solar-calculation trace keys (issue #682)
 # =============================================================================
 # Stable key names for the per-cycle raw geometric solar-position trace that
@@ -2577,6 +2618,11 @@ _RANGE_DAY_NIGHT_BLACKOUT_THRESHOLD = (0, 100)
 # Solar transmittance (#1236): g-values are dimensionless 0-1 ratios, shared by
 # CONF_SOLAR_G_TOTAL and CONF_SOLAR_G_GLAZING.
 _RANGE_SOLAR_G = (0.0, 1.0)
+
+# Estimated solar gain (#1237): the optional glazed-area override, in m². The
+# ceiling comfortably covers a full-height patio door wall without letting a
+# stray keystroke report kilowatts through a bedroom window.
+_RANGE_GLASS_AREA = (0.1, 50.0)
 
 # Motion.
 _RANGE_MOTION_TIMEOUT = (30, 3600)  # CONF_MOTION_TIMEOUT, seconds

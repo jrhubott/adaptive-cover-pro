@@ -1117,3 +1117,123 @@ class TestShadedGlassFraction:
         policy = get_policy("cover_blind")
         assert policy.shaded_glass_fraction(-20) == pytest.approx(1.0)
         assert policy.shaded_glass_fraction(140) == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# glass_area_m2 — derived glazed area for the solar-gain estimate (#1237)
+# ---------------------------------------------------------------------------
+
+
+class TestGlassArea:
+    """Policy hook returning the window's glazed area in m², or ``None``.
+
+    Mirrors ``TestLiftTravelMetres``: only the cover types whose geometry
+    schema carries BOTH a window height and a window width can answer, and the
+    rest must say ``None`` rather than invent a dimension. The estimated-solar-
+    gain sensor then reports ``unknown`` with a reason instead of a wrong watt
+    figure, and ``sensor.py`` never learns a cover-type string.
+    """
+
+    _DERIVABLE = (
+        "cover_blind",
+        "cover_venetian",
+        "cover_dual_panel",
+        "cover_day_night_shade",
+        "cover_roof_window",
+    )
+    # Awnings carry no width; sliding curtains carry no height; tilt-only and
+    # louvered roofs carry neither (and a louvered roof has no glass at all).
+    _NOT_DERIVABLE = (
+        "cover_awning",
+        "cover_oscillating_awning",
+        "cover_sliding_curtain",
+        "cover_tilt",
+        "cover_louvered_roof",
+    )
+
+    _OPTIONS = {"window_height": 2.0, "window_width": 1.5}
+
+    @staticmethod
+    def _svc() -> MagicMock:
+        return MagicMock()
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("cover_type", _DERIVABLE)
+    def test_derivable_types_return_height_times_width(self, cover_type: str) -> None:
+        assert get_policy(cover_type).glass_area_m2(
+            self._svc(), dict(self._OPTIONS)
+        ) == pytest.approx(3.0)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("cover_type", _NOT_DERIVABLE)
+    def test_types_without_both_dimensions_return_none(self, cover_type: str) -> None:
+        # Even handed the keys, these policies must not answer: their config
+        # flow never collects them, so a stray stored key is not a measurement.
+        assert (
+            get_policy(cover_type).glass_area_m2(self._svc(), dict(self._OPTIONS))
+            is None
+        )
+
+    @pytest.mark.unit
+    def test_every_registered_cover_type_is_classified(self) -> None:
+        classified = set(self._DERIVABLE) | set(self._NOT_DERIVABLE)
+        registered = {
+            key
+            for key, cls in POLICY_REGISTRY.items()
+            if cls.controls_cover and not cls.is_orchestrator
+        }
+        assert registered == classified
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "options",
+        [
+            {},
+            {"window_height": 2.0},
+            {"window_width": 1.5},
+            {"window_height": None, "window_width": 1.5},
+            {"window_height": 2.0, "window_width": None},
+        ],
+    )
+    def test_missing_dimension_returns_none(self, options: dict) -> None:
+        assert get_policy("cover_blind").glass_area_m2(self._svc(), options) is None
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "options",
+        [
+            {"window_height": 0, "window_width": 1.5},
+            {"window_height": 2.0, "window_width": 0},
+            {"window_height": -2.0, "window_width": 1.5},
+        ],
+    )
+    def test_non_positive_dimension_returns_none(self, options: dict) -> None:
+        """A zero or negative area is not an area — never report 0 W as fact."""
+        assert get_policy("cover_blind").glass_area_m2(self._svc(), options) is None
+
+    @pytest.mark.unit
+    def test_non_numeric_dimension_returns_none(self) -> None:
+        assert (
+            get_policy("cover_blind").glass_area_m2(
+                self._svc(), {"window_height": "tall", "window_width": 1.5}
+            )
+            is None
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("cover_type", ["cover_group", "cover_building_profile"])
+    def test_axis_less_policies_inherit_the_none_default(self, cover_type: str) -> None:
+        policy = POLICY_REGISTRY.get(cover_type)
+        if policy is None:
+            pytest.skip(f"{cover_type} not registered")
+        assert policy().glass_area_m2(self._svc(), dict(self._OPTIONS)) is None
+
+    @pytest.mark.unit
+    def test_stub_fifth_type_policies_are_safe(self) -> None:
+        from tests.test_cover_types.stub_policy import (
+            StubDualAxisPolicy,
+            StubSingleAxisPolicy,
+        )
+
+        for policy in (StubSingleAxisPolicy(), StubDualAxisPolicy()):
+            assert policy.glass_area_m2(self._svc(), dict(self._OPTIONS)) is None

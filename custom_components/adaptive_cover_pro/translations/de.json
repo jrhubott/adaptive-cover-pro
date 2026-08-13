@@ -87,6 +87,7 @@
           "solar_cover_shade": "Farbtiefe der Beschattung",
           "solar_g_total": "Gesamtenergiedurchlassgrad (g), geschlossen",
           "solar_g_glazing": "Energiedurchlassgrad der Verglasung (g), unbeschattet",
+          "glass_area": "Glasfläche (optional)",
           "length_awning": "Markisenlänge",
           "angle": "Markisenwinkel",
           "slat_depth": "Lamellentiefe",
@@ -151,6 +152,7 @@
           "solar_cover_shade": "Wie dunkel der Stoff optisch ist. **Hell** reflektiert den größten Teil des auftreffenden Lichts; **Dunkel** nimmt den größten Teil auf. Wird zusammen mit der Montageseite verwendet, um einen geschätzten Energiedurchlassgrad aus den veröffentlichten Bandbreiten nachzuschlagen. Wird ignoriert, wenn Sie unten einen Gesamtenergiedurchlassgrad eintragen.",
           "solar_g_total": "Optional: der Energiedurchlassgrad des vollständig geschlossenen Aufbaus (g-Wert, 0,0–1,0), falls Ihr Stoff- oder Beschattungsdatenblatt einen angibt. Leer lassen, um die Schätzung aus Montageseite und Farbtiefe oben zu verwenden. 0,0 bedeutet vollständig undurchlässig für Sonnenenergie und ist ein echter Wert, nicht „nicht gesetzt“.",
           "solar_g_glazing": "Energiedurchlassgrad der Scheibe allein, mit vollständig zurückgefahrener Beschattung (g-Wert, 0,0–1,0). Der Standardwert 0,70 ist typisch für gängige Zweifachverglasung; Einfachverglasung liegt näher bei 0,85, moderne Dreifach- oder Sonnenschutzverglasung eher bei 0,35–0,50. Sehen Sie im Datenblatt der Verglasung nach, falls vorhanden.",
+          "glass_area": "Optional: die Glasfläche dieses Fensters in Quadratmetern, die ausschließlich der Sensor „Geschätzter solarer Wärmeeintrag“ verwendet. Leer lassen, um die Fläche aus Fensterhöhe und -breite oben abzuleiten — das ergibt das Rohbaumaß, von dem ein Rahmen typischerweise 10–25 % wegnimmt; tragen Sie hier eine gemessene Glasfläche ein, wenn Sie einen genaueren Wert möchten. Erforderlich für Beschattungstypen, die nicht sowohl Fensterhöhe als auch -breite erfassen (Markisen, reine Lamellenjalousien, Schiebevorhänge, Lamellendächer) — sonst wird der Wärmeeintrag als unbekannt gemeldet.",
           "length_awning": "Maximale Ausfahrlänge Ihrer Markise bei vollständiger Ausdehnung. In der von Home Assistant konfigurierten Einheit angezeigt. Messen Sie vom Befestigungspunkt bis zum Ende des Tuchs, wenn es vollständig ausgefahren ist. Beispiele: Standard-Terrasse-Markise = 2,0–3,0 m / 79–118 in, Kleine Fenster-Markise = 1,0–1,5 m / 39–59 in, Großer Gewerbebereich = 4,0 m / 157 in oder mehr. Wird verwendet, um zu berechnen, wie weit die Markise ausfahren muss, um die Sonne zu blockieren.",
           "angle": "Winkel der Markise im ausgefahrenen Zustand (0-45°). 0° = Horizontal/flach (maximale Abdeckung), 15° = leichte Neigung (typisch für Drainage), 30° = steile Neigung (großer Sonnenwinkel), 45° = sehr steil (selten verwendet). Überprüfen Sie die Spezifikationen des Markisenherstellers. Die meisten Markisen sind 0-15°. Beeinflusst die Schattenberechnung für ordnungsgemäße Sonnenblockerung.",
           "slat_depth": "Breite jeder Lamelle (messen Sie eine Lamelle von vorne nach hinten). In der von Home Assistant konfigurierten Einheit angezeigt. Häufige Größen: Mini-Jalousien = 2,5 cm / 1 in, Standard-Jalousien = 5 cm / 2 in, Breite Lamellen = 6,5–7,5 cm / 2,5–3 in. Messen Sie eine einzelne Lamelle mit einem Lineal für eine genaue Sonnenschutzberechnung.",
@@ -407,6 +409,7 @@
           "solar_cover_shade": "Farbtiefe der Beschattung",
           "solar_g_total": "Gesamtenergiedurchlassgrad (g), geschlossen",
           "solar_g_glazing": "Energiedurchlassgrad der Verglasung (g), unbeschattet",
+          "glass_area": "Glasfläche (optional)",
           "length_awning": "Markisenlänge",
           "angle": "Markisenwinkel",
           "slat_depth": "Lamellentiefe",
@@ -471,6 +474,7 @@
           "solar_cover_shade": "Wie dunkel der Stoff optisch ist. **Hell** reflektiert den größten Teil des auftreffenden Lichts; **Dunkel** nimmt den größten Teil auf. Wird zusammen mit der Montageseite verwendet, um einen geschätzten Energiedurchlassgrad aus den veröffentlichten Bandbreiten nachzuschlagen. Wird ignoriert, wenn Sie unten einen Gesamtenergiedurchlassgrad eintragen.",
           "solar_g_total": "Optional: der Energiedurchlassgrad des vollständig geschlossenen Aufbaus (g-Wert, 0,0–1,0), falls Ihr Stoff- oder Beschattungsdatenblatt einen angibt. Leer lassen, um die Schätzung aus Montageseite und Farbtiefe oben zu verwenden. 0,0 bedeutet vollständig undurchlässig für Sonnenenergie und ist ein echter Wert, nicht „nicht gesetzt“.",
           "solar_g_glazing": "Energiedurchlassgrad der Scheibe allein, mit vollständig zurückgefahrener Beschattung (g-Wert, 0,0–1,0). Der Standardwert 0,70 ist typisch für gängige Zweifachverglasung; Einfachverglasung liegt näher bei 0,85, moderne Dreifach- oder Sonnenschutzverglasung eher bei 0,35–0,50. Sehen Sie im Datenblatt der Verglasung nach, falls vorhanden.",
+          "glass_area": "Optional: die Glasfläche dieses Fensters in Quadratmetern, die ausschließlich der Sensor „Geschätzter solarer Wärmeeintrag“ verwendet. Leer lassen, um die Fläche aus Fensterhöhe und -breite oben abzuleiten — das ergibt das Rohbaumaß, von dem ein Rahmen typischerweise 10–25 % wegnimmt; tragen Sie hier eine gemessene Glasfläche ein, wenn Sie einen genaueren Wert möchten. Erforderlich für Beschattungstypen, die nicht sowohl Fensterhöhe als auch -breite erfassen (Markisen, reine Lamellenjalousien, Schiebevorhänge, Lamellendächer) — sonst wird der Wärmeeintrag als unbekannt gemeldet.",
           "length_awning": "Maximale Ausfahrlänge Ihrer Markise bei vollständiger Ausdehnung. In der von Home Assistant konfigurierten Einheit angezeigt. Messen Sie vom Befestigungspunkt bis zum Ende des Tuchs, wenn es vollständig ausgefahren ist. Beispiele: Standard-Terrasse-Markise = 2,0–3,0 m / 79–118 in, Kleine Fenster-Markise = 1,0–1,5 m / 39–59 in, Großer Gewerbebereich = 4,0 m / 157 in oder mehr. Wird verwendet, um zu berechnen, wie weit die Markise ausfahren muss, um die Sonne zu blockieren.",
           "angle": "Winkel der Markise im ausgefahrenen Zustand (0-45°). 0° = Horizontal/flach (maximale Abdeckung), 15° = leichte Neigung (typisch für Drainage), 30° = steile Neigung (großer Sonnenwinkel), 45° = sehr steil (selten verwendet). Überprüfen Sie die Spezifikationen des Markisenherstellers. Die meisten Markisen sind 0-15°. Beeinflusst die Schattenberechnung für ordnungsgemäße Sonnenblockerung.",
           "slat_depth": "Breite jeder Lamelle (messen Sie eine Lamelle von vorne nach hinten). In der von Home Assistant konfigurierten Einheit angezeigt. Häufige Größen: Mini-Jalousien = 2,5 cm / 1 in, Standard-Jalousien = 5 cm / 2 in, Breite Lamellen = 6,5–7,5 cm / 2,5–3 in. Messen Sie eine einzelne Lamelle mit einem Lineal für eine genaue Sonnenschutzberechnung.",
@@ -788,6 +792,7 @@
           "lux_entity": "Luxsensor (optional)",
           "lux_threshold": "Luxschwellwert",
           "irradiance_entity": "Strahlungssensor (optional)",
+          "irradiance_plane": "Messebene des Strahlungssensors",
           "irradiance_threshold": "Strahlungsschwellwert",
           "cloud_coverage_entity": "Wolkendecken-Sensor (optional)",
           "cloud_coverage_threshold": "Wolkendecken-Schwellwert",
@@ -808,6 +813,7 @@
           "lux_entity": "Optionaler Beleuchtungssensor (drinnen oder draußen) für präzise Sonnenerkennung. Wenn der Sensor unter dem Schwellenwert liegt, fehlt direktes Sonnenlicht und die Blendungskontrolle wird unterdrückt. Typische Direktsonnenwerte: 5.000–10.000 Lux. Lassen Sie leer, wenn Sie diesen Sensor nicht haben.",
           "lux_threshold": "Lichtstärke, ab der die Sonne als vorhanden gilt. Darunter verfolgt die Beschattung nicht die Sonne, sondern kehrt in ihre Standardposition zurück. Typische Werte: 5.000–10.000 Lux für direktes Sonnenlicht, 2.000–3.000 Lux für helles indirektes Licht. **Der Wert wird in der Einheit des konfigurierten Luxsensors interpretiert**. Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
           "irradiance_entity": "Optionaler Solarbestrahlungssensor (outdoor) für präzise Sonnenerkennung. Misst Solarleistung in W/m². Wenn der Sensor unter dem Schwellenwert liegt, fehlt direktes Sonnenlicht und die Blendungskontrolle wird unterdrückt. Lassen Sie leer, wenn Sie diesen Sensor nicht haben.",
+          "irradiance_plane": "Welche Fläche der obige Strahlungssensor misst. **Globalstrahlung horizontal** (Standard): Der Sensor liegt flach und zeigt senkrecht nach oben — die übliche Montage eines Pyranometers. Der Sensor „Geschätzter solarer Wärmeeintrag“ rechnet diesen Messwert dann auf die Ebene dieses Fensters um. **Fensterebene**: Der Sensor sitzt auf oder neben der Scheibe und misst bereits das, was das Fenster sieht, sodass der Messwert unverändert übernommen wird. Betrifft nur den geschätzten solaren Wärmeeintrag — die Wolkenunterdrückung liest denselben Sensor in beiden Fällen unverändert.",
           "irradiance_threshold": "Solarstrahlungsintensität, ab der die Sonne als vorhanden gilt. Darunter kehrt die Beschattung in ihre Standardposition zurück. Typische Werte: 300–500 W/m² für direktes Sonnenlicht, 100–200 W/m² für einen bewölkten Tag. **Der Wert wird in der Einheit des konfigurierten Strahlungssensors interpretiert**. Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
           "cloud_coverage_entity": "Optionaler Wolkenbedeckungssensor meldet 0–100 % (z. B. von einer Wetterintegration). Wenn der Messwert den Schwellenwert erreicht, wird die Blendungskontrolle unterdrückt und die Beschattung kehrt zu ihrer Standardposition zurück. Lassen Sie leer, wenn Sie diesen Sensor nicht haben.",
           "cloud_coverage_threshold": "Wolkenbedeckung in Prozent, ab der die Blendschutzregelung unterdrückt wird. Beispiel: 75 bedeutet, dass die Beschattung die Sonnennachführung stoppt, wenn der Himmel zu 75 % oder mehr bedeckt ist. Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
@@ -1264,6 +1270,9 @@
       "solar_calculation": {
         "name": "Solarberechnung"
       },
+      "solar_gain": {
+        "name": "Geschätzter solarer Wärmeeintrag"
+      },
       "group_position": {
         "name": "Gruppenposition"
       },
@@ -1515,6 +1524,12 @@
         "light": "Hell – reflektierender, heller Stoff",
         "medium": "Mittel – mitteltoniger Stoff",
         "dark": "Dunkel – absorbierender, dunkler Stoff"
+      }
+    },
+    "irradiance_plane": {
+      "options": {
+        "horizontal": "Globalstrahlung horizontal – Sensor liegt flach, nach oben",
+        "window_plane": "Fensterebene – Sensor zeigt in dieselbe Richtung wie die Scheibe"
       }
     },
     "outside_temp_source": {

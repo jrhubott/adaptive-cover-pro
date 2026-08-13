@@ -1753,6 +1753,29 @@ class CoverTypePolicy(ABC):
         """
         return None
 
+    def glass_area_m2(
+        self,
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,  # noqa: ARG002
+    ) -> float | None:
+        """Glazed area of this window in m², or ``None`` when unknowable.
+
+        The area term of the estimated-solar-gain figure (#1237), shaped
+        exactly like :meth:`lift_travel_metres` so the consumer pattern is the
+        same: ask the policy, and treat ``None`` as "do not report a number".
+
+        Default ``None`` — and deliberately so. Only five cover types collect
+        both a window height and a window width; an awning has no width, a
+        sliding curtain no height, and a louvered roof no glass at all. Inventing
+        a dimension for them would put a confidently wrong wattage on a sensor,
+        so they report ``unknown`` with a reason instead.
+
+        The user's ``CONF_GLASS_AREA`` override is applied ABOVE this hook, at
+        the diagnostics layer, so it works for every cover type — including the
+        ones this method cannot answer for.
+        """
+        return None
+
     def disallowed_geometry_fields(
         self,
         *,
