@@ -230,6 +230,33 @@ class ClimateProvider:
             ),
         )
 
+    def read_irradiance_unit(self, irradiance_entity: str | None) -> str | None:
+        """Read the irradiance entity's raw ``unit_of_measurement`` (issue #1280).
+
+        HA's ``irradiance`` device class permits BOTH W/m² and BTU/(h·ft²) —
+        the latter is what HA presents on the imperial unit system — and
+        nothing else in this provider ever inspects which one an irradiance
+        entity reports. The estimated-solar-gain sensor is the only consumer
+        that needs to know: it must refuse to compute rather than silently
+        treat a BTU reading as W/m².
+
+        A DELIBERATELY SEPARATE read from :meth:`read` / ``_read_irradiance``.
+        Folding this into the admission path there would either touch the
+        shared threshold read that cloud suppression depends on (forbidden —
+        a BTU-unit user has already calibrated their threshold against the
+        numbers they observe) or read the same entity's state TWICE per
+        cycle, breaking the "exactly one HA read" contract
+        ``_read_irradiance`` documents and its regression test locks. This
+        method makes no interpretation of the unit it returns — that
+        decision belongs to its caller.
+
+        Returns ``None`` when no entity is configured, the entity has no
+        state, or the state carries no ``unit_of_measurement`` attribute.
+        """
+        if irradiance_entity is None:
+            return None
+        return state_attr(self._hass, irradiance_entity, "unit_of_measurement")
+
     def _read_temperature_crossings(
         self,
         *,

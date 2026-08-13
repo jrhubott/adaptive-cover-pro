@@ -91,6 +91,10 @@ NOTE_SUN_TOO_LOW = "sun_too_low"
 UNKNOWN_NO_IRRADIANCE = "no_irradiance"
 UNKNOWN_GLASS_AREA = "glass_area_unknown"
 UNKNOWN_EFFECTIVE_G = "effective_g_unknown"
+# The entity IS configured and reporting a number, but not in a unit this
+# module may consume (issue #1280). Distinct from ``UNKNOWN_NO_IRRADIANCE`` —
+# that one means "nothing to read"; this one means "read it, and refused it".
+UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT = "unsupported_irradiance_unit"
 
 #: ``area_source`` values — where the glazed area came from.
 AREA_SOURCE_CONFIGURED = "configured"  # the user's explicit override
@@ -269,6 +273,7 @@ def estimate_solar_gain(
     effective_g: float | None,
     effective_g_source: str,
     albedo: float = DEFAULT_GROUND_ALBEDO,
+    irradiance_unit_ok: bool = True,
 ) -> SolarGainEstimate:
     """Estimate the instantaneous solar gain through one window, in watts.
 
@@ -277,6 +282,19 @@ def estimate_solar_gain(
     ``window_plane`` mode the reading is already plane-of-array and passes
     straight through — zero transposition error. Otherwise it is treated as
     global horizontal and run through the decomposition + transposition above.
+
+    ``irradiance_unit_ok`` (issue #1280) is the HA-side unit check's verdict:
+    HA's ``irradiance`` device class permits BOTH W/m² and BTU/(h·ft²) — the
+    latter is what HA presents on the imperial unit system — and 1 BTU/(h·ft²)
+    = 3.15 W/m², so admitting that number unconverted would silently
+    under-report gain by roughly a factor of 3. The CHOSEN fix is refusal, not
+    conversion: ``False`` treats ``ghi_w_m2`` as absent for every purpose
+    below — the transposition does not run, the echoed ``ghi_w_m2`` audit
+    field reports ``None`` rather than the mis-labelled number, and
+    ``unknown_reason`` becomes ``unsupported_irradiance_unit`` rather than
+    ``no_irradiance`` — a user who configured a real entity should not be told
+    there is nothing to read. Defaults to ``True`` so every caller that
+    predates this parameter is unaffected.
 
     Below ``MIN_GAIN_SUN_ELEVATION_DEG`` the TRANSPOSED gain is reported as a
     hard ``0.0`` with ``model_note='sun_too_low'``: the true figure is negligible
@@ -293,6 +311,12 @@ def estimate_solar_gain(
 
     Never raises.
     """
+    # A reading in an unsupported unit is treated exactly like no reading at
+    # all for every calculation below (issue #1280) — resolved ONCE, here, so
+    # the transposition, the echoed audit field, and the missing-term branch
+    # all agree instead of three separate call sites re-deriving it.
+    effective_ghi = ghi_w_m2 if irradiance_unit_ok else None
+
     passthrough = irradiance_plane == IRRADIANCE_PLANE_WINDOW
     model = MODEL_PASSTHROUGH if passthrough else MODEL_ISOTROPIC_ERBS
     # The guard protects the ``1/sin h`` decomposition, which only the
@@ -303,17 +327,17 @@ def estimate_solar_gain(
     model_note = NOTE_SUN_TOO_LOW if sun_too_low else None
 
     plane: PlaneIrradiance | None = None
-    if ghi_w_m2 is not None and not sun_too_low:
+    if effective_ghi is not None and not sun_too_low:
         if passthrough:
             plane = PlaneIrradiance(
-                poa_w_m2=max(float(ghi_w_m2), 0.0),
+                poa_w_m2=max(float(effective_ghi), 0.0),
                 dni_w_m2=None,  # type: ignore[arg-type]
                 dhi_w_m2=None,  # type: ignore[arg-type]
                 clearness_index=None,  # type: ignore[arg-type]
             )
         else:
             plane = plane_of_array_irradiance(
-                ghi=float(ghi_w_m2),
+                ghi=float(effective_ghi),
                 sin_elev=math.sin(math.radians(float(sol_elev_deg))),
                 cos_aoi=cos_aoi,
                 plane_tilt_deg=plane_tilt_deg,
@@ -323,7 +347,9 @@ def estimate_solar_gain(
 
     unknown_reason: str | None = None
     gain_w: float | None = None
-    if ghi_w_m2 is None:
+    if not irradiance_unit_ok:
+        unknown_reason = UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
+    elif effective_ghi is None:
         unknown_reason = UNKNOWN_NO_IRRADIANCE
     elif area_m2 is None:
         unknown_reason = UNKNOWN_GLASS_AREA
@@ -340,7 +366,7 @@ def estimate_solar_gain(
         dni_w_m2=plane.dni_w_m2 if plane is not None else None,
         dhi_w_m2=plane.dhi_w_m2 if plane is not None else None,
         clearness_index=plane.clearness_index if plane is not None else None,
-        ghi_w_m2=float(ghi_w_m2) if ghi_w_m2 is not None else None,
+        ghi_w_m2=float(effective_ghi) if effective_ghi is not None else None,
         area_m2=float(area_m2) if area_m2 is not None else None,
         area_source=area_source,
         effective_g=float(effective_g) if effective_g is not None else None,

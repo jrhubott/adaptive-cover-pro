@@ -844,6 +844,8 @@ class TestPositionExplanationChangeDetection:
         coord.config_entry = MagicMock()
         coord.config_entry.options = {}
         coord._resolved_options = {}
+        coord._climate_provider = MagicMock()
+        coord._climate_provider.read_irradiance_unit.return_value = None
         coord.hass = MagicMock()
         coord.hass.config_entries.async_entries.return_value = []
         coord.hass.states.get.return_value = None

@@ -147,6 +147,17 @@ class DiagnosticContext:
     glass_area_m2: float | None = None
     glass_area_source: str = "unknown"
 
+    # Whether the irradiance entity's unit supports the gain estimate (issue
+    # #1280), and the raw unit observed. HA's ``irradiance`` device class also
+    # permits BTU/(h·ft²) — the unit HA presents on the imperial unit system —
+    # and admitting that number as W/m² would silently under-report gain by
+    # roughly a factor of 3. Defaults to ``True`` / ``None`` so every context
+    # built without these (tests, older callers) computes gain exactly as
+    # before; the coordinator is the only production caller that ever sets
+    # ``irradiance_unit_ok=False``.
+    irradiance_unit_ok: bool = True
+    irradiance_unit: str | None = None
+
     # Configuration snapshot
     config_options: dict = field(default_factory=dict)
 
@@ -430,6 +441,7 @@ class DiagnosticsBuilder:
 
         estimate = estimate_solar_gain(
             ghi_w_m2=ctx.irradiance_w_m2,
+            irradiance_unit_ok=ctx.irradiance_unit_ok,
             irradiance_plane=options.get(
                 CONF_IRRADIANCE_PLANE, DEFAULT_IRRADIANCE_PLANE
             ),
@@ -459,6 +471,10 @@ class DiagnosticsBuilder:
             if transmittance is not None and transmittance.shaded_fraction is not None
             else None
         )
+        # The raw unit the irradiance entity reports (issue #1280) — surfaced
+        # even when it IS W/m² so a user auditing the block sees the full
+        # picture, not just the rejection case.
+        block["irradiance_unit"] = ctx.irradiance_unit
         return {"solar_gain": block}
 
     @staticmethod
