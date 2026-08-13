@@ -22,6 +22,11 @@ behaviour fixes over its lifetime:
   covers are not prematurely cleared.
 - **#285** — direction/progress check runs for covers that never emit
   "opening"/"closing", based purely on position delta.
+- **#1139** — a cover that has not reacted to a dispatched command at all
+  (still resting exactly on its pre-command position, same HA state string)
+  must keep wait_for_target, bounded by the same transit-timeout backstop as
+  every other arm — distinct from a genuine mid-travel stall, which must
+  still clear.
 
 The classifier is composed by :class:`CoverCommandService` and accessed
 through its public :meth:`classify_state_change` wrapper.  External state
@@ -322,6 +327,67 @@ class StateClassifier:
                                         "old_state": old_state_str,
                                         "new_state": new_state_str,
                                         "target": target,
+                                    }
+                                )
+                            if logger is not None:
+                                logger.debug(
+                                    "Wait for target: %s", cmd_svc.waiting_entities()
+                                )
+                            return
+
+                        # Unreacted-command guard (Issue #1139): the cover has
+                        # not moved AT ALL since the command was dispatched —
+                        # it is still resting exactly on its pre-command
+                        # origin, not merely at the position it last
+                        # reported. This covers same-state republishes the
+                        # #172 guard above misses (open->open, closing->
+                        # closing) — the discriminator is dispatch origin,
+                        # not the HA state string. Requiring old_position ==
+                        # position (not just position_at_send) rules out a
+                        # genuine straddle move where equal distances are
+                        # coincidental (e.g. target 50, 40->60).
+                        #
+                        # Bounded by the SAME sent_at-anchored clock the
+                        # backstop above already reads
+                        # (transit_elapsed_without_progress) — this arm must
+                        # NOT call record_progress() or
+                        # start_command_grace_period(), or the suppression
+                        # stops being bounded by transit_timeout.
+                        position_at_send = cmd_svc.get_position_at_send(entity_id)
+                        if (
+                            position_at_send is not None
+                            and old_position == position == position_at_send
+                        ):
+                            now = dt.datetime.now(dt.UTC)
+                            elapsed = cmd_svc.transit_elapsed_without_progress(
+                                entity_id, now
+                            )
+                            self._debug_log(
+                                "manual_override",
+                                "Grace expired but %s has not reacted to the "
+                                "dispatched command yet (still at %s, "
+                                "position at send was %s) "
+                                "— keeping wait_for_target",
+                                entity_id,
+                                position,
+                                position_at_send,
+                            )
+                            if self._event_buffer is not None:
+                                self._event_buffer.record(
+                                    {
+                                        "ts": now.isoformat(),
+                                        "event": "transit_awaiting_reaction",
+                                        "entity_id": entity_id,
+                                        "position": position,
+                                        "position_at_send": position_at_send,
+                                        "target": target,
+                                        "cover_state": event.new_state.state,
+                                        "elapsed_seconds": (
+                                            round(elapsed, 1)
+                                            if elapsed is not None
+                                            else None
+                                        ),
+                                        "timeout_seconds": cmd_svc.transit_timeout_seconds,
                                     }
                                 )
                             if logger is not None:

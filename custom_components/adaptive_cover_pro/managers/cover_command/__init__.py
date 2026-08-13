@@ -401,6 +401,18 @@ class CoverCommandService:
         s = self._state.get(entity_id)
         return None if s is None else s.target
 
+    def get_position_at_send(self, entity_id: str) -> int | None:
+        """Return the raw axis value read at the moment the target was dispatched.
+
+        ``None`` when no command has been dispatched for this entity (or its
+        target was rehydrated by :meth:`restore_target` rather than
+        commanded). See ``PerEntityState.position_at_send`` for the full
+        contract. The classifier's sole read path for this field (issue
+        #1139) — it never reaches into ``_state`` directly.
+        """
+        s = self._state.get(entity_id)
+        return None if s is None else s.position_at_send
+
     def set_target(
         self,
         entity_id: str,
@@ -1232,6 +1244,11 @@ class CoverCommandService:
         self.set_target(entity_id, target)
         s.waiting = True
         s.sent_at = now
+        # Dispatch origin for the unreacted-command guard (issue #1139) — the
+        # same ``prior_position`` read just above, before ``target``
+        # overwrote it, stamped beside ``sent_at`` so the two can never
+        # drift apart.
+        s.position_at_send = prior_position
         s.last_progress_at = None
         s.retry_count = 0
         s.gave_up = False
@@ -3512,6 +3529,11 @@ class CoverCommandService:
         )
         s.waiting = True
         s.sent_at = now
+        # Dispatch origin for the unreacted-command guard (issue #1139) — the
+        # same ``prior_position`` read above (before ``set_target``
+        # overwrote it), stamped beside ``sent_at`` so the two can never
+        # drift apart. See ``PerEntityState.position_at_send``.
+        s.position_at_send = prior_position
         s.last_progress_at = None
         if reset_retries:
             s.retry_count = 0  # New target resets retry count
