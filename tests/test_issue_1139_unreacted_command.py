@@ -603,6 +603,49 @@ class TestSuppressionIsBounded:
         )
         coord._grace_mgr.cancel_all()
 
+    def test_arm_does_not_engage_without_a_live_clock(self) -> None:
+        """The arm must not suppress when there is no clock left to bound it.
+
+        Both bounds that make this suppression safe — the in-classifier
+        backstop just above and reconciliation step 1 — are gated on
+        ``elapsed is not None``. If ``sent_at`` were ever None while
+        ``waiting`` and ``position_at_send`` were set, ``elapsed`` would be
+        None too (``transit_elapsed_without_progress`` falls back to
+        ``last_progress_at or sent_at``), and an ungated arm would suppress
+        the clear with no clock left to time it out — unbounded. No live
+        path is known to construct this state, but the arm's own
+        correctness argument is boundedness, so it must require a live
+        clock before it can engage at all.
+        """
+        entity_id = "cover.single_shade"
+        coord = _make_coordinator(
+            entity_id,
+            target_position=0,
+            current_position=100,
+            old_position=100,
+            position_at_send=100,
+            new_state_str="open",
+            old_state_str="open",
+            sent_seconds_ago=6.0,
+            transit_timeout_seconds=20,
+        )
+        # Force the shape the audit could not reach through a live path:
+        # waiting + position_at_send set, but sent_at (and last_progress_at)
+        # cleared, so transit_elapsed_without_progress has no reference and
+        # returns None.
+        coord._cmd_svc.state(entity_id).sent_at = None
+        assert coord._cmd_svc.state(entity_id).last_progress_at is None
+
+        _call(coord)
+
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False, (
+            "With no live clock (sent_at and last_progress_at both None), "
+            "elapsed is None and the suppression would be unbounded — the "
+            "arm must fall through to clear rather than keep waiting "
+            "(issue #1139 finding 5)"
+        )
+        coord._grace_mgr.cancel_all()
+
     @pytest.mark.asyncio
     async def test_reconciliation_clears_a_never_reported_unreacted_command(
         self,

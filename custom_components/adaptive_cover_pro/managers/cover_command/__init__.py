@@ -1246,8 +1246,11 @@ class CoverCommandService:
         s.sent_at = now
         # Dispatch origin for the unreacted-command guard (issue #1139) — the
         # same ``prior_position`` read just above, before ``target``
-        # overwrote it, stamped beside ``sent_at`` so the two can never
-        # drift apart.
+        # overwrote it, stamped beside ``sent_at`` so the two agree for this
+        # dispatch. See the fuller note beside the ``_prepare_service_call``
+        # writer (and ``PerEntityState.position_at_send``) for why the two
+        # OTHER ``sent_at`` writers that don't restamp this field
+        # (``begin_transit``, ``stop_in_flight``) are still safe.
         s.position_at_send = prior_position
         s.last_progress_at = None
         s.retry_count = 0
@@ -3531,8 +3534,20 @@ class CoverCommandService:
         s.sent_at = now
         # Dispatch origin for the unreacted-command guard (issue #1139) — the
         # same ``prior_position`` read above (before ``set_target``
-        # overwrote it), stamped beside ``sent_at`` so the two can never
-        # drift apart. See ``PerEntityState.position_at_send``.
+        # overwrote it), stamped in the same statement group as ``sent_at``
+        # above, so the two agree for every dispatch through this
+        # chokepoint. Two other call sites write ``sent_at`` without
+        # restamping this field: ``stop_in_flight`` (~:1163) also clears
+        # ``waiting``, which gates the entire ``StateClassifier`` block that
+        # reads ``position_at_send``, so a stale value there is inert until
+        # ``waiting`` is set again. ``begin_transit`` (~:769) is the one
+        # writer that re-arms ``waiting`` without restamping this field — but
+        # it does write a fresh ``sent_at``, and the classifier's
+        # unreacted-command arm is bounded against that same clock
+        # (``transit_elapsed_without_progress``), so a stale
+        # ``position_at_send`` there can defer detection by at most
+        # ``transit_timeout``, never indefinitely. See
+        # ``PerEntityState.position_at_send``.
         s.position_at_send = prior_position
         s.last_progress_at = None
         if reset_retries:

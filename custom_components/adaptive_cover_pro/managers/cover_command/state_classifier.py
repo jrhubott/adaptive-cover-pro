@@ -296,10 +296,16 @@ class StateClassifier:
                         # Positions equal — could be startup delay or stall.
                         # Startup delay: motor just engaged; state transitions from
                         # non-transitional (e.g. "closed") to something else.
-                        # Stall: state didn't change and cover was already in transit;
-                        # fall through to clear (e.g. opening→opening same position).
-                        # open→open same position with no state change is also a
-                        # genuine stop — fall through (Issue #172 regression guard).
+                        # Stall: state didn't change and cover was already in transit
+                        # (e.g. opening→opening same position); open→open same
+                        # position with no state change is the same signature
+                        # (Issue #172 regression guard). Neither falls straight
+                        # through to clear any more: the unreacted-command arm
+                        # below (Issue #1139) intercepts both when the position
+                        # still matches the dispatch origin, keeping
+                        # wait_for_target. Only a genuine mid-travel stall — the
+                        # position has moved away from where the command found
+                        # it — reaches the clear at the bottom of this block.
                         old_state_str = (
                             event.old_state.state
                             if event.old_state is not None
@@ -357,11 +363,18 @@ class StateClassifier:
                         if (
                             position_at_send is not None
                             and old_position == position == position_at_send
+                            and elapsed is not None
                         ):
-                            now = dt.datetime.now(dt.UTC)
-                            elapsed = cmd_svc.transit_elapsed_without_progress(
-                                entity_id, now
-                            )
+                            # `now` / `elapsed` are the same locals the
+                            # backstop above already computed on this
+                            # identical code path — reusing them (rather
+                            # than recomputing) keeps the buffer event's
+                            # ``ts`` aligned with the backstop's own clock.
+                            # `elapsed is not None` makes the bound explicit:
+                            # both this arm and the backstop above depend on
+                            # a live clock to stay bounded by
+                            # transit_timeout, so the arm must not engage
+                            # when there is none to measure against.
                             self._debug_log(
                                 "manual_override",
                                 "Grace expired but %s has not reacted to the "
@@ -382,11 +395,7 @@ class StateClassifier:
                                         "position_at_send": position_at_send,
                                         "target": target,
                                         "cover_state": event.new_state.state,
-                                        "elapsed_seconds": (
-                                            round(elapsed, 1)
-                                            if elapsed is not None
-                                            else None
-                                        ),
+                                        "elapsed_seconds": round(elapsed, 1),
                                         "timeout_seconds": cmd_svc.transit_timeout_seconds,
                                     }
                                 )
