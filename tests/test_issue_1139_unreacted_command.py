@@ -571,6 +571,38 @@ class TestSuppressionIsBounded:
         )
         coord._grace_mgr.cancel_all()
 
+    def test_return_to_origin_after_real_movement_still_clears(self) -> None:
+        """Returning to the dispatch-origin position after a real move must still clear.
+
+        target=50, position_at_send=40 (dispatched from 40 toward 50); the
+        cover moved to 60 and now reports 40 again: |60-50| == |40-50| == 10,
+        an equal-distance straddle, and position (40) happens to equal
+        position_at_send (40) too. But old_position (60) does NOT equal
+        position (40) — the cover demonstrably moved since dispatch, it did
+        not sit resting at its origin. The guard must require old_position ==
+        position == position_at_send, not just position == position_at_send,
+        or it wrongly suppresses the clear for a cover that already reacted.
+        """
+        entity_id = "cover.patio_shade"
+        coord = _make_coordinator(
+            entity_id,
+            target_position=50,
+            current_position=40,
+            old_position=60,
+            position_at_send=40,
+            new_state_str="open",
+            old_state_str="open",
+            sent_seconds_ago=10.0,
+            transit_timeout_seconds=45,
+        )
+        _call(coord)
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False, (
+            "A cover that moved away from its dispatch origin and back must "
+            "still clear wait_for_target — position == position_at_send alone "
+            "must not suppress the clear when old_position != position"
+        )
+        coord._grace_mgr.cancel_all()
+
     @pytest.mark.asyncio
     async def test_reconciliation_clears_a_never_reported_unreacted_command(
         self,
