@@ -97,7 +97,11 @@ AREA_SOURCE_CONFIGURED = "configured"  # the user's explicit override
 AREA_SOURCE_DERIVED = "derived"  # height × width from the cover's geometry
 AREA_SOURCE_UNKNOWN = "unknown"  # this cover type carries no glass dimensions
 
-#: ``effective_g_source`` value used when issue #1236's feature is switched off.
+#: ``effective_g_source`` values: :attr:`SolarTransmittance.source` passed
+#: straight through (``direct`` / ``preset``), plus this one for when issue
+#: #1236's feature is switched off entirely and the bare-glazing constant stands
+#: in. Provenance only — whether the cover blended along a coverage axis is
+#: reported separately, by the block's ``shaded_fraction``.
 EFFECTIVE_G_SOURCE_DEFAULT = "default"
 
 

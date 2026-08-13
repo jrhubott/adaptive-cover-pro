@@ -177,23 +177,47 @@ def test_disabled_returns_none() -> None:
 
 
 @pytest.mark.unit
-def test_shaded_fraction_none_reports_shaded_only() -> None:
+def test_shaded_fraction_none_collapses_onto_the_shaded_g() -> None:
     """A rotation axis has no covered fraction — the caller must not guess."""
     result = solar_transmittance(_cfg(), shaded_fraction=None)
     assert result is not None
     assert result.shaded_fraction is None
     assert result.effective_g == pytest.approx(result.g_shaded)
     assert result.effective_g == pytest.approx(0.22)
-    assert result.source == "shaded_only"
+    assert result.source == "preset"
 
 
 @pytest.mark.unit
-def test_shaded_only_wins_over_direct_source_label() -> None:
-    """``shaded_only`` describes the *blend*, so it outranks the g-value origin."""
+def test_a_hand_entered_g_stays_direct_on_the_axis_less_path() -> None:
+    """``source`` is provenance ONLY — the axis fact never overwrites it.
+
+    The two facts are orthogonal: where ``g_shaded`` came from, and whether the
+    cover has an area-coverage axis to blend along. Folding the second into
+    ``source`` used to erase the first, so a tilt cover with a hand-entered
+    ``g_total`` was reported as preset-derived and the Troubleshoot finding
+    quoted a shade word and a preset comparison against the user's own number.
+    ``shaded_fraction is None`` carries the axis fact on its own.
+    """
     result = solar_transmittance(_cfg(g_total=0.33), shaded_fraction=None)
     assert result is not None
-    assert result.source == "shaded_only"
+    assert result.source == "direct"
     assert result.g_shaded == pytest.approx(0.33)
+    assert result.shaded_fraction is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("fraction", [None, 0.0, 0.5, 1.0])
+@pytest.mark.parametrize(
+    ("g_total", "expected_source"), [(None, "preset"), (0.33, "direct")]
+)
+def test_source_is_independent_of_the_coverage_axis(
+    fraction: float | None, g_total: float | None, expected_source: str
+) -> None:
+    """Provenance and axis are two facts, on two fields, across the whole matrix."""
+    result = solar_transmittance(_cfg(g_total=g_total), shaded_fraction=fraction)
+    assert result is not None
+    assert result.source == expected_source
+    assert (result.shaded_fraction is None) is (fraction is None)
 
 
 # ---------------------------------------------------------------------------

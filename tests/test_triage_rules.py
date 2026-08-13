@@ -1761,6 +1761,73 @@ def test_a_hand_entered_g_drops_the_shade_word_and_the_preset_comparison() -> No
     assert "external" not in text.lower()
 
 
+def _axis_less_view(*, g_total: float | None = None, cover_shade: str = "dark") -> dict:
+    """Build the block the ENGINE emits for a tilt / louvered-roof cover.
+
+    Built through the real ``solar_transmittance`` rather than hand-written:
+    the regression was the engine erasing an axis-less cover's ``direct``
+    provenance, and a hand-written ``source`` would test the rule against a
+    fiction the engine never produced. A rotation axis yields no coverage
+    fraction, so ``shaded_fraction`` is null and ``effective_g`` collapses onto
+    ``g_shaded``.
+    """
+    from custom_components.adaptive_cover_pro.config_types import SolarPropertiesConfig
+    from custom_components.adaptive_cover_pro.engine.solar_transmittance import (
+        solar_transmittance,
+    )
+
+    result = solar_transmittance(
+        SolarPropertiesConfig(
+            enabled=True,
+            cover_side="internal",
+            cover_shade=cover_shade,
+            g_total=g_total,
+        ),
+        shaded_fraction=None,
+    )
+    assert result is not None
+    return _solar_view(
+        effective_g=result.effective_g,
+        g_unshaded=result.g_unshaded,
+        g_shaded=result.g_shaded,
+        shaded_fraction=result.shaded_fraction,
+        source=result.source,
+        cover_shade=cover_shade,
+        position_pct=40,
+    )
+
+
+def test_an_axis_less_cover_with_a_hand_entered_g_quotes_no_preset() -> None:
+    """The regression: an axis-less cover used to lose its ``direct`` label.
+
+    A tilt cover with ``solar_g_total`` typed in by hand and ``cover_shade``
+    left at its untouched default rendered a shade word and an external-preset
+    comparison against a number that never came from the preset table.
+    """
+    view = _axis_less_view(g_total=0.62, cover_shade="light")
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view)
+    assert len(findings) == 1
+    params = _params(findings)[0]
+    assert params["g_shaded"] == 0.62
+    assert params["admitted"] == 62
+    assert params["shade_word"] == ""
+    assert params["comparison"] == ""
+    text = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert text == _DIRECT_TEXT_EN
+    assert "light" not in text
+    assert "external" not in text.lower()
+
+
+def test_an_axis_less_cover_with_a_preset_g_still_quotes_the_comparison() -> None:
+    """Preset-derived is preset-derived whether or not the cover blends."""
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _axis_less_view())
+    assert len(findings) == 1
+    params = _params(findings)[0]
+    assert params["shade_word"].params["shade"] == "dark"
+    assert params["comparison"].params["external_admitted"] == 22
+    assert render(findings[0].reason, load_troubleshoot_labels("en")) == _PRESET_TEXT_EN
+
+
 @pytest.mark.parametrize("language", ["de", "fr"])
 def test_the_hand_entered_variant_drops_the_comparison_in_every_language(
     language: str,

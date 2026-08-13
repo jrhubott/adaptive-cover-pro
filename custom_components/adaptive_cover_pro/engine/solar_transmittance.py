@@ -36,10 +36,15 @@ from ..const import (
     SOLAR_G_PRESETS,
 )
 
-#: ``source`` values on :class:`SolarTransmittance`.
+#: ``source`` values on :class:`SolarTransmittance` — PROVENANCE, and nothing
+#: else. Whether the cover has an area-coverage axis to blend along is a
+#: separate, orthogonal fact, and ``shaded_fraction is None`` already says it on
+#: the same dataclass. Folding the two into one field erased the first: a tilt
+#: cover with a hand-entered ``g_total`` reported as preset-derived, and the
+#: Troubleshoot finding then quoted a shade word and a preset comparison at a
+#: number the user had typed in themselves.
 SOURCE_DIRECT = "direct"  # the user declared g_total outright
 SOURCE_PRESET = "preset"  # looked up from (cover_side, cover_shade)
-SOURCE_SHADED_ONLY = "shaded_only"  # no area-coverage axis — no blend possible
 
 _FRACTION_MIN = 0.0
 _FRACTION_MAX = 1.0
@@ -51,10 +56,16 @@ class SolarTransmittance:
 
     ``effective_g`` is the headline figure — the share of incident solar energy
     the glazing + cover assembly admits at the cover's current position.
-    ``shaded_fraction`` is ``None`` when the cover's primary axis is a rotation
-    rather than an area coverage (tilt-only types), in which case no blend is
-    possible and ``effective_g`` falls back to ``g_shaded`` under the
-    ``shaded_only`` source label rather than being guessed.
+
+    Two independent facts, two fields, deliberately never merged:
+
+    * ``shaded_fraction`` is ``None`` when the cover's primary axis is a
+      rotation rather than an area coverage (tilt-only types). No blend is
+      possible, so ``effective_g`` falls back to ``g_shaded`` rather than being
+      guessed.
+    * ``source`` says where ``g_shaded`` came from — the user's own
+      ``g_total`` (``direct``) or the ``(side, shade)`` table (``preset``) —
+      and is unaffected by which cover type is asking.
 
     Glass area is deliberately NOT a field here: it is a geometry quantity, not
     a transmittance one, and it belongs to the estimated-solar-gain feature.
@@ -90,7 +101,9 @@ def solar_transmittance(
     (0.0-1.0), or ``None`` for a cover whose primary axis is not an
     area-coverage axis. It is clamped to the unit interval so a caller that
     hands over an out-of-range position can never push ``effective_g`` outside
-    ``[g_shaded, g_unshaded]``.
+    ``[g_shaded, g_unshaded]``. ``None`` means there is no blend to run, so
+    ``effective_g`` collapses onto ``g_shaded`` — a fact carried by the null
+    fraction itself, which is why it never touches ``source``.
 
     Never raises: an unknown ``cover_side``/``cover_shade`` falls back to the
     default preset row. The only ``None`` return is "feature not enabled".
@@ -108,17 +121,14 @@ def solar_transmittance(
     )
 
     if shaded_fraction is None:
-        return SolarTransmittance(
-            effective_g=g_shaded,
-            g_unshaded=g_unshaded,
-            g_shaded=g_shaded,
-            shaded_fraction=None,
-            source=SOURCE_SHADED_ONLY,
-        )
+        fraction = None
+        effective_g = g_shaded
+    else:
+        fraction = min(max(float(shaded_fraction), _FRACTION_MIN), _FRACTION_MAX)
+        effective_g = fraction * g_shaded + (1.0 - fraction) * g_unshaded
 
-    fraction = min(max(float(shaded_fraction), _FRACTION_MIN), _FRACTION_MAX)
     return SolarTransmittance(
-        effective_g=fraction * g_shaded + (1.0 - fraction) * g_unshaded,
+        effective_g=effective_g,
         g_unshaded=g_unshaded,
         g_shaded=g_shaded,
         shaded_fraction=fraction,

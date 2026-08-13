@@ -133,22 +133,38 @@ def test_awning_polarity_reaches_the_engine() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_position_none_reports_shaded_only() -> None:
+def test_position_none_reports_a_null_fraction() -> None:
     """No pipeline result this cycle ⇒ no fraction to blend against."""
     coord = _coordinator(options=_ENABLED_EXTERNAL_DARK)
     result = coord.solar_transmittance(position=None)
     assert result is not None
     assert result.shaded_fraction is None
-    assert result.source == "shaded_only"
+    assert result.source == "preset"
     assert result.effective_g == pytest.approx(result.g_shaded)
 
 
-def test_tilt_only_cover_reports_shaded_only() -> None:
+def test_tilt_only_cover_reports_a_null_fraction() -> None:
     coord = _coordinator("cover_tilt", _ENABLED_EXTERNAL_DARK)
     result = coord.solar_transmittance(position=40)
     assert result is not None
     assert result.shaded_fraction is None
-    assert result.source == "shaded_only"
+    assert result.source == "preset"
+
+
+def test_a_tilt_covers_hand_entered_g_is_still_reported_as_direct() -> None:
+    """The axis-less path must not launder a user's own number into a preset.
+
+    A tilt cover has no coverage fraction, but that says nothing about where
+    ``g_shaded`` came from — and the Troubleshoot wording keys on exactly that.
+    """
+    coord = _coordinator(
+        "cover_tilt", {**_ENABLED_EXTERNAL_DARK, CONF_SOLAR_G_TOTAL: 0.45}
+    )
+    result = coord.solar_transmittance(position=40)
+    assert result is not None
+    assert result.shaded_fraction is None
+    assert result.source == "direct"
+    assert result.g_shaded == pytest.approx(0.45)
 
 
 # ---------------------------------------------------------------------------

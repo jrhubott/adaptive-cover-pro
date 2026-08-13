@@ -90,11 +90,23 @@ class TestNonFiniteIrradiance:
 class TestNonFiniteThresholdsFailOpen:
     """The Schmitt-latch pair keeps its fail-open contract for these states.
 
-    Not a behaviour change dressed up as a test: a NaN already compared False
-    against both edges, so ``activate`` was already False. The guard only fixes
-    the release edge, which used to report "not cleared" for NaN when a release
-    threshold was configured — i.e. a garbage reading could pin the suppression
-    latch on. ``(False, True)`` is the documented contract for every failed read.
+    ``(False, True)`` — inactive, and cleared — is the documented contract for
+    every failed read. These rows lock it for all three readers across every
+    non-finite string. What the guard had to *fix* to get there differs by
+    value, and it is more than the release edge:
+
+    * **NaN** compares False against both edges, so ``activate`` was already
+      False. Only the release edge was wrong, and only with a release threshold
+      configured: ``ge(nan, 500)`` reported "not cleared", so a garbage reading
+      could pin the suppression latch on.
+    * **The infinities cross a real edge**, and used to produce a spurious
+      ACTIVATION. ``le(-inf, 300)`` is True for the lux/irradiance band and
+      ``ge(inf, 70)`` is True for the inverted cloud band — a sensor publishing
+      ``-inf`` read as pitch dark, one publishing ``inf`` as fully overcast,
+      each with the release edge stuck against it as well.
+
+    So this is a release-edge repair for NaN and a genuine behaviour change for
+    the infinities. The tests lock the one outcome all of them now share.
     """
 
     @pytest.mark.parametrize("state", NON_FINITE_STATES)

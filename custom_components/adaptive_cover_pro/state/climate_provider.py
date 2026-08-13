@@ -461,15 +461,22 @@ class ClimateProvider:
         return True
 
     def _read_float(self, entity: str | None, label: str) -> float | None:
-        """Read one entity's state as a float, or ``None``.
+        """Read one threshold or irradiance entity's state as a float, or ``None``.
 
-        The single place a sensor *entity* is read and parsed in this provider
-        (issue #1237) — the threshold reader below and the raw-irradiance
-        admission both go through it, so there is one unavailable/non-numeric
-        contract and one debug log, not two copies drifting apart. The parse
-        itself delegates to :meth:`_coerce_float`, the provider's only
-        float-coercion primitive; this wrapper adds the entity read, the
-        finiteness guard, and the non-numeric debug log on top of it.
+        The single place a *threshold or irradiance* entity is read and parsed
+        in this provider (issue #1237) — the threshold reader below and the
+        raw-irradiance admission both go through it, so there is one
+        unavailable/non-numeric contract and one debug log, not two copies
+        drifting apart. The parse itself delegates to :meth:`_coerce_float`, the
+        provider's only float-coercion primitive; this wrapper adds the entity
+        read, the finiteness guard, and the non-numeric debug log on top of it.
+
+        The TEMPERATURE readers are a separate, older path and do not come
+        through here: :meth:`_read_live_outside` and
+        :meth:`_read_inside_temperature` do their own entity/attribute reads,
+        and :meth:`_read_outside_temperature` parses their results with
+        :meth:`_coerce_float` directly — so they carry neither the finiteness
+        guard nor this log.
 
         **Finiteness is part of "numeric" here.** ``float()`` happily accepts
         the strings ``nan``, ``inf`` and ``-inf``, and every consumer downstream

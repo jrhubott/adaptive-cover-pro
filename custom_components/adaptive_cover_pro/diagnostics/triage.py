@@ -730,6 +730,12 @@ def _check_solar_internal_cover_weak_rejection(data: Mapping) -> Iterable[Mappin
     default. Naming it back at them, and comparing their number against a
     preset row, would be inventing provenance. Both clauses are therefore
     nested fragments, dropped entirely on the ``direct`` path.
+
+    That single check is enough because ``source`` carries provenance and
+    NOTHING else — a tilt or louvered-roof cover, which has no coverage axis to
+    blend along, still reports the real origin of its ``g_shaded`` and is gated
+    by exactly the same condition. Its axis-less-ness lives in
+    ``shaded_fraction``, which this rule has no reason to read.
     """
     block = _get(data, "solar_transmittance")
     if not isinstance(block, Mapping):

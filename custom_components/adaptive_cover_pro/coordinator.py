@@ -4902,8 +4902,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         inversion of ``effective_g``.
 
         ``position=None`` (no pipeline result yet) yields ``shaded_fraction
-        None`` and the ``shaded_only`` source rather than a guessed blend.
-        Returns ``None`` when the feature is not enabled.
+        None`` — no blend — rather than a guessed one. That says nothing about
+        where ``g_shaded`` came from, so ``source`` still reports the real
+        provenance. Returns ``None`` when the feature is not enabled.
         """
         cfg = self._config_service.get_solar_properties(self.config_entry.options)
         fraction = (

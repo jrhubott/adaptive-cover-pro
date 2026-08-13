@@ -2080,7 +2080,9 @@ class TestSolarTransmittanceDiagnostics:
         assert block["shaded_fraction"] == round(raw.shaded_fraction, 3)
         assert raw.effective_g != block["effective_g"]  # engine kept full precision
 
-    def test_shaded_only_reports_a_null_fraction(self, builder: DiagnosticsBuilder):
+    def test_an_axis_less_cover_reports_a_null_fraction(
+        self, builder: DiagnosticsBuilder
+    ):
         diag, _ = builder.build(
             _base_ctx(
                 config_options=dict(_SOLAR_OPTIONS_ON),
@@ -2090,8 +2092,29 @@ class TestSolarTransmittanceDiagnostics:
         )
         block = diag["solar_transmittance"]
         assert block["shaded_fraction"] is None
-        assert block["source"] == "shaded_only"
+        assert block["source"] == "preset"
         assert block["effective_g"] == block["g_shaded"]
+
+    def test_an_axis_less_cover_keeps_the_direct_provenance(
+        self, builder: DiagnosticsBuilder
+    ):
+        """``source`` and ``shaded_fraction`` are two independent facts.
+
+        A null fraction says the cover has no coverage axis; ``source`` says
+        where ``g_shaded`` came from. Collapsing the second into the first
+        misreported a hand-entered g as preset-derived.
+        """
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options={**_SOLAR_OPTIONS_ON, "solar_g_total": 0.45},
+                solar_transmittance=_transmittance(shaded_fraction=None, g_total=0.45),
+                pipeline_result=_make_pr(position=40),
+            )
+        )
+        block = diag["solar_transmittance"]
+        assert block["shaded_fraction"] is None
+        assert block["source"] == "direct"
+        assert block["g_shaded"] == 0.45
 
     def test_position_pct_is_none_without_a_pipeline_result(
         self, builder: DiagnosticsBuilder
@@ -2285,18 +2308,29 @@ class TestSolarGainDiagnostics:
         )
         assert diag["solar_gain"]["effective_g_source"] == expected_source
 
-    def test_shaded_only_transmittance_reports_a_null_fraction(
-        self, builder: DiagnosticsBuilder
+    @pytest.mark.parametrize(
+        ("g_total", "expected_source"), [(None, "preset"), (0.45, "direct")]
+    )
+    def test_an_axis_less_transmittance_reports_a_null_fraction(
+        self, builder: DiagnosticsBuilder, g_total, expected_source
     ):
+        """The null fraction is the axis fact; ``effective_g_source`` stays provenance.
+
+        ``effective_g_source`` ranges over ``default`` / ``preset`` / ``direct``
+        only — a cover with no coverage axis is described by
+        ``shaded_fraction is None``, not by a third provenance value.
+        """
         diag, _ = builder.build(
             _gain_ctx(
                 config_options={**_GAIN_OPTIONS, **_SOLAR_OPTIONS_ON},
-                solar_transmittance=_transmittance(shaded_fraction=None),
+                solar_transmittance=_transmittance(
+                    shaded_fraction=None, g_total=g_total
+                ),
             )
         )
         block = diag["solar_gain"]
         assert block["shaded_fraction"] is None
-        assert block["effective_g_source"] == "shaded_only"
+        assert block["effective_g_source"] == expected_source
 
     # -- missing terms ------------------------------------------------------
 

@@ -246,8 +246,9 @@ class TiltPolicy(CoverTypePolicy, register=True):
         The base default would read the tilt percentage as a covered share of
         the glazing, which is meaningless here: a tilt-only cover spans the
         whole opening at every angle and modulates transmission by rotating,
-        not by uncovering glass. ``None`` tells the transmittance engine to
-        report ``shaded_only`` rather than blend against a fraction it invented.
+        not by uncovering glass. ``None`` tells the transmittance engine to fall
+        back to the fully-covered g-value rather than blend against a fraction
+        it invented.
         """
         return None
 
