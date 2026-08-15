@@ -266,7 +266,7 @@ async def test_sunset_window_transition_remaps_middle_rail() -> None:
         MagicMock(),
         MagicMock(),
         event_buffer=MagicMock(),
-        effective_default_fn=lambda _opts: (60, is_sunset["value"]),
+        sunset_window_open_fn=lambda _opts: is_sunset["value"],
     )
 
     common = {
@@ -399,7 +399,7 @@ async def test_sunset_seam_inverse_uses_seam_space_not_cached_flag() -> None:
         MagicMock(),
         MagicMock(),
         event_buffer=MagicMock(),
-        effective_default_fn=lambda _o: (0, is_sunset["v"]),
+        sunset_window_open_fn=lambda _o: is_sunset["v"],
     )
 
     targets: dict[str, int] = {}

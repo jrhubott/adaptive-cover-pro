@@ -62,6 +62,7 @@ from .helpers import (
     custom_position_slot_name,
     custom_position_slot_sensors,
     has_configured_window_end,
+    read_sunset_window_open,
     resolve_override_deadline,
     resolve_sun_boundaries,
     state_attr,
@@ -858,7 +859,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             hass=self.hass,
             logger=self.logger,
             event_buffer=self._event_buffer,
-            effective_default_fn=self._compute_current_effective_default,
+            sunset_window_open_fn=self._sunset_window_is_open,
         )
 
         # Time of the last successful _async_update_data() completion.
@@ -5925,10 +5926,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ad-hoc ``async_apply_user_position`` path can never disagree about the
         same instant (issue #1055).
 
-        All this adds is the cover-data resolution: the transition call sites
-        (``_on_window_closed``, ``_check_sunset_window_transition``) have none in
-        hand, and ``get_blind_data`` is coordinator business the helper must not
-        reach into.
+        All this adds is the cover-data resolution: the ``_on_window_closed``
+        transition call site has none in hand, and ``get_blind_data`` is
+        coordinator business the helper must not reach into.
 
         Args:
             options: The config-entry options dict.
@@ -5940,6 +5940,32 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if cover_data is None:
             cover_data = self.get_blind_data(options=options)
         return _read_current_effective_default(
+            self.hass, options, cover_data.sun_data, self._time_mgr
+        )
+
+    def _sunset_window_is_open(self, options: dict) -> bool:
+        """Return whether the configured SUNSET boundary owns this moment (#1287).
+
+        A thin wrapper over :func:`helpers.read_sunset_window_open` — the
+        predicate ``WindowTransitionTracker.check_sunset_window`` needs for
+        its False→True edge detector. Deliberately blind to the end-of-window
+        override (issue #625), unlike :meth:`_compute_current_effective_default`'s
+        ``is_sunset_active``, which is True for BOTH the end-of-window
+        position and the sunset position — feeding the tracker that
+        overloaded flag made its edge fire at clock ``end_time`` instead of
+        the configured sunset boundary.
+
+        Unlike :meth:`_compute_current_effective_default`, this seam has no
+        cover-data-reuse call site: the tracker injection (``__init__``) is
+        its only caller and always invokes it with ``options`` alone, so the
+        cover data is resolved fresh via ``get_blind_data`` every time.
+
+        Args:
+            options: The config-entry options dict.
+
+        """
+        cover_data = self.get_blind_data(options=options)
+        return read_sunset_window_open(
             self.hass, options, cover_data.sun_data, self._time_mgr
         )
 

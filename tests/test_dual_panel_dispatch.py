@@ -403,7 +403,7 @@ async def test_sunset_seam_calibrates_the_back_under_interpolation() -> None:
         MagicMock(),
         MagicMock(),
         event_buffer=MagicMock(),
-        effective_default_fn=lambda _o: (0, is_sunset["v"]),
+        sunset_window_open_fn=lambda _o: is_sunset["v"],
     )
 
     targets: dict[str, int] = {}
