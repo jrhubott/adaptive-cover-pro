@@ -1000,6 +1000,52 @@ def test_motion_timeout_end_time_absent_when_no_timer_started():
     assert "motion_timeout_end_time" not in attrs
 
 
+@pytest.mark.asyncio
+async def test_motion_timeout_end_time_absent_after_timer_expires():
+    """No motion_timeout_end_time once the real expiry handler has fired.
+
+    Regression for issue #1266 Part B. Unlike ``_make_motion_mgr``'s
+    ``timeout_active=True`` path (which reaches the active state via
+    ``set_no_motion()``, a *different* code path that already clears the
+    stamp), this test drives the real ``_on_motion_timeout_expired`` body —
+    the seam no existing test crosses. ``start_motion_timeout`` stamps
+    ``_timeout_started_at``; the expiry handler must clear it the same way
+    ``record_motion_detected``, ``cancel_motion_timeout``, and
+    ``set_no_motion`` already do, or ``timeout_end_time`` keeps returning a
+    timestamp in the past forever — the sensor attribute publishes an
+    already-expired end time indefinitely ("expires in expired").
+
+    Also guards #122/#75: the ``motion_status`` value string must not move
+    as a side effect of this fix.
+    """
+    hass = MagicMock()
+    state = MagicMock()
+    state.state = "off"
+    hass.states.get.return_value = state
+    logger = MagicMock()
+
+    mgr = MotionManager(hass=hass, logger=logger)
+    mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=30)
+
+    mgr.start_motion_timeout(AsyncMock())
+    assert mgr.timeout_end_time is not None  # timer really is pending
+
+    await mgr._on_motion_timeout_expired(30, AsyncMock())
+
+    assert mgr.is_motion_timeout_active is True
+    assert mgr.timeout_end_time is None
+
+    coordinator = MagicMock()
+    coordinator._motion_mgr = mgr
+    type(coordinator).is_motion_detected = property(lambda self: False)
+    sensor = _make_motion_status_sensor(coordinator)
+
+    assert sensor.native_value == "no_motion"
+    assert "motion_timeout_end_time" not in sensor.extra_state_attributes
+
+    mgr.cancel_motion_timeout()  # tear down the still-sleeping background task
+
+
 def test_motion_status_sensor_no_timestamp_device_class():
     """Sensor does not use TIMESTAMP device class (regression for issue #75)."""
     from homeassistant.components.sensor import SensorDeviceClass
