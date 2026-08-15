@@ -1276,6 +1276,38 @@ def _report_positions(hass, positions: dict[str, int]) -> None:
         )
 
 
+async def test_group_cover_read_normalises_member_interpolation(hass) -> None:
+    """Calibrated member readings are inverse-mapped before aggregation."""
+    coordinator, _coords = _group_with_dispatch_members(
+        hass,
+        {
+            "cover.calibrated_member": {
+                CONF_INTERP: True,
+                CONF_INTERP_LIST: [0, 25, 58, 100],
+                CONF_INTERP_LIST_NEW: [0, 45, 58, 100],
+            },
+            "cover.plain_member": {},
+        },
+    )
+    _report_positions(
+        hass,
+        {
+            "cover.calibrated_member": 45,
+            "cover.plain_member": 25,
+            GENERIC_ENTITY: 25,
+        },
+    )
+
+    await coordinator.async_refresh()
+
+    assert coordinator.data.position == 25
+    assert coordinator.data.member_positions == {
+        "cover.calibrated_member": 25,
+        "cover.plain_member": 25,
+        GENERIC_ENTITY: 25,
+    }
+
+
 async def test_group_cover_round_trip_with_mixed_frame_members(hass) -> None:
     """Drag the group slider to 30 and the group settles on 30, not 43.
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from homeassistant.components.cover import CoverState
@@ -172,19 +174,20 @@ async def test_proxy_position_reports_logical_frame_under_inverse_state(hass) ->
     assert state.attributes.get("current_position") == 70
 
 
-async def test_proxy_position_verbatim_when_interpolation_active(hass) -> None:
-    """Interpolation suppresses position inversion, so the read stays verbatim.
+async def test_proxy_position_reports_linear_frame_when_interpolation_active(
+    hass,
+) -> None:
+    """Interpolation maps the source motor reading back to the linear frame.
 
     Effective inversion is ``inverse_state AND NOT interpolation`` — the same
-    predicate the dispatch uses — so with both configured the proxy must not
-    invert. It must not rescale through the calibration curve either: mapping
-    the motor reading back onto the linear scale is #925's opt-in
-    ``CONF_PROXY_LINEAR_SCALE``, deliberately out of scope here.
+    predicate the dispatch uses — so with both configured the proxy does not
+    additionally invert. The interpolation curve itself is inverted: source
+    motor 45 corresponds to logical 25.
     """
     _, proxy_eid = await _setup_single(
         hass,
-        attrs={"current_position": 30, "supported_features": 143},
-        entry_id="proxy_mirror_interp_verbatim",
+        attrs={"current_position": 45, "supported_features": 143},
+        entry_id="proxy_mirror_interp_linear",
         extra_options={
             CONF_INVERSE_STATE: True,
             CONF_INTERP: True,
@@ -193,7 +196,32 @@ async def test_proxy_position_verbatim_when_interpolation_active(hass) -> None:
         },
     )
     state = hass.states.get(proxy_eid)
-    assert state.attributes.get("current_position") == 30
+    assert state.attributes.get("current_position") == 25
+
+
+async def test_proxy_position_mirrors_non_invertible_interpolation_once(
+    hass, caplog
+) -> None:
+    """A flat motor segment cannot be inverted and is reported verbatim."""
+    with caplog.at_level(logging.WARNING):
+        _, proxy_eid = await _setup_single(
+            hass,
+            attrs={"current_position": 50, "supported_features": 143},
+            entry_id="proxy_mirror_interp_invalid",
+            extra_options={
+                CONF_INTERP: True,
+                CONF_INTERP_LIST: [0, 25, 58, 100],
+                CONF_INTERP_LIST_NEW: [0, 45, 45, 100],
+            },
+        )
+
+    assert hass.states.get(proxy_eid).attributes.get("current_position") == 50
+    warnings = [
+        record
+        for record in caplog.records
+        if "Position interpolation cannot be inverted" in record.getMessage()
+    ]
+    assert len(warnings) == 1
 
 
 async def test_proxy_is_closed_logical_frame(hass) -> None:

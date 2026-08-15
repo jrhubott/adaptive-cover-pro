@@ -58,6 +58,7 @@ def _make_coordinator(*, data=None):
     # render signature these tests are written to observe changing.
     coord.travel_estimated_position = MagicMock(return_value=None)
     coord.position_axis_inverted = False
+    coord._from_cover_frame = MagicMock(side_effect=lambda value: value)
     return coord
 
 

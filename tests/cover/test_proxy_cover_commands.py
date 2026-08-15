@@ -373,6 +373,17 @@ async def test_proxy_slider_interpolation_dispatches_motor_value(hass) -> None:
     assert sent, f"no position command reached the source: {calls}"
     assert all(c["position"] == 45 for c in sent), sent
 
+    # The proxy accepts logical values and reports them in the same frame. The
+    # source publishes the motor value it actually received, so the read side
+    # must inverse-interpolate it back to 25 (#925).
+    hass.states.async_set(
+        "cover.living_room",
+        "open",
+        {"current_position": 45, "supported_features": 143},
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(proxy_eid).attributes.get("current_position") == 25
+
 
 async def test_proxy_open_close_with_inverse_and_endpoint_open_close(hass) -> None:
     """Proxy Open/Close route through the endpoint services in the cover frame.

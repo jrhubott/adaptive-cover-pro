@@ -98,6 +98,10 @@ from .const import (
     CONF_FOV_RIGHT,
     CONF_GLASS_AREA,
     CONF_INTERP,
+    CONF_INTERP_END,
+    CONF_INTERP_LIST,
+    CONF_INTERP_LIST_NEW,
+    CONF_INTERP_START,
     CONF_INVERSE_STATE,
     CONF_INVERSE_TILT,
     CONF_IRRADIANCE_ENTITY,
@@ -170,7 +174,13 @@ from .managers.weather import WeatherManager
 from .managers.time_window import TimeWindowManager
 from .managers.toggles import ToggleManager
 from .managers.travel_calibration import TravelTimeCalibrator
-from .position_utils import flip_if, interpolate_position, inverse_state
+from .position_utils import (
+    flip_if,
+    interpolate_position,
+    interpolation_is_invertible,
+    inverse_interpolate_position,
+    inverse_state,
+)
 from .pipeline.handlers import (
     ManualOverrideHandler,
     build_handlers,
@@ -385,6 +395,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._inverse_state = self.config_entry.options.get(CONF_INVERSE_STATE, False)
         self._inverse_tilt = self.config_entry.options.get(CONF_INVERSE_TILT, False)
         self._use_interpolation = self.config_entry.options.get(CONF_INTERP, False)
+        # Seed the interpolation ranges before the first coordinator refresh.
+        # Proxy entities are forwarded before that refresh, so their initial
+        # read must already speak the configured logical frame.
+        self.start_value = self.config_entry.options.get(CONF_INTERP_START)
+        self.end_value = self.config_entry.options.get(CONF_INTERP_END)
+        self.normal_list = self.config_entry.options.get(CONF_INTERP_LIST)
+        self.new_list = self.config_entry.options.get(CONF_INTERP_LIST_NEW)
+        self._inverse_interpolation_warning_signature: tuple | None = None
         self._track_end_time = self.config_entry.options.get(CONF_RETURN_SUNSET)
         # Toggle state manager (switch entities delegate here)
         self._toggles = ToggleManager()
@@ -5350,6 +5368,56 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # interpolate_position() returns numpy float64; inverse_state() returns int.
         # Always coerce to plain Python int so sensors/diagnostics never see a float.
+        return int(round(value))
+
+    def _from_cover_frame(self, value: float) -> int:
+        """Map a source cover position back into the logical HA frame.
+
+        This is the read-side inverse of :meth:`_to_cover_frame`. Source
+        entities and travel plans carry cover-frame values, while proxy and
+        group cover surfaces promise logical values. Position inversion and
+        interpolation are undone in reverse order; they are mutually
+        exclusive for the position axis, but keeping the inverse ordered makes
+        the boundary explicit and safe if that predicate changes later.
+
+        A non-monotonic motor calibration cannot be inverted uniquely. In that
+        case the source value is mirrored verbatim and one warning is emitted
+        for the current invalid calibration rather than on every render tick.
+        """
+        if self.position_axis_inverted:
+            value = inverse_state(value)
+
+        if self._use_interpolation:
+            invertible = interpolation_is_invertible(
+                self.start_value,
+                self.end_value,
+                self.normal_list,
+                self.new_list,
+            )
+            if invertible:
+                self._inverse_interpolation_warning_signature = None
+                value = inverse_interpolate_position(
+                    value,
+                    self.start_value,
+                    self.end_value,
+                    self.normal_list,
+                    self.new_list,
+                )
+            else:
+                signature = (
+                    self.start_value,
+                    self.end_value,
+                    tuple(self.normal_list or ()),
+                    tuple(self.new_list or ()),
+                )
+                if signature != self._inverse_interpolation_warning_signature:
+                    self.logger.warning(
+                        "Position interpolation cannot be inverted because "
+                        "the motor range is not strictly increasing; proxy "
+                        "and group reads will mirror the source position",
+                    )
+                    self._inverse_interpolation_warning_signature = signature
+
         return int(round(value))
 
     @property

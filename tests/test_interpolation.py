@@ -2,7 +2,11 @@
 
 import pytest
 
-from custom_components.adaptive_cover_pro.position_utils import interpolate_position
+from custom_components.adaptive_cover_pro.position_utils import (
+    interpolate_position,
+    interpolation_is_invertible,
+    inverse_interpolate_position,
+)
 
 
 class TestInterpolationSimpleMode:
@@ -74,3 +78,35 @@ class TestInterpolationEdgeCases:
         """Test interpolation between defined points."""
         result = interpolate_position(33, 10, 90, None, None)
         assert pytest.approx(result, abs=0.5) == 36.4
+
+
+class TestInverseInterpolation:
+    """Test mapping source motor positions back to the logical scale."""
+
+    def test_round_trip_at_control_points(self):
+        normal = [0, 25, 58, 100]
+        motor = [0, 45, 58, 100]
+
+        for logical, source in zip(normal, motor):
+            assert inverse_interpolate_position(
+                source, None, None, normal, motor
+            ) == logical
+
+    def test_simple_range_inverse(self):
+        assert inverse_interpolate_position(10, 10, 90, None, None) == 0
+        assert inverse_interpolate_position(50, 10, 90, None, None) == 50
+        assert inverse_interpolate_position(90, 10, 90, None, None) == 100
+
+    @pytest.mark.parametrize(
+        "motor",
+        ([100, 45, 58, 100], [0, 45, 45, 100]),
+    )
+    def test_non_invertible_motor_range_is_verbatim(self, motor):
+        assert not interpolation_is_invertible(None, None, [0, 25, 58, 100], motor)
+        assert inverse_interpolate_position(
+            45, None, None, [0, 25, 58, 100], motor
+        ) == 45
+
+    def test_no_range_is_identity(self):
+        assert interpolation_is_invertible(None, None, None, None)
+        assert inverse_interpolate_position(37, None, None, None, None) == 37
