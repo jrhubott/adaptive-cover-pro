@@ -25,7 +25,8 @@ The tracker is framework-light: it never imports the coordinator.
 Per-cycle collaborators (entities list, manager, command service,
 position-context builder, refresh callback) flow in by parameter at each
 call.  Long-lived collaborators (hass, logger, event buffer, and a
-closure that returns the current effective default + sunset flag) are
+closure that returns whether the configured SUNSET boundary owns this
+moment — blind to the end-of-window override, issue #1287) are
 constructor-injected.
 """
 
@@ -46,7 +47,12 @@ if TYPE_CHECKING:
 
 
 # Type aliases for readability of the public surface.
-EffectiveDefaultFn = Callable[[dict], tuple[int, bool]]
+# Returns whether the configured SUNSET boundary owns this moment — blind to
+# the end-of-window override (issue #1287). See helpers.read_sunset_window_open
+# for why this must NOT be compute_effective_default's overloaded
+# is_sunset_active ("a night-type default is in effect", true for both the
+# end-of-window position and the sunset position).
+SunsetWindowOpenFn = Callable[[dict], bool]
 BuildContextFn = Callable[[str, dict], "PositionContext"]
 ApplyPositionFn = Callable[..., Awaitable[Any]]
 RefreshFn = Callable[[], Awaitable[Any]]
@@ -66,13 +72,13 @@ class WindowTransitionTracker:
         logger: ConfigContextAdapter,
         *,
         event_buffer: EventBuffer,
-        effective_default_fn: EffectiveDefaultFn,
+        sunset_window_open_fn: SunsetWindowOpenFn,
     ) -> None:
         """Bind collaborators and reset transition state to ``None``."""
         self._hass = hass
         self._logger = logger
         self._event_buffer = event_buffer
-        self._effective_default_fn = effective_default_fn
+        self._sunset_window_open_fn = sunset_window_open_fn
         # ``None`` on first call prevents spurious dispatch when the
         # integration starts mid-transition (issue #266 / sun FoV).
         self._last_sun_validity_state: bool | None = None
@@ -185,7 +191,7 @@ class WindowTransitionTracker:
             )
             return
 
-        _effective_pos, is_sunset = self._effective_default_fn(options)
+        is_sunset = self._sunset_window_open_fn(options)
 
         if self._prev_sunset_active is None:
             self._prev_sunset_active = is_sunset

@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 from custom_components.adaptive_cover_pro.const import (
     CONF_DEFAULT_HEIGHT,
     CONF_END_OF_WINDOW_POS,
+    CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
 )
 from custom_components.adaptive_cover_pro.coordinator import (
@@ -170,3 +171,121 @@ class TestLivePipelineStickiness:
         result = DefaultHandler().evaluate(snap)
         assert result.position == 0
         assert "sunset position" in result.reason
+
+
+class TestSunsetBoundaryPredicateIsNotIsSunsetActive:
+    """Issue #1287: pin ``read_sunset_window_open`` apart from ``is_sunset_active``.
+
+    ``compute_effective_default``'s returned ``is_sunset_active`` means "a
+    night-type default is in effect" — True for BOTH the end-of-window
+    position (#625) AND the sunset position. The sunset-window edge detector
+    (``WindowTransitionTracker.check_sunset_window``) needs a narrower
+    predicate: "has the configured SUNSET boundary actually passed?" These
+    tests prove the two answers diverge during an end-of-window hold —
+    exactly the #1287 defect — and that ``compute_effective_default`` keeps
+    returning its existing (unchanged) values throughout.
+
+    Config mirrors the reporter's: end-of-window position 60, sunset
+    position 16, astral sunset 21:04 local + a 60-minute offset → the real
+    sunset BOUNDARY is 22:04.
+    """
+
+    def _hass_time_mgr_sun_data(self):
+        hass = MagicMock()
+        hass.states.get.return_value = None  # no sunset/sunrise time entities
+
+        time_mgr = MagicMock()
+        time_mgr.effective_daytime_gate = None  # no gate — astral path (#742)
+        time_mgr.window_explicitly_started = False
+        time_mgr.before_end_time = False  # window already clock-closed
+
+        today = _dt.date.today()
+        sun_data = MagicMock()
+        sun_data.sunset.return_value = _dt.datetime(
+            today.year, today.month, today.day, 21, 4, 0
+        )
+        sun_data.sunrise.return_value = _dt.datetime(
+            today.year, today.month, today.day, 6, 0, 0
+        )
+        return hass, time_mgr, sun_data
+
+    def test_window_open_false_during_end_of_window_hold(self):
+        """19:30 — eow position holds (is_sunset_active True), boundary NOT passed."""
+        from custom_components.adaptive_cover_pro.helpers import (
+            read_sunset_window_open,
+        )
+
+        hass, time_mgr, sun_data = self._hass_time_mgr_sun_data()
+        options = {
+            CONF_DEFAULT_HEIGHT: 100,
+            CONF_SUNSET_POS: 16,
+            CONF_END_OF_WINDOW_POS: 60,
+            CONF_SUNSET_OFFSET: 60,
+        }
+        today = _dt.date.today()
+        now = _dt.datetime(today.year, today.month, today.day, 19, 30, 0)
+
+        coord = _coord_with_window(before_end_time=False)
+        coord.hass = hass
+        coord._time_mgr = time_mgr
+        coord.get_blind_data = MagicMock(return_value=MagicMock(sun_data=sun_data))
+        with _freeze_helpers_now(now):
+            eff, is_sunset = coord._compute_current_effective_default(options)
+            window_open = read_sunset_window_open(hass, options, sun_data, time_mgr)
+
+        # compute_effective_default is unchanged: the eow position holds and
+        # is still reported with the existing "night-type default" flag.
+        assert (eff, is_sunset) == (60, True)
+        # The narrower predicate says the SUNSET boundary itself has not
+        # passed — this is the fix: the tracker must key off THIS, not
+        # is_sunset_active.
+        assert window_open is False
+
+    def test_window_open_true_after_configured_sunset_boundary(self):
+        """22:05 — past the configured boundary (astral sunset + offset)."""
+        from custom_components.adaptive_cover_pro.helpers import (
+            read_sunset_window_open,
+        )
+
+        hass, time_mgr, sun_data = self._hass_time_mgr_sun_data()
+        options = {
+            CONF_DEFAULT_HEIGHT: 100,
+            CONF_SUNSET_POS: 16,
+            CONF_END_OF_WINDOW_POS: 60,
+            CONF_SUNSET_OFFSET: 60,
+        }
+        today = _dt.date.today()
+        now = _dt.datetime(today.year, today.month, today.day, 22, 5, 0)
+
+        coord = _coord_with_window(before_end_time=False)
+        coord.hass = hass
+        coord._time_mgr = time_mgr
+        coord.get_blind_data = MagicMock(return_value=MagicMock(sun_data=sun_data))
+        with _freeze_helpers_now(now):
+            eff, is_sunset = coord._compute_current_effective_default(options)
+            window_open = read_sunset_window_open(hass, options, sun_data, time_mgr)
+
+        # compute_effective_default has handed off to phase 2 (astral
+        # sunset_pos) — still the SAME "night-type default" flag as before.
+        assert (eff, is_sunset) == (16, True)
+        # The boundary predicate now agrees — this is the edge the tracker
+        # must fire on.
+        assert window_open is True
+
+    def test_window_open_false_when_sunset_position_not_configured(self):
+        """No sunset position configured → the boundary predicate is inert."""
+        from custom_components.adaptive_cover_pro.helpers import (
+            read_sunset_window_open,
+        )
+
+        hass, time_mgr, sun_data = self._hass_time_mgr_sun_data()
+        options = {
+            CONF_DEFAULT_HEIGHT: 100,
+            CONF_SUNSET_POS: None,
+            CONF_END_OF_WINDOW_POS: 60,
+            CONF_SUNSET_OFFSET: 60,
+        }
+
+        window_open = read_sunset_window_open(hass, options, sun_data, time_mgr)
+
+        assert window_open is False

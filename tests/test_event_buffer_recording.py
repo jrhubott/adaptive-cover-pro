@@ -334,7 +334,7 @@ class TestSunFOVEvents:
             hass=MagicMock(),
             logger=coord.logger,
             event_buffer=buf,
-            effective_default_fn=lambda _opts: (0, False),
+            sunset_window_open_fn=lambda _opts: False,
         )
         tracker._last_sun_validity_state = prev_state
         coord._window_tracker = tracker
@@ -437,7 +437,7 @@ class TestEndTimeDefaultSentEvent:
             hass=MagicMock(),
             logger=coord.logger,
             event_buffer=buf,
-            effective_default_fn=coord._compute_current_effective_default,
+            sunset_window_open_fn=lambda _opts: is_sunset,
         )
         tracker._prev_sunset_active = True
         coord._window_tracker = tracker
@@ -536,13 +536,12 @@ class TestSunsetWindowOpenedEvent:
                 is_safety=False,
             )
         )
-        coord._compute_current_effective_default = MagicMock(return_value=(0, True))
         # Phase E: sunset-window state lives on the WindowTransitionTracker.
         tracker = WindowTransitionTracker(
             hass=MagicMock(),
             logger=coord.logger,
             event_buffer=buf,
-            effective_default_fn=coord._compute_current_effective_default,
+            sunset_window_open_fn=lambda _opts: True,
         )
         tracker._prev_sunset_active = False
         coord._window_tracker = tracker

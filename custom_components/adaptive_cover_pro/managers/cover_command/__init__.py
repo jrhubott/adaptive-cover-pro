@@ -2201,8 +2201,9 @@ class CoverCommandService:
         #   eventually break it — after a spurious ``policy_deferred`` skip on
         #   every raise.
         # - BEFORE ``_prepare_service_call`` below, because that call BOOKS the
-        #   command: ``sent_at`` (which ``_check_time_delta`` reads — issue
-        #   #853), ``waiting``, and the 5 s command grace window (issue #1139,
+        #   command: the cover entity's ``last_updated`` (which
+        #   ``_check_time_delta`` reads via ``get_last_updated`` — issue #853),
+        #   ``waiting``, and the 5 s command grace window (issue #1139,
         #   whose reporter measured backend queue waits of 10.6 / 20.9 / 33.7 s
         #   — 2× to 7× that window). A wait placed after the booking would start
         #   both clocks at DECISION time, silently shortening the min-interval

@@ -18,12 +18,12 @@ from custom_components.adaptive_cover_pro.state.window_transition_tracker import
 )
 
 
-def _make_tracker(effective_default=(0, False)) -> WindowTransitionTracker:
+def _make_tracker(sunset_window_open=False) -> WindowTransitionTracker:
     return WindowTransitionTracker(
         hass=MagicMock(),
         logger=MagicMock(),
         event_buffer=EventBuffer(maxlen=10),
-        effective_default_fn=lambda _opts: effective_default,
+        sunset_window_open_fn=lambda _opts: sunset_window_open,
     )
 
 
@@ -115,7 +115,7 @@ def _common_kwargs(
 
 @pytest.mark.asyncio
 async def test_check_sunset_window_skips_when_track_end_time_off():
-    tracker = _make_tracker(effective_default=(0, True))
+    tracker = _make_tracker(sunset_window_open=True)
     kwargs, apply_position, refresh = _common_kwargs()
     kwargs["track_end_time"] = False
     await tracker.check_sunset_window(**kwargs)
@@ -125,7 +125,7 @@ async def test_check_sunset_window_skips_when_track_end_time_off():
 
 @pytest.mark.asyncio
 async def test_check_sunset_window_skips_when_automatic_control_off():
-    tracker = _make_tracker(effective_default=(0, True))
+    tracker = _make_tracker(sunset_window_open=True)
     kwargs, apply_position, _ = _common_kwargs(automatic_control=False)
     await tracker.check_sunset_window(**kwargs)
     apply_position.assert_not_called()
@@ -133,7 +133,7 @@ async def test_check_sunset_window_skips_when_automatic_control_off():
 
 @pytest.mark.asyncio
 async def test_check_sunset_window_skips_when_sunset_pos_not_configured():
-    tracker = _make_tracker(effective_default=(0, True))
+    tracker = _make_tracker(sunset_window_open=True)
     kwargs, apply_position, _ = _common_kwargs(sunset_pos_cfg=None)
     await tracker.check_sunset_window(**kwargs)
     apply_position.assert_not_called()
@@ -142,7 +142,7 @@ async def test_check_sunset_window_skips_when_sunset_pos_not_configured():
 @pytest.mark.asyncio
 async def test_check_sunset_window_first_call_seeds_state_without_dispatch():
     """Mirrors the _last_sun_validity_state=None pattern (no spurious restart dispatch)."""
-    tracker = _make_tracker(effective_default=(0, True))
+    tracker = _make_tracker(sunset_window_open=True)
     kwargs, apply_position, _ = _common_kwargs()
     await tracker.check_sunset_window(**kwargs)
     apply_position.assert_not_called()
@@ -151,7 +151,7 @@ async def test_check_sunset_window_first_call_seeds_state_without_dispatch():
 
 @pytest.mark.asyncio
 async def test_check_sunset_window_dispatches_on_false_to_true_transition():
-    tracker = _make_tracker(effective_default=(0, True))
+    tracker = _make_tracker(sunset_window_open=True)
     tracker._prev_sunset_active = False
     kwargs, apply_position, refresh = _common_kwargs(
         sunset_pos_cfg=25, entities=["cover.a", "cover.b"]
@@ -167,7 +167,7 @@ async def test_check_sunset_window_dispatches_on_false_to_true_transition():
 
 @pytest.mark.asyncio
 async def test_check_sunset_window_inverse_state_inverts_position():
-    tracker = _make_tracker(effective_default=(0, True))
+    tracker = _make_tracker(sunset_window_open=True)
     tracker._prev_sunset_active = False
     kwargs, apply_position, _ = _common_kwargs(sunset_pos_cfg=0, inverse=True)
     await tracker.check_sunset_window(**kwargs)
@@ -177,7 +177,7 @@ async def test_check_sunset_window_inverse_state_inverts_position():
 
 @pytest.mark.asyncio
 async def test_check_sunset_window_skips_manual_covers():
-    tracker = _make_tracker(effective_default=(0, True))
+    tracker = _make_tracker(sunset_window_open=True)
     tracker._prev_sunset_active = False
     kwargs, apply_position, _ = _common_kwargs(entities=["cover.manual", "cover.auto"])
     kwargs["is_cover_manual"] = lambda eid: eid == "cover.manual"
@@ -188,7 +188,7 @@ async def test_check_sunset_window_skips_manual_covers():
 
 @pytest.mark.asyncio
 async def test_check_sunset_window_no_double_dispatch_when_already_true():
-    tracker = _make_tracker(effective_default=(0, True))
+    tracker = _make_tracker(sunset_window_open=True)
     tracker._prev_sunset_active = True  # already in the sunset window
     kwargs, apply_position, _ = _common_kwargs()
     await tracker.check_sunset_window(**kwargs)
@@ -197,7 +197,7 @@ async def test_check_sunset_window_no_double_dispatch_when_already_true():
 
 @pytest.mark.asyncio
 async def test_check_sunset_window_records_sunset_window_opened_event():
-    tracker = _make_tracker(effective_default=(0, True))
+    tracker = _make_tracker(sunset_window_open=True)
     tracker._prev_sunset_active = False
     kwargs, _, _ = _common_kwargs(sunset_pos_cfg=25, entities=["a", "b", "c"])
     await tracker.check_sunset_window(**kwargs)

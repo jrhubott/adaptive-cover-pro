@@ -125,7 +125,7 @@ def _attach_window_tracker(coord, *, prev_state: bool | None) -> None:
         hass=MagicMock(),
         logger=coord.logger,
         event_buffer=coord._event_buffer,
-        effective_default_fn=lambda _opts: (0, False),
+        sunset_window_open_fn=lambda _opts: False,
     )
     tracker._last_sun_validity_state = prev_state
     coord._window_tracker = tracker
@@ -452,7 +452,7 @@ async def test_window_close_skips_reposition_when_auto_control_off():
         hass=MagicMock(),
         logger=coord.logger,
         event_buffer=coord._event_buffer,
-        effective_default_fn=lambda _opts: (0, False),
+        sunset_window_open_fn=lambda _opts: False,
     )
 
     cmd_svc = MagicMock()
@@ -538,7 +538,7 @@ async def test_window_close_sends_reposition_when_auto_control_on():
         hass=MagicMock(),
         logger=coord.logger,
         event_buffer=coord._event_buffer,
-        effective_default_fn=lambda _opts: (0, False),
+        sunset_window_open_fn=lambda _opts: False,
     )
     tracker._prev_sunset_active = True
     coord._window_tracker = tracker
@@ -633,7 +633,7 @@ async def test_window_close_skips_reposition_when_custom_position_active():
         hass=MagicMock(),
         logger=coord.logger,
         event_buffer=coord._event_buffer,
-        effective_default_fn=lambda _opts: (0, False),
+        sunset_window_open_fn=lambda _opts: False,
     )
     tracker._prev_sunset_active = True
     coord._window_tracker = tracker
@@ -734,7 +734,7 @@ async def test_window_close_sends_when_stale_winner_is_window_gated():
         hass=MagicMock(),
         logger=coord.logger,
         event_buffer=coord._event_buffer,
-        effective_default_fn=lambda _opts: (0, False),
+        sunset_window_open_fn=lambda _opts: False,
     )
     tracker._prev_sunset_active = True
     coord._window_tracker = tracker
@@ -834,7 +834,7 @@ async def test_window_close_still_defers_to_custom_position_after_refresh():
         hass=MagicMock(),
         logger=coord.logger,
         event_buffer=coord._event_buffer,
-        effective_default_fn=lambda _opts: (0, False),
+        sunset_window_open_fn=lambda _opts: False,
     )
     tracker._prev_sunset_active = True
     coord._window_tracker = tracker
@@ -1447,7 +1447,7 @@ async def test_end_time_default_clamped_by_outside_window_bound():
         hass=MagicMock(),
         logger=coord.logger,
         event_buffer=coord._event_buffer,
-        effective_default_fn=lambda _opts: (100, False),
+        sunset_window_open_fn=lambda _opts: False,
     )
     tracker._prev_sunset_active = True
     coord._window_tracker = tracker
@@ -1537,7 +1537,7 @@ async def test_sunset_window_dispatch_clamped_by_outside_window_bound():
         hass=MagicMock(),
         logger=coord.logger,
         event_buffer=coord._event_buffer,
-        effective_default_fn=lambda _opts: (100, True),
+        sunset_window_open_fn=lambda _opts: True,
     )
     tracker._prev_sunset_active = False
     coord._window_tracker = tracker
@@ -1616,7 +1616,7 @@ async def test_sunset_window_dispatch_clamped_with_the_clock_still_open():
         hass=MagicMock(),
         logger=coord.logger,
         event_buffer=coord._event_buffer,
-        effective_default_fn=lambda _opts: (100, True),
+        sunset_window_open_fn=lambda _opts: True,
     )
     tracker._prev_sunset_active = False
     coord._window_tracker = tracker
