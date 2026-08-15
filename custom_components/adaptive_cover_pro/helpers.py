@@ -1137,13 +1137,16 @@ class SunsetVerdict:
     fact ("today's sunset boundary has passed") that
     ``compute_effective_default``'s end-of-window phase 1 gates on to decide
     when to hand off from the end-of-window position to the astral sunset
-    position; it is not meaningful when a ``daytime_gate`` owns the boundary
-    (the gate short-circuits before the astral math ever runs, mirroring the
-    original inline behaviour).
+    position. It is ``None`` — not a fabricated ``False`` — when a configured
+    ``daytime_gate`` owns the boundary: the gate short-circuits before the
+    astral math ever runs (mirroring the original inline behaviour), so there
+    is no astral fact to report. The one caller that reads this field
+    (``compute_effective_default``'s phase 1) only does so on the path where
+    ``daytime_gate is None``, so it never observes the ``None``.
     """
 
     window_open: bool
-    after_sunset: bool
+    after_sunset: bool | None
 
 
 def resolve_sunset_verdict(
@@ -1184,10 +1187,11 @@ def resolve_sunset_verdict(
     """
     if daytime_gate is not None:
         # The gate OWNS the boundary — no astral walk, matching the original
-        # inline short-circuit. ``after_sunset`` is inert here: no caller
-        # reads it when a gate is configured (compute_effective_default's
-        # phase 1 never reaches the astral branch in that case either).
-        return SunsetVerdict(window_open=daytime_gate is False, after_sunset=False)
+        # inline short-circuit. ``after_sunset=None`` is honest about there
+        # being no astral fact to report here (no caller reads it in this
+        # branch — compute_effective_default's phase 1 never reaches the
+        # astral branch when a gate is configured either).
+        return SunsetVerdict(window_open=daytime_gate is False, after_sunset=None)
 
     boundaries = resolve_sun_boundaries(
         sun_data,
@@ -1330,7 +1334,10 @@ def compute_effective_default(
     # clock-closed, the end-of-window position holds from window-end UNTIL astral
     # sunset; then phase 2 (the astral sunset_pos branch below) takes over. Gated
     # on ``not after_sunset`` so it yields to astral at the handoff. The
-    # daytime_gate branch above intentionally still owns the boundary here.
+    # daytime_gate branch above intentionally still owns the boundary here —
+    # this line only runs when ``daytime_gate is None``, so ``verdict`` was
+    # resolved on the astral path and ``after_sunset`` is always a real bool
+    # here, never the gated branch's ``None``.
     if (
         end_of_window_active
         and end_of_window_pos is not None
@@ -1504,6 +1511,14 @@ def read_sunset_window_open(
     """
     inputs = _effective_default_inputs(hass, options, time_mgr)
     if inputs.sunset_pos_cfg is None:
+        # No sunset position configured: there is nothing for the tracker to
+        # dispatch, so "the boundary owns this moment" is meaningless here.
+        # ``False`` ("boundary not passed") rather than ``True`` is the safe
+        # reading — it can never itself trigger a False→True dispatch edge.
+        # Inert today: ``check_sunset_window`` already returns before calling
+        # this function when ``sunset_pos_cfg is None``
+        # (window_transition_tracker.py). Kept as a defensive default for any
+        # future caller of this predicate that isn't gated the same way.
         return False
     verdict = resolve_sunset_verdict(
         sun_data,

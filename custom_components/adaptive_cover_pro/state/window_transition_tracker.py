@@ -82,7 +82,7 @@ class WindowTransitionTracker:
         # ``None`` on first call prevents spurious dispatch when the
         # integration starts mid-transition (issue #266 / sun FoV).
         self._last_sun_validity_state: bool | None = None
-        self._prev_sunset_active: bool | None = None
+        self._prev_sunset_window_open: bool | None = None
 
     # ---- Sun visibility --------------------------------------------------
 
@@ -191,14 +191,14 @@ class WindowTransitionTracker:
             )
             return
 
-        is_sunset = self._sunset_window_open_fn(options)
+        sunset_window_open = self._sunset_window_open_fn(options)
 
-        if self._prev_sunset_active is None:
-            self._prev_sunset_active = is_sunset
+        if self._prev_sunset_window_open is None:
+            self._prev_sunset_window_open = sunset_window_open
             return
 
-        just_opened = (not self._prev_sunset_active) and is_sunset
-        self._prev_sunset_active = is_sunset
+        just_opened = (not self._prev_sunset_window_open) and sunset_window_open
+        self._prev_sunset_window_open = sunset_window_open
 
         if not just_opened:
             return

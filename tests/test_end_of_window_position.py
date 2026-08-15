@@ -25,6 +25,7 @@ from custom_components.adaptive_cover_pro.coordinator import (
 from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
     DefaultHandler,
 )
+from tests._helpers.time_freeze import freeze_helpers_now
 from tests.test_pipeline.conftest import make_snapshot
 
 
@@ -68,16 +69,6 @@ def _coord_with_window(
     return coord
 
 
-def _freeze_helpers_now(naive_utc: _dt.datetime):
-    from unittest.mock import patch
-
-    aware = naive_utc.replace(tzinfo=_dt.UTC)
-    return patch(
-        "custom_components.adaptive_cover_pro.helpers.dt.datetime",
-        **{"now.return_value": aware},
-    )
-
-
 class TestCoordinatorSeamReadsEndOfWindow:
     """_compute_current_effective_default threads the eow option + window state."""
 
@@ -92,7 +83,7 @@ class TestCoordinatorSeamReadsEndOfWindow:
         today = _dt.date.today()
         # 19:30 — after the window end but before astral sunset (20:00).
         now = _dt.datetime(today.year, today.month, today.day, 19, 30, 0)
-        with _freeze_helpers_now(now):
+        with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
         assert eff == 0
         assert is_sunset is True
@@ -107,7 +98,7 @@ class TestCoordinatorSeamReadsEndOfWindow:
         }
         today = _dt.date.today()
         now = _dt.datetime(today.year, today.month, today.day, 12, 0, 0)
-        with _freeze_helpers_now(now):
+        with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
         assert eff == 80
         assert is_sunset is False
@@ -122,7 +113,7 @@ class TestCoordinatorSeamReadsEndOfWindow:
         }
         today = _dt.date.today()
         now = _dt.datetime(today.year, today.month, today.day, 21, 0, 0)
-        with _freeze_helpers_now(now):
+        with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
         assert eff == 20
         assert is_sunset is True
@@ -137,7 +128,7 @@ class TestCoordinatorSeamReadsEndOfWindow:
         }
         today = _dt.date.today()
         now = _dt.datetime(today.year, today.month, today.day, 22, 0, 0)
-        with _freeze_helpers_now(now):
+        with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
         assert eff == 0
         assert is_sunset is True
@@ -151,7 +142,7 @@ class TestCoordinatorSeamReadsEndOfWindow:
         }
         today = _dt.date.today()
         now = _dt.datetime(today.year, today.month, today.day, 19, 30, 0)
-        with _freeze_helpers_now(now):
+        with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
         assert eff == 80
         assert is_sunset is False
@@ -229,7 +220,7 @@ class TestSunsetBoundaryPredicateIsNotIsSunsetActive:
         coord.hass = hass
         coord._time_mgr = time_mgr
         coord.get_blind_data = MagicMock(return_value=MagicMock(sun_data=sun_data))
-        with _freeze_helpers_now(now):
+        with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
             window_open = read_sunset_window_open(hass, options, sun_data, time_mgr)
 
@@ -261,7 +252,7 @@ class TestSunsetBoundaryPredicateIsNotIsSunsetActive:
         coord.hass = hass
         coord._time_mgr = time_mgr
         coord.get_blind_data = MagicMock(return_value=MagicMock(sun_data=sun_data))
-        with _freeze_helpers_now(now):
+        with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
             window_open = read_sunset_window_open(hass, options, sun_data, time_mgr)
 

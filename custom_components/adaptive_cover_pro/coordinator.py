@@ -5943,7 +5943,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.hass, options, cover_data.sun_data, self._time_mgr
         )
 
-    def _sunset_window_is_open(self, options: dict, cover_data=None) -> bool:
+    def _sunset_window_is_open(self, options: dict) -> bool:
         """Return whether the configured SUNSET boundary owns this moment (#1287).
 
         A thin wrapper over :func:`helpers.read_sunset_window_open` — the
@@ -5955,19 +5955,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         overloaded flag made its edge fire at clock ``end_time`` instead of
         the configured sunset boundary.
 
-        Mirrors :meth:`_compute_current_effective_default`'s cover-data
-        resolution: the transition call site (``_check_sunset_window_transition``)
-        has none in hand.
+        Unlike :meth:`_compute_current_effective_default`, this seam has no
+        cover-data-reuse call site: the tracker injection (``__init__``) is
+        its only caller and always invokes it with ``options`` alone, so the
+        cover data is resolved fresh via ``get_blind_data`` every time.
 
         Args:
             options: The config-entry options dict.
-            cover_data: An already-computed cover-data object whose ``sun_data``
-                is reused. When ``None`` the cover data is computed fresh via
-                ``get_blind_data``.
 
         """
-        if cover_data is None:
-            cover_data = self.get_blind_data(options=options)
+        cover_data = self.get_blind_data(options=options)
         return read_sunset_window_open(
             self.hass, options, cover_data.sun_data, self._time_mgr
         )

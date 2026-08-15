@@ -353,7 +353,7 @@ async def _trigger_window_close_return_sunset(coord):
         event_buffer=event_buffer,
         sunset_window_open_fn=lambda _opts: False,
     )
-    tracker._prev_sunset_active = True
+    tracker._prev_sunset_window_open = True
     coord._window_tracker = tracker
 
     async def _invoke(track_end_time, refresh_callback, on_window_open=None):
@@ -391,7 +391,7 @@ async def _trigger_sunset_window_opened(coord):
         event_buffer=event_buffer,
         sunset_window_open_fn=lambda _opts: True,
     )
-    tracker._prev_sunset_active = False
+    tracker._prev_sunset_window_open = False
     coord._window_tracker = tracker
     await coord._check_sunset_window_transition()
 

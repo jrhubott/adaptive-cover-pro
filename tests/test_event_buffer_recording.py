@@ -439,7 +439,7 @@ class TestEndTimeDefaultSentEvent:
             event_buffer=buf,
             sunset_window_open_fn=lambda _opts: is_sunset,
         )
-        tracker._prev_sunset_active = True
+        tracker._prev_sunset_window_open = True
         coord._window_tracker = tracker
 
         return coord
@@ -543,7 +543,7 @@ class TestSunsetWindowOpenedEvent:
             event_buffer=buf,
             sunset_window_open_fn=lambda _opts: True,
         )
-        tracker._prev_sunset_active = False
+        tracker._prev_sunset_window_open = False
         coord._window_tracker = tracker
         return coord
 
@@ -581,7 +581,9 @@ class TestSunsetWindowOpenedEvent:
         )
 
         coord = self._make_coord()
-        coord._window_tracker._prev_sunset_active = True  # already open — no transition
+        coord._window_tracker._prev_sunset_window_open = (
+            True  # already open — no transition
+        )
         await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
         assert "sunset_window_opened" not in _event_types(coord._event_buffer)
 

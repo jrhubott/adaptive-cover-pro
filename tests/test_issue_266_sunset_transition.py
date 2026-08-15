@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime as _dt
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -27,6 +27,7 @@ from custom_components.adaptive_cover_pro.coordinator import (
 )
 from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
+from tests._helpers.time_freeze import freeze_helpers_now
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -130,7 +131,7 @@ def _seed_sunset_state(
     from the configured ``sunset_position`` option, not from this predicate.
     """
     del pos  # inert — see docstring
-    coord._window_tracker._prev_sunset_active = prev
+    coord._window_tracker._prev_sunset_window_open = prev
     coord._sunset_window_is_open = MagicMock(return_value=current_is_sunset)
     coord._window_tracker._sunset_window_open_fn = coord._sunset_window_is_open
 
@@ -237,15 +238,6 @@ def _make_boundary_test_coord(
     return coord
 
 
-def _freeze_helpers_now(naive_utc: _dt.datetime):
-    """Patch ``helpers.dt.datetime.now()`` so ``compute_effective_default`` sees a fixed instant."""
-    aware = naive_utc.replace(tzinfo=_dt.UTC)
-    return patch(
-        "custom_components.adaptive_cover_pro.helpers.dt.datetime",
-        **{"now.return_value": aware},
-    )
-
-
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -311,7 +303,7 @@ async def test_no_dispatch_when_sunset_pos_not_configured():
     """No dispatch when sunset_pos is not configured (None)."""
     coord = _make_coord(sunset_pos=None)
     # _compute_current_effective_default won't be called because we return early
-    coord._window_tracker._prev_sunset_active = False
+    coord._window_tracker._prev_sunset_window_open = False
     # No sunset_pos in options → return early before checking transition
 
     await coord._check_sunset_window_transition()
@@ -348,7 +340,7 @@ async def test_transition_detected_only_once_per_day():
     _seed_sunset_state(coord, prev=False, current_is_sunset=True)
 
     await coord._check_sunset_window_transition()
-    # Second call: _prev_sunset_active is now True, is_sunset still True → no transition
+    # Second call: _prev_sunset_window_open is now True, is_sunset still True → no transition
     await coord._check_sunset_window_transition()
 
     assert coord._cmd_svc.apply_position.call_count == 1
@@ -356,15 +348,15 @@ async def test_transition_detected_only_once_per_day():
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_prev_sunset_active_initial_none_does_not_dispatch():
-    """On HA restart mid-sunset (_prev_sunset_active=None), no spurious dispatch.
+async def test_prev_sunset_window_open_initial_none_does_not_dispatch():
+    """On HA restart mid-sunset (_prev_sunset_window_open=None), no spurious dispatch.
 
     Mirrors the _last_sun_validity_state=None pattern: first call initializes
     state without dispatching, so covers aren't blindly repositioned on startup.
     """
     coord = _make_coord(sunset_pos=0)
-    # _prev_sunset_active starts as None (fresh coordinator)
-    assert coord._window_tracker._prev_sunset_active is None
+    # _prev_sunset_window_open starts as None (fresh coordinator)
+    assert coord._window_tracker._prev_sunset_window_open is None
     coord._sunset_window_is_open = MagicMock(return_value=True)
     coord._window_tracker._sunset_window_open_fn = coord._sunset_window_is_open
 
@@ -372,7 +364,7 @@ async def test_prev_sunset_active_initial_none_does_not_dispatch():
 
     coord._cmd_svc.apply_position.assert_not_called()
     # State should be initialized
-    assert coord._window_tracker._prev_sunset_active is True
+    assert coord._window_tracker._prev_sunset_window_open is True
 
 
 @pytest.mark.asyncio
@@ -395,7 +387,7 @@ async def test_end_time_after_sunset_does_not_double_dispatch():
     """When end_time fires after sunset is already active, no follow-up dispatch.
 
     If end_time > sunset+offset, _on_window_closed already sent sunset_pos.
-    _prev_sunset_active should be True when _check_sunset_window_transition runs,
+    _prev_sunset_window_open should be True when _check_sunset_window_transition runs,
     so the transition guard prevents a second send.
     """
     coord = _make_coord(sunset_pos=0)
@@ -486,12 +478,12 @@ async def test_no_dispatch_at_end_time_when_end_of_window_position_holds():
 
     coord._time_mgr.before_end_time = True
     now = _dt.datetime(today.year, today.month, today.day, 18, 59, 0)
-    with _freeze_helpers_now(now):
+    with freeze_helpers_now(now):
         await coord._check_sunset_window_transition()
 
     coord._time_mgr.before_end_time = False
     now = _dt.datetime(today.year, today.month, today.day, 19, 0, 0)
-    with _freeze_helpers_now(now):
+    with freeze_helpers_now(now):
         await coord._check_sunset_window_transition()
 
     coord._cmd_svc.apply_position.assert_not_called()
@@ -508,7 +500,7 @@ async def test_dispatch_at_configured_sunset_boundary_after_end_of_window_hold()
     Same config as the sibling test above. Under the bug, the False→True
     edge is consumed the moment end-of-window position first reports
     ``is_sunset_active=True`` (at/after 19:00), so by 22:05 — the moment the
-    configured sunset boundary has genuinely passed — ``_prev_sunset_active``
+    configured sunset boundary has genuinely passed — ``_prev_sunset_window_open``
     is already True and no transition is left to detect: the sunset
     position never dispatches at all. Ticking 19:00 → 21:00 → 22:05 must
     produce exactly one dispatch, of the configured sunset position (16),
@@ -524,13 +516,20 @@ async def test_dispatch_at_configured_sunset_boundary_after_end_of_window_hold()
     today = _dt.date.today()
     coord._time_mgr.before_end_time = False  # window already clock-closed
 
-    for hour, minute in ((19, 0), (21, 0), (22, 5)):
+    for hour, minute in ((19, 0), (21, 0)):
         now = _dt.datetime(today.year, today.month, today.day, hour, minute, 0)
-        with _freeze_helpers_now(now):
+        with freeze_helpers_now(now):
             await coord._check_sunset_window_transition()
+
+    # Pin the boundary itself, not just the eventual count: a regression that
+    # dispatched early (e.g. at 19:00 or 21:00) must fail here, before the
+    # 22:05 tick below would otherwise mask it by bringing the total back to 1.
+    coord._cmd_svc.apply_position.assert_not_called()
+
+    now = _dt.datetime(today.year, today.month, today.day, 22, 5, 0)
+    with freeze_helpers_now(now):
+        await coord._check_sunset_window_transition()
 
     coord._cmd_svc.apply_position.assert_called_once()
     sent_pos = coord._cmd_svc.apply_position.call_args.args[1]
     assert sent_pos == 16
-
-    coord._cmd_svc.apply_position.assert_called_once()

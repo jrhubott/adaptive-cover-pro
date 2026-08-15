@@ -540,7 +540,7 @@ async def test_window_close_sends_reposition_when_auto_control_on():
         event_buffer=coord._event_buffer,
         sunset_window_open_fn=lambda _opts: False,
     )
-    tracker._prev_sunset_active = True
+    tracker._prev_sunset_window_open = True
     coord._window_tracker = tracker
 
     with patch(
@@ -635,7 +635,7 @@ async def test_window_close_skips_reposition_when_custom_position_active():
         event_buffer=coord._event_buffer,
         sunset_window_open_fn=lambda _opts: False,
     )
-    tracker._prev_sunset_active = True
+    tracker._prev_sunset_window_open = True
     coord._window_tracker = tracker
 
     with patch(
@@ -736,7 +736,7 @@ async def test_window_close_sends_when_stale_winner_is_window_gated():
         event_buffer=coord._event_buffer,
         sunset_window_open_fn=lambda _opts: False,
     )
-    tracker._prev_sunset_active = True
+    tracker._prev_sunset_window_open = True
     coord._window_tracker = tracker
 
     with patch(
@@ -836,7 +836,7 @@ async def test_window_close_still_defers_to_custom_position_after_refresh():
         event_buffer=coord._event_buffer,
         sunset_window_open_fn=lambda _opts: False,
     )
-    tracker._prev_sunset_active = True
+    tracker._prev_sunset_window_open = True
     coord._window_tracker = tracker
 
     with patch(
@@ -1449,7 +1449,7 @@ async def test_end_time_default_clamped_by_outside_window_bound():
         event_buffer=coord._event_buffer,
         sunset_window_open_fn=lambda _opts: False,
     )
-    tracker._prev_sunset_active = True
+    tracker._prev_sunset_window_open = True
     coord._window_tracker = tracker
 
     time_mgr = MagicMock()
@@ -1539,7 +1539,7 @@ async def test_sunset_window_dispatch_clamped_by_outside_window_bound():
         event_buffer=coord._event_buffer,
         sunset_window_open_fn=lambda _opts: True,
     )
-    tracker._prev_sunset_active = False
+    tracker._prev_sunset_window_open = False
     coord._window_tracker = tracker
 
     await coord._check_sunset_window_transition()
@@ -1618,7 +1618,7 @@ async def test_sunset_window_dispatch_clamped_with_the_clock_still_open():
         event_buffer=coord._event_buffer,
         sunset_window_open_fn=lambda _opts: True,
     )
-    tracker._prev_sunset_active = False
+    tracker._prev_sunset_window_open = False
     coord._window_tracker = tracker
 
     await coord._check_sunset_window_transition()
