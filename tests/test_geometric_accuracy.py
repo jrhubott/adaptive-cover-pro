@@ -14,6 +14,7 @@ import pytest
 import numpy as np
 
 from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
+from custom_components.adaptive_cover_pro.engine.sun_geometry import clamped_cos_gamma
 from custom_components.adaptive_cover_pro.geometry import SafetyMarginCalculator
 from tests.cover_helpers import build_vertical_cover
 
@@ -717,7 +718,12 @@ class TestLintelGate:
 
 
 def _lintel_gate_max_penetration(
-    position: float, h_win: float, depth: float, gamma: float, elev: float
+    position: float,
+    h_win: float,
+    depth: float,
+    gamma: float,
+    elev: float,
+    sill: float = 0.0,
 ) -> float:
     """Upper bound on in-room sun penetration a returned ``position`` can produce.
 
@@ -726,15 +732,26 @@ def _lintel_gate_max_penetration(
     both by the blind's own coverage (``position``) and by the physical limit
     of the lintel shadow (``h_win − depth·f``, the highest point the reveal can
     ever leave lit, regardless of blind position) — whichever is lower wins.
+
+    ``sill`` (discussion #1283) raises the whole window off the floor, so the
+    lit point's height above the floor is ``sill + exposed`` rather than just
+    ``exposed``. That shift only applies when something is actually exposed:
+    at ``exposed == 0`` the window is fully covered end to end (the blind
+    reaches all the way down to the sill), so literally no glass transmits
+    and the real penetration is 0 — not ``sill`` foreshortened. Without this
+    guard the helper would accuse a correctly fully-closed blind (or a
+    lintel-gated fully-open one whose gate has already zeroed the lit
+    ceiling) of leaking ``sill``'s own height into the room.
     """
     f = math.tan(math.radians(elev)) / math.cos(math.radians(gamma))
     lit_ceiling = max(h_win - depth * f, 0.0)
-    z = min(position, lit_ceiling)
+    exposed = min(position, lit_ceiling)
+    z = sill + exposed if exposed > 1e-9 else 0.0
     return z * math.cos(math.radians(gamma)) / math.tan(math.radians(elev))
 
 
 @pytest.mark.parametrize(
-    "distance,h_win,depth,gamma,elev",
+    "distance,h_win,depth,gamma,elev,sill",
     list(
         itertools.product(
             [0.0, 0.5, 1.5],
@@ -742,11 +759,12 @@ def _lintel_gate_max_penetration(
             [0.05, 0.18, 0.5],
             [0, 30, 60, 75],
             [20, 45, 75],
+            [0.0, 1.04],
         )
     ),
 )
 def test_no_direct_sun_lands_past_the_configured_distance(
-    base_cover_params, distance, h_win, depth, gamma, elev
+    base_cover_params, distance, h_win, depth, gamma, elev, sill
 ):
     """Contract (#1169): no position the engine returns may leak direct sun past
     the user's configured ``distance``.
@@ -757,20 +775,78 @@ def test_no_direct_sun_lands_past_the_configured_distance(
     continuous ``depth_contribution`` term, which opens the blind from the
     BOTTOM — where the lintel shadow (which falls on the TOP of the glass)
     protects nothing.
+
+    ``sill`` sweeps in a nonzero window-sill height (discussion #1283) so the
+    upper-bound contract is exercised on the dimension the units-mismatch bug
+    lives on, not just on the one configuration (``sill_height=0``) where the
+    bug is invisible.
     """
     params = base_cover_params.copy()
     params["distance"] = distance
     params["h_win"] = h_win
     params["window_depth"] = depth
+    params["sill_height"] = sill
     cover = make_cover_with_angles(params, gamma=gamma, sol_elev=elev)
     position = cover.calculate_position()
 
-    penetration = _lintel_gate_max_penetration(position, h_win, depth, gamma, elev)
+    penetration = _lintel_gate_max_penetration(
+        position, h_win, depth, gamma, elev, sill
+    )
 
     assert penetration <= distance + 1e-9, (
         f"distance={distance} h_win={h_win} depth={depth} gamma={gamma} "
-        f"elev={elev}: position={position:.4f} -> penetration={penetration:.4f} "
-        "exceeds the configured distance"
+        f"elev={elev} sill={sill}: position={position:.4f} -> "
+        f"penetration={penetration:.4f} exceeds the configured distance"
+    )
+
+
+@pytest.mark.parametrize(
+    "distance,h_win,gamma,elev,sill",
+    list(
+        itertools.product(
+            [0.0, 0.5, 1.5],
+            [0.62, 2.2],
+            [0, 30, 60, 75],
+            [20, 45, 75],
+            [0.0, 0.3, 1.04],
+        )
+    ),
+)
+def test_position_is_not_more_closed_than_the_contract_requires(
+    base_cover_params, distance, h_win, gamma, elev, sill
+):
+    """Contract (discussion #1283): the engine must never return LESS position
+    than the geometry requires.
+
+    ``test_no_direct_sun_lands_past_the_configured_distance`` is the upper
+    bound ("never leak past distance") — an engine that returns 0 everywhere
+    passes it trivially. This is the missing lower bound: the returned
+    position must be at least the analytically correct
+    ``clip(distance·tan(elev)/cos(gamma) − sill_height, 0, h_win)``
+    (``_elevation_offset`` returns a *perpendicular* offset — see
+    ``engine/covers/vertical.py`` — so the sill term is subtracted once, not
+    foreshortened a second time by ``/cos(gamma)``). ``window_depth`` is held
+    at 0 so the lintel gate (#1169, a one-way "may open further" relaxation)
+    never enters the comparison.
+    """
+    params = base_cover_params.copy()
+    params["distance"] = distance
+    params["h_win"] = h_win
+    params["window_depth"] = 0.0
+    params["sill_height"] = sill
+    cover = make_cover_with_angles(params, gamma=gamma, sol_elev=elev)
+    position = cover.calculate_position()
+
+    cos_gamma = clamped_cos_gamma(gamma)
+    correct = min(
+        max(distance * math.tan(math.radians(elev)) / cos_gamma - sill, 0.0),
+        h_win,
+    )
+
+    assert position >= correct - 1e-9, (
+        f"distance={distance} h_win={h_win} gamma={gamma} elev={elev} "
+        f"sill={sill}: position={position:.6f} is more closed than the "
+        f"contract requires (correct={correct:.6f})"
     )
 
 
