@@ -762,8 +762,8 @@ class TestIssue358ReporterRegression:
     Reporter config: sill_height=1.6m, h_win=0.55m, distance=1.0m,
     sol_elev=47.4°, gamma≈35.8°.
 
-    Geometry: sill_offset = 1.6 · cos(35.8°) / tan(47.4°) ≈ 1.190m
-    effective_distance = 1.0 - 1.190 = -0.190 (< 0 → clamp to 0 → position=0)
+    Geometry: sill_offset = 1.6 · cos(35.8°) / tan(47.4°) ≈ 1.193m
+    effective_distance = 1.0 - 1.193 = -0.193 (< 0 → clamp to 0 → position=0)
 
     The offset is perpendicular, not a ray path length (#1290). The pre-#1290
     formula (1.6 / tan(47.4°) ≈ 1.467m) gave a different effective_distance but
