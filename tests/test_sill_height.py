@@ -762,8 +762,12 @@ class TestIssue358ReporterRegression:
     Reporter config: sill_height=1.6m, h_win=0.55m, distance=1.0m,
     sol_elev=47.4°, gamma≈35.8°.
 
-    Geometry: sill_offset = 1.6 / tan(47.4°) ≈ 1.467m
-    effective_distance = 1.0 - 1.467 = -0.467 (< 0 → clamp to 0 → position=0)
+    Geometry: sill_offset = 1.6 · cos(35.8°) / tan(47.4°) ≈ 1.190m
+    effective_distance = 1.0 - 1.190 = -0.190 (< 0 → clamp to 0 → position=0)
+
+    The offset is perpendicular, not a ray path length (#1290). The pre-#1290
+    formula (1.6 / tan(47.4°) ≈ 1.467m) gave a different effective_distance but
+    the same clamped outcome, which is why this case reads identically either way.
 
     The sun enters through 0.55m of glass above the sill and every ray through
     that glass is still above the floor at the 1.0m shaded boundary. The blind
@@ -859,9 +863,11 @@ class TestSillGeometryInvariant:
     """Parametrized invariant: whenever analytical effective_distance < 0, position==0.
 
     Sweeps a grid of (sill, distance, sol_elev, gamma) values. Any combination where
-    sill_offset = sill/tan(elev) exceeds shaded_distance analytically must produce
-    position=0 from calculate_position(). This guard makes any future "return h_win
-    when effective_distance <= 0" regression break dozens of cases at once.
+    sill_offset = sill * clamped_cos_gamma(gamma) / tan(elev) — the PERPENDICULAR
+    offset (discussion #1283), same units as `distance`, never a bare path length —
+    exceeds shaded_distance analytically must produce position=0 from
+    calculate_position(). This guard makes any future "return h_win when
+    effective_distance <= 0" regression break dozens of cases at once.
     """
 
     @pytest.mark.parametrize(
@@ -902,14 +908,16 @@ class TestSillGeometryInvariant:
     ):
         """Any (sill, dist, elev, gamma) where effective_distance <= 0 must yield position=0.
 
-        effective_distance = distance - sill_height / max(tan(sol_elev), 0.05)
-        When <= 0, every ray through the glass is above the floor at the shaded
-        boundary. Blind must be fully closed.
+        effective_distance = distance - sill_height * clamped_cos_gamma(gamma) / max(tan(sol_elev), 0.05)
+        (the PERPENDICULAR sill offset, same units as `distance` — discussion #1283;
+        never the bare path-length `sill_height / tan(sol_elev)`). When <= 0, every
+        ray through the glass is above the floor at the shaded boundary. Blind must
+        be fully closed.
         """
         import math
 
         tan_elev = max(math.tan(math.radians(sol_elev)), 0.05)
-        sill_offset = sill_height / tan_elev
+        sill_offset = sill_height * clamped_cos_gamma(gamma) / tan_elev
         analytical_effective_distance = distance - sill_offset
 
         # Only run the assertion for cases that analytically trigger the clamp
@@ -932,6 +940,34 @@ class TestSillGeometryInvariant:
             f"effective_distance={analytical_effective_distance:.4f} ≤ 0 → "
             f"expected position=0.0, got {position}"
         )
+
+    def test_high_gamma_is_not_in_the_clamp_regime(self, base_cover_params):
+        """(sill=0.5, dist=0.5, elev=20°, gamma=75°) is the exact case where the
+        old (pre-#1290) path-length threshold and the corrected perpendicular
+        one disagree (issue #1290).
+
+        Old (buggy) path-length threshold: sill_offset = 0.5/tan(20°) = 1.3737,
+        effective_distance = 0.5 - 1.3737 = -0.8737 <= 0 -> would assert
+        position == 0 (wrongly, since the engine no longer computes this).
+
+        Corrected perpendicular threshold: sill_offset =
+        0.5*clamped_cos_gamma(75°)/tan(20°) = 0.35555, effective_distance =
+        0.5 - 0.35555 = +0.14445 > 0 -> NOT in the clamp regime, so this row
+        must never be added to TestSillGeometryInvariant's parametrize list
+        (it would silently land in that test's `pytest.skip` branch instead
+        of asserting anything). Pinning it here as its own asserting test
+        instead gives this exact divergence explicit, non-skippable coverage.
+        """
+        cover = make_vertical_cover(
+            base_cover_params,
+            gamma=75.0,
+            sol_elev=20.0,
+            sill_height=0.5,
+            distance=0.5,
+        )
+        position = cover.calculate_position()
+        assert position > 0.0
+        assert position == pytest.approx(0.2032, abs=1e-3)
 
 
 class TestNumericalStability:
