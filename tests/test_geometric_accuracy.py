@@ -746,17 +746,22 @@ def _lintel_gate_max_penetration(
     f = math.tan(math.radians(elev)) / math.cos(math.radians(gamma))
     lit_ceiling = max(h_win - depth * f, 0.0)
     exposed = min(position, lit_ceiling)
-    # This gate is a hard cutoff, not a limit: exposed == 0 forces z to 0, but
-    # exposed in (0, 1e-9] still takes the `sill + exposed` branch, so z jumps
-    # rather than approaching 0 continuously. That leaves a measure-zero blind
-    # band where a buggy engine returning a position in (0, 1e-9] when the
-    # correct answer is exactly 0 would leak `sill*cos(g)/tan(e)` past the
-    # upper-bound assertion below undetected (the lower-bound test doesn't
-    # catch that direction either). Unreachable on the current parametrize
-    # grid, and the epsilon matches distance_shaded_area's own "zero keeps
-    # direct sun from passing the glass plane" contract, so the gate itself is
-    # still the right call — this is a known, deliberately-accepted gap, not a
-    # bug in this helper.
+    # This gate is a hard cutoff, not a limit: exposed == 0 forces z to 0.0,
+    # and so does every exposed in (0, 1e-9] — `exposed > 1e-9` is False for
+    # both, so only exposed strictly above 1e-9 reaches the `sill + exposed`
+    # branch. z does not approach 0 continuously as exposed shrinks: it jumps
+    # from 0.0 straight to ~sill the instant exposed crosses 1e-9 (sill + 1e-9
+    # ~= sill). That leaves a measure-zero blind band: a buggy engine
+    # returning a position in (0, 1e-9] when the correct answer is exactly 0
+    # lands on the z = 0.0 side of the jump, so the helper reports
+    # penetration = 0 and the leak — which a continuous model would put at
+    # roughly `sill*cos(g)/tan(e)`, since even a sliver of exposed glass sits
+    # right at the sill line — slips past the upper-bound assertion below
+    # undetected (the lower-bound test doesn't catch that direction either).
+    # Unreachable on the current parametrize grid, and the epsilon matches
+    # distance_shaded_area's own "zero keeps direct sun from passing the
+    # glass plane" contract, so the gate itself is still the right call —
+    # this is a known, deliberately-accepted gap, not a bug in this helper.
     z = sill + exposed if exposed > 1e-9 else 0.0
     return z * math.cos(math.radians(gamma)) / math.tan(math.radians(elev))
 

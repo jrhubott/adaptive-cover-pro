@@ -75,24 +75,30 @@ def glare_zone_effective_distance(
     ray path length — see its docstring, #1283) used by sill_offset in
     calculate_position, signed in the opposite direction.
 
-    Known conservatism gap: `_elevation_offset` runs its cos(gamma) term through
-    the one-sided `clamped_cos_gamma` floor (min 0.01, i.e. |gamma| > ~89.4°).
-    At the sill call site that floor is harmless — it shrinks the subtracted
-    offset, and `_project_drop` divides by the same clamped cosine, so the two
-    cancel to exactly `-sill_height` regardless. Here the floor only multiplies
-    (there is no matching division downstream), so at |gamma| > ~89.4° it
-    inflates this z-offset instead, which pushes the returned effective
-    distance — and therefore D_eff — higher, i.e. LESS zone protection than the
-    true geometry gives. This is genuinely reachable, not a theoretical corner:
-    `direct_sun_valid` (the only upstream gate GlareZoneHandler checks) requires
-    just `cos(gamma) > 0`, i.e. |gamma| < 90° with no margin, and the default
-    FOV cone (fov_left = fov_right = 90°) admits the same range — so a sun
-    grazing near-parallel to the glass at moderate elevation can land in this
-    band in normal operation. `vertical.py`'s own edge-case gate
-    (`EdgeCaseHandler`/`geometry._edge_case`) does not help either — it only
-    ever floors very-low elevation, not extreme gamma (the extreme-gamma branch
-    was deliberately removed, see its docstring). Narrow band, small effect,
-    but real.
+    The `clamped_cos_gamma` floor is not a conservatism gap here. This distance
+    is only ever consumed by re-entering `calculate_position` (`GlareZoneHandler`
+    calls `cover.calculate_raw_percentage(effective_distance_override=min_distance)`,
+    `glare_zone.py:114-115`), which projects it through `_project_drop`'s division
+    by `clamped_cos_gamma(self.gamma)` — the same gamma, same floor. Multiply then
+    divide by the same clamped cosine cancels exactly, so the z-term's contribution
+    to the final position is exactly `z`, independent of gamma — the same
+    cancellation as the sill case above (verified: elev=45°, gamma=89.6°, z=0.5 →
+    position delta = 0.5 exactly, floor engaged or not).
+
+    The one place this doesn't cancel: the raw `min_distance` feeds the
+    zone-selection `min()` and the sun-tracking early-return gate at
+    `glare_zone.py:109`, both evaluated *before* the re-entry above. There the
+    floor can inflate the z-term by up to `z·MIN_COS_GAMMA_CLAMP/tan(sol_elev)` —
+    ≤ `0.01·z` at elevations ≥45°, rising to `0.2·z` at the lowest elevations
+    `MIN_TAN_ELEVATION_CLAMP` (0.05) allows — enough to shift which zone is
+    selected or nudge the early-return gate by centimetres, never enough to
+    reach the returned position.
+
+    Pre-#1290 there was no cancellation at all: the z-term carried no
+    `cos(gamma)` factor, so it passed into `_project_drop`'s division
+    uncancelled and scaled as `z/clamped_cos_gamma(gamma)` — up to `100·z` at
+    the floor. This fix removed that blowup; the residual above is what's left
+    of it.
 
     Args:
         zone: The glare zone definition (x, y, radius, z — all in metres).
