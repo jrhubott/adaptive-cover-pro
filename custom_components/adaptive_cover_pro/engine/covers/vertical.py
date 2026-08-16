@@ -75,6 +75,25 @@ def glare_zone_effective_distance(
     ray path length — see its docstring, #1283) used by sill_offset in
     calculate_position, signed in the opposite direction.
 
+    Known conservatism gap: `_elevation_offset` runs its cos(gamma) term through
+    the one-sided `clamped_cos_gamma` floor (min 0.01, i.e. |gamma| > ~89.4°).
+    At the sill call site that floor is harmless — it shrinks the subtracted
+    offset, and `_project_drop` divides by the same clamped cosine, so the two
+    cancel to exactly `-sill_height` regardless. Here the floor only multiplies
+    (there is no matching division downstream), so at |gamma| > ~89.4° it
+    inflates this z-offset instead, which pushes the returned effective
+    distance — and therefore D_eff — higher, i.e. LESS zone protection than the
+    true geometry gives. This is genuinely reachable, not a theoretical corner:
+    `direct_sun_valid` (the only upstream gate GlareZoneHandler checks) requires
+    just `cos(gamma) > 0`, i.e. |gamma| < 90° with no margin, and the default
+    FOV cone (fov_left = fov_right = 90°) admits the same range — so a sun
+    grazing near-parallel to the glass at moderate elevation can land in this
+    band in normal operation. `vertical.py`'s own edge-case gate
+    (`EdgeCaseHandler`/`geometry._edge_case`) does not help either — it only
+    ever floors very-low elevation, not extreme gamma (the extreme-gamma branch
+    was deliberately removed, see its docstring). Narrow band, small effect,
+    but real.
+
     Args:
         zone: The glare zone definition (x, y, radius, z — all in metres).
         gamma: Surface solar azimuth in degrees (positive = sun to the right).
@@ -303,7 +322,12 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         # (sill_height·cos(γ)/tan(θ)) — the same units as `distance` — so
         #   effective_distance = distance − sill_offset          (perpendicular − perpendicular)
         #   position           = effective_distance·tan(θ) / cos(γ)   (via _project_drop)
-        # is algebraically identical to the formula above for EVERY γ, not only γ = 0.
+        # is algebraically identical to the formula above for EVERY γ, not only γ = 0 —
+        # PROVIDED θ is above the sill division's own clamp. `_elevation_offset` divides
+        # by tan(θ) floored at MIN_TAN_ELEVATION_CLAMP (0.05, θ ≈ 2.9°), while
+        # `_project_drop` multiplies by the raw, unclamped tan(θ); below ≈2.9° elevation
+        # the two no longer use the same tan(θ), so the cancellation is inexact there.
+        # This asymmetry predates #1283's fix and is unrelated to it.
         # (Before #1283's fix, `_elevation_offset` returned a ray PATH LENGTH instead of
         # a perpendicular offset, so this same-looking pair of lines silently
         # over-subtracted the sill by a factor of 1/cos(γ) at every γ != 0.)

@@ -746,6 +746,17 @@ def _lintel_gate_max_penetration(
     f = math.tan(math.radians(elev)) / math.cos(math.radians(gamma))
     lit_ceiling = max(h_win - depth * f, 0.0)
     exposed = min(position, lit_ceiling)
+    # This gate is a hard cutoff, not a limit: exposed == 0 forces z to 0, but
+    # exposed in (0, 1e-9] still takes the `sill + exposed` branch, so z jumps
+    # rather than approaching 0 continuously. That leaves a measure-zero blind
+    # band where a buggy engine returning a position in (0, 1e-9] when the
+    # correct answer is exactly 0 would leak `sill*cos(g)/tan(e)` past the
+    # upper-bound assertion below undetected (the lower-bound test doesn't
+    # catch that direction either). Unreachable on the current parametrize
+    # grid, and the epsilon matches distance_shaded_area's own "zero keeps
+    # direct sun from passing the glass plane" contract, so the gate itself is
+    # still the right call — this is a known, deliberately-accepted gap, not a
+    # bug in this helper.
     z = sill + exposed if exposed > 1e-9 else 0.0
     return z * math.cos(math.radians(gamma)) / math.tan(math.radians(elev))
 
