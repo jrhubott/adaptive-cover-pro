@@ -26,18 +26,31 @@ from .base import AdaptiveGeneralCover
 MIN_TAN_ELEVATION_CLAMP = 0.05
 
 
-def _elevation_offset(height_m: float, sol_elev: float) -> float:
-    """Horizontal distance a sun ray covers while descending `height_m` metres.
+def _elevation_offset(height_m: float, sol_elev: float, gamma: float) -> float:
+    """Perpendicular in-room depth a sun ray covers while descending `height_m`.
 
-    For a sun ray at elevation `sol_elev` (degrees), descending a vertical
-    distance `height_m` corresponds to a horizontal distance of
-    `height_m / tan(sol_elev)`. The denominator is clamped at
-    MIN_TAN_ELEVATION_CLAMP so the offset stays finite at low sun.
+    Units contract: this returns a PERPENDICULAR depth (metres measured
+    straight out from the glass plane), the same units as `distance`
+    (`distance_shaded_area`) — never a ray path length. A sun ray at
+    elevation `sol_elev` (degrees) descending a vertical distance `height_m`
+    travels a horizontal PATH of `height_m / tan(sol_elev)`; only the
+    component of that path normal to the window, `path * cos(gamma)`, counts
+    as perpendicular depth. The denominator is clamped at
+    MIN_TAN_ELEVATION_CLAMP so the offset stays finite at low sun, and the
+    `cos(gamma)` factor goes through the shared one-sided `clamped_cos_gamma`
+    guard (#1030) rather than a raw `cos(rad(gamma))`.
+
+    Before this fix the helper returned the bare path length, which callers
+    then subtracted from a perpendicular `distance` and divided by `cos(gamma)`
+    a second time in `_project_drop` — over-subtracting the offset by a factor
+    of `1/cos(gamma)` at every gamma != 0 (discussion #1283).
 
     Shared by sill_height geometry in calculate_position and the optional
-    glare-zone Z (height above floor) offset.
+    glare-zone Z (height above floor) offset — one change here fixes both
+    call sites (CODING_GUIDELINES.md "No Code Duplication").
     """
-    return height_m / max(float(tan(rad(sol_elev))), MIN_TAN_ELEVATION_CLAMP)
+    path_length = height_m / max(float(tan(rad(sol_elev))), MIN_TAN_ELEVATION_CLAMP)
+    return path_length * clamped_cos_gamma(gamma)
 
 
 def glare_zone_effective_distance(
@@ -57,9 +70,35 @@ def glare_zone_effective_distance(
     uses min() across zones to select the most restrictive (closest) zone.
 
     When `zone.z > 0` the target sits above the floor (eye level, tabletop, TV).
-    The effective distance is then `nearest_y + z / tan(sol_elev)` — the same
-    trigonometric construction as sill_offset in calculate_position, signed in
-    the opposite direction.
+    The effective distance is then `nearest_y + z·cos(gamma)/tan(sol_elev)` —
+    the same shared `_elevation_offset` helper (a PERPENDICULAR offset, not a
+    ray path length — see its docstring, #1283) used by sill_offset in
+    calculate_position, signed in the opposite direction.
+
+    The `clamped_cos_gamma` floor is not a conservatism gap here. This distance
+    is only ever consumed by re-entering `calculate_position` (`GlareZoneHandler`
+    calls `cover.calculate_raw_percentage(effective_distance_override=min_distance)`,
+    `glare_zone.py:114-115`), which projects it through `_project_drop`'s division
+    by `clamped_cos_gamma(self.gamma)` — the same gamma, same floor. Multiply then
+    divide by the same clamped cosine cancels exactly, so the z-term's contribution
+    to the final position is exactly `z`, independent of gamma — the same
+    cancellation as the sill case above (verified: elev=45°, gamma=89.6°, z=0.5 →
+    position delta = 0.5 exactly, floor engaged or not).
+
+    The one place this doesn't cancel: the raw `min_distance` feeds the
+    zone-selection `min()` and the sun-tracking early-return gate at
+    `glare_zone.py:109`, both evaluated *before* the re-entry above. There the
+    floor can inflate the z-term by up to `z·MIN_COS_GAMMA_CLAMP/tan(sol_elev)` —
+    ≤ `0.01·z` at elevations ≥45°, rising to `0.2·z` at the lowest elevations
+    `MIN_TAN_ELEVATION_CLAMP` (0.05) allows — enough to shift which zone is
+    selected or nudge the early-return gate by centimetres, never enough to
+    reach the returned position.
+
+    Pre-#1290 there was no cancellation at all: the z-term carried no
+    `cos(gamma)` factor, so it passed into `_project_drop`'s division
+    uncancelled and scaled as `z/clamped_cos_gamma(gamma)` — up to `100·z` at
+    the floor. This fix removed that blowup; the residual above is what's left
+    of it.
 
     Args:
         zone: The glare zone definition (x, y, radius, z — all in metres).
@@ -87,7 +126,7 @@ def glare_zone_effective_distance(
         return None  # Ray enters outside the window opening — zone is naturally blocked
 
     if zone.z > 0:
-        nearest_y += _elevation_offset(zone.z, sol_elev)
+        nearest_y += _elevation_offset(zone.z, sol_elev, gamma)
 
     return nearest_y
 
@@ -266,30 +305,42 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         # Account for window sill height (window not starting at floor)
         sill_offset = 0.0
         if self.sill_height > 0:
-            sill_offset = _elevation_offset(self.sill_height, self.sol_elev)
+            sill_offset = _elevation_offset(self.sill_height, self.sol_elev, self.gamma)
             effective_distance -= sill_offset
 
         # ── Sill geometry — why negative effective_distance means FULLY CLOSED ────────
         # "Position" = exposed glass from the bottom (0 = fully closed, h_win = open).
-        # A ray entering the glass at height h from the floor travels into the room at
-        # angle θ (sun elevation). At horizontal distance d from the window the ray is
-        # at height  h − d·tan(θ).
+        # Window plane at y=0 (the glass), room interior at y>0. A ray enters the
+        # glass at height H above the FLOOR (H = sill_height + position — the top of
+        # the exposed band) at surface-solar-azimuth γ and elevation θ. The ray's
+        # horizontal PATH before it reaches the floor is L = H / tan(θ); only the
+        # component of that path NORMAL to the window counts as perpendicular
+        # penetration into the room: y = L·cos(γ) = H·cos(γ) / tan(θ).
         #
-        # At d = shaded_distance (the protected-zone boundary):
-        #   • h > shaded_distance·tan(θ):  ray is ABOVE the floor at the boundary —
-        #     it has not hit anything and keeps travelling deeper into the room.
-        #     This counts as sun penetration past the protected zone.
-        #   • h ≤ shaded_distance·tan(θ):  ray hits the floor at or before the boundary.
+        # Contract: the ray must not penetrate past shaded_distance (D), i.e. y ≤ D:
+        #   H·cos(γ) / tan(θ) ≤ D  ⟺  H ≤ D·tan(θ) / cos(γ)
         #
-        # To stop ALL rays at the boundary, the top of exposed glass must satisfy
-        #   h_top ≤ shaded_distance·tan(θ)
-        # giving  position = clip(shaded_distance·tan(θ) − sill_height, 0, h_win),
-        # equivalently  effective_distance = max(distance − sill_offset, 0)
-        #               position           = effective_distance·tan(θ) / cos(γ)
+        # With H = sill_height + position, solving for position and clipping to the
+        # physical window range gives
+        #   position = clip(D·tan(θ)/cos(γ) − sill_height, 0, h_win)
         #
-        # When effective_distance ≤ 0, even the LOWEST glass entry (at sill_height)
-        # produces a ray that is still above the floor at the boundary. Every higher
-        # entry is worse. The blind must be FULLY CLOSED (position=0).
+        # `_elevation_offset` returns the PERPENDICULAR sill offset
+        # (sill_height·cos(γ)/tan(θ)) — the same units as `distance` — so
+        #   effective_distance = distance − sill_offset          (perpendicular − perpendicular)
+        #   position           = effective_distance·tan(θ) / cos(γ)   (via _project_drop)
+        # is algebraically identical to the formula above for EVERY γ, not only γ = 0 —
+        # PROVIDED θ is above the sill division's own clamp. `_elevation_offset` divides
+        # by tan(θ) floored at MIN_TAN_ELEVATION_CLAMP (0.05, θ ≈ 2.9°), while
+        # `_project_drop` multiplies by the raw, unclamped tan(θ); below ≈2.9° elevation
+        # the two no longer use the same tan(θ), so the cancellation is inexact there.
+        # This asymmetry predates #1283's fix and is unrelated to it.
+        # (Before #1283's fix, `_elevation_offset` returned a ray PATH LENGTH instead of
+        # a perpendicular offset, so this same-looking pair of lines silently
+        # over-subtracted the sill by a factor of 1/cos(γ) at every γ != 0.)
+        #
+        # When effective_distance ≤ 0, even the LOWEST glass entry (H = sill_height,
+        # i.e. position = 0) already violates the contract above. Every higher entry
+        # is worse. The blind must be FULLY CLOSED (position=0).
         #
         # Issue #304 short-circuited here with `return h_win` (fully open), which is
         # the geometric inverse of the correct answer. Issue #358 restores the clamp so
