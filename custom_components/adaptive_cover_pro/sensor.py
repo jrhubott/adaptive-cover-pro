@@ -29,6 +29,7 @@ from .const import (
     BLIND_SPOT_SLOTS,
     CONF_CLIMATE_MODE,
     CONF_TRAVEL_TIME_CALIBRATION,
+    DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     TRAVEL_CALIBRATION_STATE_CANCELLED,
     TRAVEL_CALIBRATION_STATE_COMPLETE,
     TRAVEL_CALIBRATION_STATE_FAILED,
@@ -674,8 +675,11 @@ def _sun_position_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
         # One [right_edge, left_edge] pair per active slot (issue #701). Slot 1
         # reuses the legacy unsuffixed keys. ``blind_spot_range`` keeps emitting
         # only slot 1 for Lovelace-card back-compat; ``blind_spot_ranges`` lists
-        # every active slot.
+        # every active slot. ``blind_spot_slots`` (issue #1292) pairs each range
+        # with the elevation gate that decides when the slot is active, built in
+        # this same loop so the two attributes never drift out of sync.
         ranges: list[list[float]] = []
+        slots: list[dict[str, Any]] = []
         for keys in BLIND_SPOT_SLOTS.values():
             # Signed-gamma keys are the primary source (issue #247): the wedge is
             # -right_gamma..left_gamma, so the emitted [right, left] pair is
@@ -683,16 +687,32 @@ def _sun_position_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
             lg = config.get(keys["left_gamma"])
             rg = config.get(keys["right_gamma"])
             if lg is not None and rg is not None:
-                ranges.append([-rg, lg])
-                continue
-            bs_left = config.get(keys["left"])
-            bs_right = config.get(keys["right"])
-            if bs_left is None or bs_right is None:
-                continue
-            ranges.append([fov_left - bs_right, fov_left - bs_left])
+                pair = [-rg, lg]
+            else:
+                bs_left = config.get(keys["left"])
+                bs_right = config.get(keys["right"])
+                if bs_left is None or bs_right is None:
+                    continue
+                pair = [fov_left - bs_right, fov_left - bs_left]
+            ranges.append(pair)
+            slots.append(
+                {
+                    "range": pair,
+                    "elevation": config.get(keys["elevation"]),
+                    # ``configuration`` always materializes this key (builder.py
+                    # copies it unconditionally via options.get(...)), so a
+                    # key-absent default would never fire for a legacy
+                    # pre-#702 blind spot whose raw option is genuinely unset —
+                    # coalesce the None instead, matching config_types.py's
+                    # ``elevation_mode or DEFAULT_BLIND_SPOT_ELEVATION_MODE``.
+                    "elevation_mode": config.get(keys["elevation_mode"])
+                    or DEFAULT_BLIND_SPOT_ELEVATION_MODE,
+                }
+            )
         if ranges:
             attrs["blind_spot_range"] = ranges[0]
             attrs["blind_spot_ranges"] = ranges
+            attrs["blind_spot_slots"] = slots
 
     return attrs or None
 
