@@ -15,6 +15,7 @@ from custom_components.adaptive_cover_pro.const import (
     CoverType,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
 )
+from custom_components.adaptive_cover_pro.diagnostics.builder import DiagnosticsBuilder
 from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverClimateStatusSensor,
     AdaptiveCoverControlStatusSensor,
@@ -22,6 +23,8 @@ from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverSunPositionSensor,
     _DIAGNOSTIC_SPECS,
 )
+
+from tests.test_diagnostics.test_builder import _base_ctx
 
 
 def _make_config_entry(sensor_type=CoverType.BLIND):
@@ -461,6 +464,89 @@ def test_sun_position_attributes_blind_spot_slots_none_elevation_mode_falls_back
             "elevation_mode": DEFAULT_BLIND_SPOT_ELEVATION_MODE,
         }
     ]
+
+
+def _build_diagnostics_for_config_options(config_options: dict) -> dict:
+    """Run the REAL ``DiagnosticsBuilder`` over the given raw options.
+
+    Unlike the hand-fed ``configuration`` dicts above (which prove only that
+    ``_sun_position_attrs`` branches correctly on whatever keys it's handed),
+    this drives the actual production chain — options -> DiagnosticsBuilder
+    -> diagnostics['configuration'] — so a bug in the builder's key-forwarding
+    (#1291) is actually caught.
+    """
+    diag, _ = DiagnosticsBuilder().build(_base_ctx(config_options=config_options))
+    return diag
+
+
+@pytest.mark.unit
+def test_sun_position_attrs_gamma_only_slot1_publishes_blind_spot_ranges():
+    """A gamma-only slot-1 entry (today's only write shape) publishes
+    blind_spot_range/blind_spot_ranges through the real DiagnosticsBuilder
+    (#1291 regression guard).
+
+    Before the fix, ``_build_configuration`` forwarded only the legacy
+    left/right sub-keys, so a gamma-only options dict produced an empty
+    ``ranges`` list in ``_sun_position_attrs`` and neither attribute was
+    emitted, even though the calculation engine (which reads raw options
+    independently) computed the position correctly.
+    """
+    diag = _build_diagnostics_for_config_options(
+        {
+            "blind_spot": True,
+            "blind_spot_left_gamma": 35,
+            "blind_spot_right_gamma": 40,
+            "fov_left": 45,
+            "fov_right": 45,
+            "azimuth": 180,
+        }
+    )
+    coord = _make_coordinator(diagnostics=diag)
+    entry = _make_config_entry()
+    sensor = AdaptiveCoverSunPositionSensor(
+        unique_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    assert attrs["blind_spot_ranges"] == [[-40, 35]]
+    assert attrs["blind_spot_range"] == [-40, 35]
+
+
+@pytest.mark.unit
+def test_sun_position_attrs_unconfigured_slot_publishes_no_spurious_range():
+    """Slot 1 gamma-only configured; slots 2/3 entirely absent (no gamma AND
+    no legacy keys) must not leak a spurious range for the unconfigured slots.
+
+    #1071 regression guard extended to the widened builder tuple (#1291):
+    the length-1 result proves an absent slot's ``None``/``None`` pair still
+    ``continue``s rather than producing e.g. ``[None, None]``.
+    """
+    diag = _build_diagnostics_for_config_options(
+        {
+            "blind_spot": True,
+            "blind_spot_left_gamma": 35,
+            "blind_spot_right_gamma": 40,
+            "fov_left": 45,
+            "fov_right": 45,
+            "azimuth": 180,
+        }
+    )
+    coord = _make_coordinator(diagnostics=diag)
+    entry = _make_config_entry()
+    sensor = AdaptiveCoverSunPositionSensor(
+        unique_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    assert attrs["blind_spot_ranges"] == [[-40, 35]]
 
 
 # ---------------------------------------------------------------------------
