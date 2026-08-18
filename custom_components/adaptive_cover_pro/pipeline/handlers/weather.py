@@ -28,6 +28,28 @@ class WeatherOverrideHandler(OverrideHandler):
     name = "weather"
     priority = 90
 
+    @staticmethod
+    def _scoped_out_of_window(snapshot: PipelineSnapshot) -> bool:
+        """Whether the user scoped weather to a window that is currently shut.
+
+        **The one statement of the #1308 gate.** ``evaluate`` and
+        ``describe_skip`` both consume it, so the guard and the reason it
+        produces cannot drift apart.
+
+        Reads ``clock_window_open``, never ``in_time_window``: the latter folds
+        in the sun-tracking daytime gate, which is dark mid-clock on a
+        gate-configured install (#656/#632). Treating that as "outside the
+        window" would strip storm protection from a 10:00 winter morning, which
+        is a far larger change than this option promises.
+
+        The min-mode floor is the other seat, and it is deliberately NOT routed
+        through here: it carries ``snapshot.weather_outside_window`` onto its
+        ``AxisConstraint`` and lets ``partition_axis_constraints`` supply the
+        clock, so ``_window_eligible`` stays the single statement of the
+        claim-side rule.
+        """
+        return not snapshot.weather_outside_window and not snapshot.clock_window_open
+
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return override position when weather conditions are active.
 
@@ -37,6 +59,12 @@ class WeatherOverrideHandler(OverrideHandler):
         handler wins (issue #463).
         """
         if not snapshot.weather_override_active:
+            return None
+        # Second, not first, on purpose (#1308): a user with clear skies and no
+        # opt-in must keep reading "weather override not active" rather than be
+        # told a window gate they never configured is what stopped weather.
+        # ``describe_skip`` encodes the same order.
+        if self._scoped_out_of_window(snapshot):
             return None
         if snapshot.weather_override_min_mode:
             return None
@@ -58,6 +86,15 @@ class WeatherOverrideHandler(OverrideHandler):
             raw_calculated_position=raw,
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:  # noqa: ARG002
-        """Reason when weather override is not active."""
+    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:
+        """Reason when the weather override does not match.
+
+        Ordered to match ``evaluate``, so the trace names the gate that
+        actually stopped it: the window scope is reported only once the
+        active check has passed, which keeps a user whose sensors are simply
+        quiet reading "not active" instead of being pointed at a scope that is
+        not what stopped weather (``solar.describe_skip``'s principle).
+        """
+        if snapshot.weather_override_active and self._scoped_out_of_window(snapshot):
+            return Reason(ReasonCode.SKIP_OUTSIDE_WINDOW)
         return Reason(ReasonCode.SKIP_WEATHER_NOT_ACTIVE)

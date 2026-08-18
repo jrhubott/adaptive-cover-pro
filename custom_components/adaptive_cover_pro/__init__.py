@@ -1145,6 +1145,17 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # diagnostics block and the gain sensor simply disappear again.
     new_minor = _advance_noop_minor(new_version, new_minor, 19)
 
+    # v3.19 → v3.20: added the additive weather window-scope option
+    # weather_outside_window (issue #1308). An absent key already reads as
+    # "weather keeps acting outside the time window", which is exactly what
+    # every existing install does today, so nothing needs seeding; this is a
+    # no-op minor bump kept only to advance entries sitting at minor 19 to 20
+    # so they stop re-triggering migration every restart (the v3.18 → v3.19
+    # precedent). Rollback-safe: an older build finds every key exactly as it
+    # left it and ignores the one it does not know, so weather simply keeps its
+    # night shift again.
+    new_minor = _advance_noop_minor(new_version, new_minor, 20)
+
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
     )

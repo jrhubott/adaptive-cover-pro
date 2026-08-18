@@ -253,7 +253,7 @@ async def test_migrate_v3_2_copies_force_override_into_slot_5(
     assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
     assert entry.options[_SLOT5["min_mode"]] is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 async def test_migrate_v3_2_preserves_legacy_keys_for_rollback(
@@ -289,7 +289,7 @@ async def test_migrate_v3_2_no_force_config_is_a_noop(hass: HomeAssistant) -> No
     await async_migrate_entry(hass, entry)
     assert _SLOT5["sensors"] not in entry.options
     assert _SLOT5["position"] not in entry.options
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 async def test_migrate_v3_2_empty_sensor_list_is_a_noop(hass: HomeAssistant) -> None:
@@ -302,7 +302,7 @@ async def test_migrate_v3_2_empty_sensor_list_is_a_noop(hass: HomeAssistant) -> 
     )
     await async_migrate_entry(hass, entry)
     assert _SLOT5["sensors"] not in entry.options
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 async def test_migrate_v3_2_missing_position_defaults_to_zero(
@@ -329,7 +329,7 @@ async def test_migrate_v1_cascades_through_v3_2(hass: HomeAssistant) -> None:
     )
     await async_migrate_entry(hass, entry)
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options[CONF_WINDOW_WIDTH] == 2.0
     assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
 
@@ -366,7 +366,7 @@ async def test_migrate_v3_3_copies_legacy_single_sensor_into_list(
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CUSTOM_POSITION_SLOTS[1]["sensors"]] == ["binary_sensor.table"]
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 async def test_migrate_v3_3_leaves_legacy_key_intact(hass: HomeAssistant) -> None:
@@ -408,7 +408,7 @@ async def test_migrate_v3_3_no_legacy_is_noop(hass: HomeAssistant) -> None:
         minor_version=2,
     )
     await async_migrate_entry(hass, entry)
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     for slot_n in (1, 2, 3, 4, 5):
         assert CUSTOM_POSITION_SLOTS[slot_n]["sensors"] not in entry.options
 
@@ -431,7 +431,7 @@ async def test_migrate_v3_4_sets_position_matching_true_for_existing_entry(
     entry = _make_entry(hass, {"azimuth": 180}, version=3, minor_version=3)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 async def test_migrate_v3_4_no_op_when_key_already_true(hass: HomeAssistant) -> None:
@@ -444,7 +444,7 @@ async def test_migrate_v3_4_no_op_when_key_already_true(hass: HomeAssistant) -> 
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 async def test_migrate_v3_4_no_op_when_key_already_false(hass: HomeAssistant) -> None:
@@ -457,7 +457,7 @@ async def test_migrate_v3_4_no_op_when_key_already_false(hass: HomeAssistant) ->
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is False
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 async def test_migrate_v1_cascades_to_position_matching(hass: HomeAssistant) -> None:
@@ -466,7 +466,7 @@ async def test_migrate_v1_cascades_to_position_matching(hass: HomeAssistant) -> 
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 # ---------------------------------------------------------------------------
@@ -488,7 +488,7 @@ async def test_migrate_v3_6_sets_weather_enabled_true_for_existing_entry(
     entry = _make_entry(hass, {"azimuth": 180}, version=3, minor_version=5)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options[CONF_WEATHER_ENABLED] is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 async def test_migrate_v3_6_no_op_when_key_already_false(hass: HomeAssistant) -> None:
@@ -501,7 +501,7 @@ async def test_migrate_v3_6_no_op_when_key_already_false(hass: HomeAssistant) ->
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_WEATHER_ENABLED] is False
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 async def test_migrate_v3_6_explicit_true_survives(hass: HomeAssistant) -> None:
@@ -514,7 +514,7 @@ async def test_migrate_v3_6_explicit_true_survives(hass: HomeAssistant) -> None:
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_WEATHER_ENABLED] is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 async def test_migrate_v1_cascades_to_weather_enabled(hass: HomeAssistant) -> None:
@@ -523,7 +523,7 @@ async def test_migrate_v1_cascades_to_weather_enabled(hass: HomeAssistant) -> No
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_WEATHER_ENABLED] is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 # ---------------------------------------------------------------------------
@@ -544,7 +544,7 @@ async def test_migrate_v3_6_to_3_7_is_noop_bump(hass: HomeAssistant) -> None:
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     # Additive/no-op: no outside_temp_source key seeded, options untouched.
     assert "outside_temp_source" not in entry.options
     # Cascades on through v3.13 too, which seeds default_percentage (#1126).
@@ -561,9 +561,9 @@ async def test_migrate_v3_6_to_3_7_is_idempotent(hass: HomeAssistant) -> None:
     )
     assert await async_migrate_entry(hass, entry) is True
     first = dict(entry.options)
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options == first
 
 
@@ -579,7 +579,7 @@ async def test_migrate_v3_6_to_3_7_preserves_explicit_source(
     )
     await async_migrate_entry(hass, entry)
     assert entry.options["outside_temp_source"] == "max_of_live_and_forecast"
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 # ---------------------------------------------------------------------------
@@ -610,7 +610,7 @@ async def test_migrate_v3_4_bumps_through_minor_5_without_seeding(
     )
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     # No dead key seeded by the v3.4→v3.5 block.
     assert "show_weather_retraction" not in entry.options
     assert entry.options == {
@@ -650,7 +650,7 @@ async def test_migrate_v3_7_to_v3_8_converts_blind_spots(hass: HomeAssistant) ->
     )
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     opts = entry.options
     # Slot 1 converted (new_left = 45-10 = 35, new_right = 30-45 = -15).
     assert opts["blind_spot_left_gamma"] == 35
@@ -683,9 +683,9 @@ async def test_migrate_v3_7_to_v3_8_is_idempotent(hass: HomeAssistant) -> None:
     )
     assert await async_migrate_entry(hass, entry) is True
     first = dict(entry.options)
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options == first
 
 
@@ -721,7 +721,7 @@ async def test_migrate_v3_7_to_v3_8_no_blind_spot_is_noop(hass: HomeAssistant) -
     )
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options == {**before, CONF_DEFAULT_HEIGHT: 100}
 
 
@@ -748,7 +748,7 @@ async def test_migrate_v3_7_to_v3_8_tolerates_none_fov_left(
         minor_version=7,
     )
     assert await async_migrate_entry(hass, entry) is True  # no TypeError
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options["blind_spot_left_gamma"] == 80  # 90 - 10
     assert entry.options["blind_spot_right_gamma"] == -60  # 30 - 90
 
@@ -797,14 +797,14 @@ def test_config_flow_minor_version_reaches_highest_migration_target() -> None:
     that minor are never seen as stale and the migration is dead code in
     production.
 
-    Currently the highest target is 19 (the v3.18 → v3.19 no-op block that
-    advances entries past the additive optional solar options, per issues
-    #1236 and #1237).
+    Currently the highest target is 20 (the v3.19 → v3.20 no-op block that
+    advances entries past the additive weather window-scope option, per issue
+    #1308).
     Raise this assertion whenever a new minor migration block is added.
     """
     from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
 
-    assert ConfigFlowHandler.MINOR_VERSION == 19
+    assert ConfigFlowHandler.MINOR_VERSION == 20
 
 
 # ---------------------------------------------------------------------------
@@ -860,7 +860,7 @@ async def test_migrate_v3_8_to_v3_9_is_additive_noop(hass: HomeAssistant) -> Non
     entry = _make_entry(hass, dict(options), version=3, minor_version=8)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert dict(entry.options) == {**options, CONF_DEFAULT_HEIGHT: 100}
 
 
@@ -889,7 +889,7 @@ async def test_migrate_v3_9_to_v3_10_additive_noop_without_legacy_margin(
     }
     entry = _make_entry(hass, dict(options), version=3, minor_version=9)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert dict(entry.options) == {**options, CONF_DEFAULT_HEIGHT: 100}
 
 
@@ -913,7 +913,7 @@ async def test_migrate_v3_9_to_v3_10_copies_legacy_safety_margin(
         minor_version=9,
     )
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     # New neutral key seeded from the legacy value.
     assert entry.options[CONF_TILT_SAFETY_MARGIN] == 0.5
     # Legacy key retained unchanged (additive / rollback-safe).
@@ -952,7 +952,7 @@ async def test_migrate_v3_10_is_idempotent(hass: HomeAssistant) -> None:
     }
     entry = _make_entry(hass, dict(options), version=3, minor_version=10)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert dict(entry.options) == {**options, CONF_DEFAULT_HEIGHT: 100}
 
 
@@ -977,7 +977,7 @@ async def test_migrate_v3_10_to_v3_11_seeds_shade_mode_for_awning(
         minor_version=10,
     )
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options[CONF_AWNING_SHADE_MODE] == AWNING_SHADE_MODE_WINDOW
 
 
@@ -990,7 +990,7 @@ async def test_migrate_v3_10_to_v3_11_skips_non_awning(
     options = {"azimuth": 180, "custom_position_sensors_1": ["binary_sensor.door"]}
     entry = _make_entry(hass, dict(options), version=3, minor_version=10)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert CONF_AWNING_SHADE_MODE not in entry.options
     # Cascades on through v3.13, which seeds this blind's default position (#1126).
     assert dict(entry.options) == {**options, CONF_DEFAULT_HEIGHT: 100}
@@ -1065,7 +1065,7 @@ async def test_migrate_v3_11_to_v3_12_repairs_malformed_time(
     """
     entry = _make_entry(hass, {time_key: stored}, version=3, minor_version=11)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options[time_key] == expected
 
 
@@ -1174,7 +1174,7 @@ async def test_migrate_v3_12_to_v3_13_seeds_default_position_for_blind(
         sensor_type=CoverType.BLIND,
     )
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options[CONF_DEFAULT_HEIGHT] == 100
 
 
@@ -1197,7 +1197,7 @@ async def test_migrate_v3_12_to_v3_13_seeds_default_position_for_awning(
         sensor_type=CoverType.AWNING,
     )
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options[CONF_DEFAULT_HEIGHT] == 0
 
 
@@ -1298,7 +1298,7 @@ async def test_migrate_v3_13_unknown_sensor_type_does_not_abort_cascade(
         sensor_type=bad_sensor_type,
     )
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     # The v3.11 → v3.12 sibling repair still landed — proof the cascade
     # continued past the bad sensor_type instead of aborting.
     assert entry.options["end_time"] == "00:00:00"
@@ -1453,7 +1453,7 @@ async def test_migrate_v3_13_advances_to_14_without_seeding(
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert "day_night_concurrent_rail_travel" not in entry.options
     assert entry.options == before
 
@@ -1468,9 +1468,9 @@ async def test_migrate_v3_13_to_v3_14_is_idempotent(hass: HomeAssistant) -> None
     )
     assert await async_migrate_entry(hass, entry) is True
     first = dict(entry.options)
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options == first
 
 
@@ -1486,7 +1486,7 @@ async def test_migrate_v3_13_to_v3_14_preserves_an_explicit_choice(
     )
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options["day_night_concurrent_rail_travel"] is False
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 # ---------------------------------------------------------------------------
@@ -1511,7 +1511,7 @@ async def test_migrate_v3_14_advances_to_15_without_seeding(
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert "day_night_external_command_interlock" not in entry.options
     assert entry.options == before
 
@@ -1526,9 +1526,9 @@ async def test_migrate_v3_14_to_v3_15_is_idempotent(hass: HomeAssistant) -> None
     )
     assert await async_migrate_entry(hass, entry) is True
     first = dict(entry.options)
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options == first
 
 
@@ -1544,7 +1544,7 @@ async def test_migrate_v3_14_to_v3_15_preserves_an_explicit_choice(
     )
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options["day_night_external_command_interlock"] is False
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 # ---------------------------------------------------------------------------
@@ -1571,7 +1571,7 @@ async def test_migrate_v3_15_advances_to_16_without_seeding(
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert "sun_tracking_gate_sensors" not in entry.options
     assert "sun_tracking_gate_template" not in entry.options
     assert "sun_tracking_gate_template_mode" not in entry.options
@@ -1588,9 +1588,9 @@ async def test_migrate_v3_15_to_v3_16_is_idempotent(hass: HomeAssistant) -> None
     )
     assert await async_migrate_entry(hass, entry) is True
     first = dict(entry.options)
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options == first
 
 
@@ -1615,7 +1615,7 @@ async def test_migrate_v3_15_to_v3_16_preserves_a_configured_gate(
         == "{{ is_state('climate.up', 'cool') }}"
     )
     assert entry.options["sun_tracking_gate_template_mode"] == "and"
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 # ---------------------------------------------------------------------------
@@ -1642,7 +1642,7 @@ async def test_migrate_v3_16_advances_to_17_without_seeding(
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert "command_queue" not in entry.options
     assert "command_queue_gap" not in entry.options
     assert entry.options == before
@@ -1658,9 +1658,9 @@ async def test_migrate_v3_16_to_v3_17_is_idempotent(hass: HomeAssistant) -> None
     )
     assert await async_migrate_entry(hass, entry) is True
     first = dict(entry.options)
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options == first
 
 
@@ -1676,7 +1676,7 @@ async def test_migrate_v3_16_to_v3_17_preserves_an_assigned_queue(
     )
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options["command_queue"] == "Facade South"
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 # ---------------------------------------------------------------------------
@@ -1706,7 +1706,7 @@ async def test_migration_3_18_is_noop_and_idempotent(hass: HomeAssistant) -> Non
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options == before
     for n in range(1, 11):
         assert f"custom_position_outside_window_{n}" not in entry.options
@@ -1714,7 +1714,7 @@ async def test_migration_3_18_is_noop_and_idempotent(hass: HomeAssistant) -> Non
     # Idempotent: re-running leaves both the minor and the options alone.
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options == before
 
 
@@ -1730,7 +1730,7 @@ async def test_migrate_v3_17_to_v3_18_preserves_an_opted_in_slot(
     )
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options["custom_position_outside_window_2"] is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 # ---------------------------------------------------------------------------
@@ -1760,7 +1760,7 @@ async def test_migration_3_19_is_noop_and_idempotent(hass: HomeAssistant) -> Non
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options == before
     for key in (
         "solar_properties_enabled",
@@ -1774,7 +1774,7 @@ async def test_migration_3_19_is_noop_and_idempotent(hass: HomeAssistant) -> Non
     # Idempotent: re-running leaves both the minor and the options alone.
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     assert entry.options == before
 
 
@@ -1790,17 +1790,73 @@ async def test_migrate_v3_18_to_v3_19_preserves_configured_solar_options(
     }
     entry = _make_entry(hass, dict(options), version=3, minor_version=18)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
     for key, value in options.items():
         assert entry.options[key] == value
 
 
-async def test_migrate_v1_cascades_to_minor_19(hass: HomeAssistant) -> None:
+# ---------------------------------------------------------------------------
+# v3.19 → v3.20 — additive weather window-scope option (issue #1308)
+# ---------------------------------------------------------------------------
+
+
+async def test_migration_3_20_is_noop_and_idempotent(hass: HomeAssistant) -> None:
+    """A minor-19 entry reaches 3.20 with options byte-identical, twice over.
+
+    ``weather_outside_window`` is deliberately NOT seeded: an absent key
+    already reads as "weather keeps acting outside the time window", which is
+    what every install shipped before #1308 does. The block exists only so
+    entries sitting at minor 19 stop re-triggering migration on every restart.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OUTSIDE_WINDOW
+
+    entry = _make_entry(
+        hass,
+        {
+            "azimuth": 180,
+            CONF_DEFAULT_HEIGHT: 60,
+            CONF_WEATHER_ENABLED: True,
+        },
+        version=3,
+        minor_version=19,
+    )
+    before = dict(entry.options)
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.version == 3
+    assert entry.minor_version == 20
+    assert entry.options == before
+    assert CONF_WEATHER_OUTSIDE_WINDOW not in entry.options
+
+    # Idempotent: re-running leaves both the minor and the options alone.
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.version == 3
+    assert entry.minor_version == 20
+    assert entry.options == before
+
+
+async def test_migrate_v3_19_to_v3_20_preserves_an_explicit_opt_out(
+    hass: HomeAssistant,
+) -> None:
+    """An entry that already scoped weather keeps the stored False verbatim."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OUTSIDE_WINDOW
+
+    entry = _make_entry(
+        hass,
+        {CONF_WEATHER_ENABLED: True, CONF_WEATHER_OUTSIDE_WINDOW: False},
+        version=3,
+        minor_version=19,
+    )
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.minor_version == 20
+    assert entry.options[CONF_WEATHER_OUTSIDE_WINDOW] is False
+
+
+async def test_migrate_v1_cascades_to_minor_20(hass: HomeAssistant) -> None:
     """The oldest entry shape still lands on the current top minor in one pass."""
     entry = _make_entry(hass, {"azimuth": 180}, version=1, minor_version=1)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 19
+    assert entry.minor_version == 20
 
 
 def test_config_flow_major_version_still_three_after_the_solar_bump() -> None:
@@ -1808,4 +1864,4 @@ def test_config_flow_major_version_still_three_after_the_solar_bump() -> None:
     from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
 
     assert ConfigFlowHandler.VERSION == 3
-    assert ConfigFlowHandler.MINOR_VERSION == 19
+    assert ConfigFlowHandler.MINOR_VERSION == 20

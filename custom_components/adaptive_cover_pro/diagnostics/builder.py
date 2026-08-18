@@ -548,8 +548,15 @@ class DiagnosticsBuilder:
         if result is None:
             return render(Reason(ReasonCode.BUILDER_UNKNOWN), labels)
 
-        # Outside time window — pipeline ran but commands are gated
-        if not ctx.check_adaptive_time:
+        # Outside time window — pipeline ran but commands are gated.
+        #
+        # Only when the winner has NO licence to move a cover out here. A
+        # safety result (weather, a priority-100 slot) or an admitted #943-B
+        # constraint IS commanding, and reporting the default/sunset position
+        # plus "commands paused" over a dispatched command is simply false
+        # (issue #1308). Those fall through to the normal render below, which
+        # names the real winner and its real position.
+        if not ctx.check_adaptive_time and not result.acts_outside_clock_window:
             pos = result.default_position
             pos_label = Reason(
                 ReasonCode.FRAGMENT_SUNSET_POSITION

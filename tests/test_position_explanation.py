@@ -108,6 +108,7 @@ def _make_pr(
     default_position: int = 50,
     is_sunset_active: bool = False,
     configured_sunset_pos=None,
+    is_safety: bool = False,
 ) -> PipelineResult:
     """Build a PipelineResult with sensible defaults for explanation tests."""
     return PipelineResult(
@@ -121,6 +122,7 @@ def _make_pr(
         default_position=default_position,
         is_sunset_active=is_sunset_active,
         configured_sunset_pos=configured_sunset_pos,
+        is_safety=is_safety,
     )
 
 
@@ -668,6 +670,29 @@ class TestBuildPositionExplanation:
         assert "default position" in result.lower()
         assert "100%" in result
         assert "commands paused" in result
+
+    def test_explanation_names_a_licensed_winner_outside_the_window(self, builder):
+        """A safety winner IS commanding out here — say so, and say what it sent.
+
+        The closed-clock early return fires on every cycle without consulting
+        ``acts_outside_clock_window``, so whenever weather (or a priority-100
+        slot, or an admitted #943-B bound) holds the outside-window licence the
+        explanation reports the *default/sunset* position and claims "commands
+        paused" while a command is on the wire. The reporter's own diagnostics
+        showed exactly that contradiction next to a dispatched ``open_cover``.
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.WEATHER,
+            reason="weather override active — position 100%",
+            position=100,
+            default_position=0,
+            is_safety=True,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
+        )
+        assert "weather override active" in result.lower()
+        assert "commands paused" not in result
 
     def test_sunset_offset_with_sunset_position(self, builder):
         """In window, is_sunset_active=True → reason from default handler mentions sunset."""

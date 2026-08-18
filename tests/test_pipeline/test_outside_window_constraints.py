@@ -191,6 +191,42 @@ def test_gather_keeps_weather_floor_and_safety_slots_when_clock_closed():
 
 
 @pytest.mark.unit
+def test_weather_floor_stops_binding_outside_the_window_when_scoped():
+    """Seat 2 of #1308: the min-mode floor honours the same opt-out.
+
+    The floor is the OTHER way weather acts out here — it makes the handler
+    defer, so it never rides an ``is_safety`` result and instead claims the
+    window licence through ``AxisConstraint.outside_window``, which the gather
+    used to hard-code True. Gating only the handler would leave every min-mode
+    user with a checkbox that does nothing.
+    """
+    snap = _snapshot(
+        clock_open=False,
+        weather_override_active=True,
+        weather_override_min_mode=True,
+        weather_override_position=60,
+        weather_outside_window=False,
+    )
+    assert gather_axis_constraints(snap) == []
+    assert [c.source for c in _dropped(snap)] == [WeatherOverrideHandler.name]
+
+
+@pytest.mark.unit
+def test_scoped_weather_floor_still_binds_with_the_clock_open():
+    """A window SCOPE, not a second off switch — the floor still clamps by day."""
+    snap = _snapshot(
+        clock_open=True,
+        weather_override_active=True,
+        weather_override_min_mode=True,
+        weather_override_position=60,
+        weather_outside_window=False,
+    )
+    assert [c.source for c in gather_axis_constraints(snap)] == [
+        WeatherOverrideHandler.name
+    ]
+
+
+@pytest.mark.unit
 def test_gather_window_open_is_byte_identical_to_today():
     """With the clock open the filter is inert, whatever the flags say."""
     sensors = [
@@ -1101,6 +1137,157 @@ def test_safety_result_never_also_claims_a_constraint_admission(sensors, weather
     assert result.outside_window_constraint_active is False
     # The licence it does hold is its own, and it is enough.
     assert result.acts_outside_clock_window is True
+
+
+# ---------------------------------------------------------------------------
+# Scoping weather to the clock window (issue #1308)
+# ---------------------------------------------------------------------------
+#
+# ``weather_outside_window=False`` makes the override behave like every other
+# windowed handler out here: it declines, so no result ever carries
+# ``is_safety`` and clause (a) above is simply never reached. Everything the
+# safety machinery does stays byte-identical — the handler just stops handing
+# it a result. The interesting consequence is that a combination which was
+# previously unreachable becomes reachable: with weather standing down the
+# winner is a NON-safety result, so the #943-item-B pseudo-hold can engage.
+
+
+@pytest.mark.unit
+def test_scoped_weather_leaves_the_default_winner_unlicensed_outside_the_window():
+    """The reporter's scenario, end to end through the registry.
+
+    Rain at 19:27, an hour past ``end_time``, on an interior roller blind whose
+    weather position is 100%. Scoped out, weather declines, DEFAULT wins with
+    the end-of-window position, and — being non-safety with no admitted bound —
+    carries no licence, so ``coordinator._dispatch`` leaves the blind where the
+    user put it.
+    """
+    result = PipelineRegistry([WeatherOverrideHandler(), DefaultHandler()]).evaluate(
+        _snapshot(
+            clock_open=False,
+            weather_override_active=True,
+            weather_override_position=100,
+            weather_outside_window=False,
+            default_position=0,
+            policy=get_policy("cover_blind"),
+            current_cover_position=0,
+            cover_positions={"cover.a": 0},
+        )
+    )
+    assert result.control_method is ControlMethod.DEFAULT
+    assert result.position == 0
+    assert result.is_safety is False
+    assert result.acts_outside_clock_window is False
+
+
+@pytest.mark.unit
+def test_pseudo_hold_engages_when_scoped_weather_stands_down():
+    """The one genuinely new combination this option makes reachable.
+
+    Before #1308, a closed-clock cycle with weather active always produced an
+    ``is_safety`` winner, and ``registry._as_outside_window_pseudo_hold``
+    declines for those — so an opted-in bound alongside a configured weather
+    override never got to engage. With weather scoped out the winner is an
+    ordinary DEFAULT result, the pseudo-hold engages exactly as it would for
+    any other declining windowed handler, and #1165's separation still holds
+    because ``is_safety`` is simply never set.
+    """
+    result = PipelineRegistry([WeatherOverrideHandler(), DefaultHandler()]).evaluate(
+        _snapshot(
+            sensors=[_slot(position_max=30, outside_window=True)],
+            clock_open=False,
+            weather_override_active=True,
+            weather_override_position=100,
+            weather_outside_window=False,
+            default_position=100,
+            policy=get_policy("cover_blind"),
+            current_cover_position=80,
+            cover_positions={"cover.a": 80},
+        )
+    )
+    assert result.control_method is ControlMethod.DEFAULT
+    assert result.outside_window_constraint_active is True
+    assert result.is_safety is False
+    assert result.acts_outside_clock_window is True
+    # The DEFAULT winner's own 100 stays off the wire; only the bound edge goes.
+    assert result.hold_clamp_verdicts["cover.a"].target == 30
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "sensors",
+    [
+        pytest.param(
+            [
+                _slot(
+                    position=40, min_mode=True, priority=CUSTOM_POSITION_SAFETY_PRIORITY
+                )
+            ],
+            id="safety-floor",
+        ),
+        pytest.param(
+            [_slot(tilt_min=50, outside_window=True)], id="flagged-slot-bound"
+        ),
+    ],
+)
+def test_scoped_weather_never_co_writes_safety_and_the_admission(sensors):
+    """The #1226/#1165 separation survives the scoped-out winner swap.
+
+    Mirror of ``test_safety_result_never_also_claims_a_constraint_admission``
+    with weather scoped out: the winner is no longer a safety result, so the
+    ONLY licence available out here is the constraint admission — and it is
+    never accompanied by ``is_safety``. Whichever way the admission lands, the
+    two flags keep their own lifetimes.
+    """
+    result = PipelineRegistry([WeatherOverrideHandler(), DefaultHandler()]).evaluate(
+        _snapshot(
+            sensors=sensors,
+            clock_open=False,
+            policy=get_policy("cover_blind"),
+            weather_override_active=True,
+            weather_override_position=90,
+            weather_outside_window=False,
+            default_position=100,
+            current_cover_position=10,
+            cover_positions={"cover.a": 10},
+        )
+    )
+    assert result.is_safety is False
+    assert result.acts_outside_clock_window is result.outside_window_constraint_active
+
+
+@pytest.mark.unit
+def test_scoped_min_mode_floor_is_not_admitted_beside_a_slot_bound():
+    """Seat 2 drops out of the admitted set; the slot's own claim carries on.
+
+    Both claims reach ``_gather_all`` on this cycle. Scoping weather out must
+    remove only the weather floor — an opted-in slot bound is a separate
+    opt-in and keeps its licence, so the cycle still acts, just not on
+    weather's terms.
+    """
+    snap = _snapshot(
+        sensors=[_slot(position_max=30, outside_window=True)],
+        clock_open=False,
+        policy=get_policy("cover_blind"),
+        weather_override_active=True,
+        weather_override_min_mode=True,
+        weather_override_position=60,
+        weather_outside_window=False,
+        default_position=100,
+        current_cover_position=80,
+        cover_positions={"cover.a": 80},
+    )
+    kept = gather_axis_constraints(snap)
+    assert [c.source for c in kept] == ["custom_position_1"]
+    assert WeatherOverrideHandler.name not in {c.source for c in kept}
+
+    result = PipelineRegistry([WeatherOverrideHandler(), DefaultHandler()]).evaluate(
+        snap
+    )
+    assert result.is_safety is False
+    assert result.outside_window_constraint_active is True
+    assert result.acts_outside_clock_window is True
+    assert result.hold_clamp_verdicts["cover.a"].target == 30
 
 
 # ---------------------------------------------------------------------------

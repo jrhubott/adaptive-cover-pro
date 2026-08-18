@@ -95,7 +95,8 @@
     "custom_and_no_sensors": "⚠️ {label}: combine mode AND is set but no trigger sensors are configured — the template alone activates the slot.",
     "group_empty": "⚠️ This group has no members — it will not command anything.",
     "forecast_source_no_weather_entity": "⚠️ Outdoor-temperature source is forecast-based but no weather entity is configured — the forecast will silently fall back to the live reading. Configure a weather entity in Weather, Light & Cloud.",
-    "travel_time_unmeasurable": "⚠️ {entities} report an assumed state, so their travel time cannot be measured and none has been entered — dashboards will not show them moving. Enter a time under Calibration → Travel Time."
+    "travel_time_unmeasurable": "⚠️ {entities} report an assumed state, so their travel time cannot be measured and none has been entered — dashboards will not show them moving. Enter a time under Calibration → Travel Time.",
+    "weather_window_scoped": "⚠️ Weather safety only acts inside the time window — outside it the cover follows the end-of-window / sunset position instead, and weather will not protect it overnight."
   },
   "motion": {
     "template_source": "occupancy template",

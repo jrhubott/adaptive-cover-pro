@@ -233,6 +233,40 @@ def test_solar_keys_are_service_settable(key: str) -> None:
 
 
 @pytest.mark.unit
+def test_weather_outside_window_is_service_settable() -> None:
+    """The #1308 opt-out must be reachable from ``set_weather_safety``.
+
+    Same convention as every other weather key: a FIELD_VALIDATORS entry with
+    no service seat is dead code, and the option would only ever be settable
+    through the options flow.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_OUTSIDE_WINDOW,
+    )
+    from custom_components.adaptive_cover_pro.services.options_service import (
+        ALL_SETTABLE_KEYS,
+    )
+
+    assert CONF_WEATHER_OUTSIDE_WINDOW in FIELD_VALIDATORS
+    assert CONF_WEATHER_OUTSIDE_WINDOW in ALL_SETTABLE_KEYS
+
+
+@pytest.mark.unit
+def test_weather_outside_window_selector_defaults_to_acting_outside() -> None:
+    """The weather step offers the opt-out, pre-ticked to today's behaviour."""
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_OUTSIDE_WINDOW,
+    )
+
+    markers = {str(marker): marker for marker in weather_override_schema().schema}
+    assert CONF_WEATHER_OUTSIDE_WINDOW in markers
+    assert markers[CONF_WEATHER_OUTSIDE_WINDOW].default() is True
+
+
+@pytest.mark.unit
 def test_solar_g_total_is_clearable() -> None:
     """The optional override must round-trip a cleared value (#1267)."""
     from custom_components.adaptive_cover_pro.config_fields import FIELD_SPECS

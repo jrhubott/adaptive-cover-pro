@@ -92,6 +92,7 @@ from ..const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
+    CONF_WEATHER_OUTSIDE_WINDOW,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_STATE,
@@ -113,6 +114,7 @@ from ..const import (
     DEFAULT_MOTION_TIMEOUT_MODE,
     DEFAULT_OUTSIDE_TEMP_SOURCE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
+    DEFAULT_WEATHER_OUTSIDE_WINDOW,
 )
 from ..cover_types.base import axis_inverted
 from ..engine.climate_crossings import resolve_extreme_heat_active
@@ -867,6 +869,9 @@ class PipelineSnapshotBuilder:
             weather_override_position=options.get(CONF_WEATHER_OVERRIDE_POSITION, 0),
             weather_override_min_mode=bool(
                 options.get(CONF_WEATHER_OVERRIDE_MIN_MODE, False)
+            ),
+            weather_outside_window=bool(
+                options.get(CONF_WEATHER_OUTSIDE_WINDOW, DEFAULT_WEATHER_OUTSIDE_WINDOW)
             ),
             weather_override_priority=resolve_handler_priority(
                 options, WeatherOverrideHandler.name

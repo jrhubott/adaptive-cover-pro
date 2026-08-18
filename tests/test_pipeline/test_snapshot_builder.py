@@ -1749,6 +1749,30 @@ def test_build_falls_back_to_the_weather_class_default_priority():
     assert snapshot.weather_override_priority == WeatherOverrideHandler.priority
 
 
+@pytest.mark.unit
+def test_weather_outside_window_defaults_true_when_absent():
+    """An entry that never saw the option keeps weather's night shift (#1308)."""
+    from custom_components.adaptive_cover_pro.const import (
+        DEFAULT_WEATHER_OUTSIDE_WINDOW,
+    )
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(builder, {})
+    assert snapshot.weather_outside_window is DEFAULT_WEATHER_OUTSIDE_WINDOW is True
+
+
+@pytest.mark.unit
+def test_weather_outside_window_reads_the_stored_false():
+    """The opt-out has to cross the HA boundary to reach either weather seat."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_OUTSIDE_WINDOW,
+    )
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(builder, {CONF_WEATHER_OUTSIDE_WINDOW: False})
+    assert snapshot.weather_outside_window is False
+
+
 # ---------------------------------------------------------------------------
 # Per-entity cover positions reach the snapshot (issue #1174)
 # ---------------------------------------------------------------------------
