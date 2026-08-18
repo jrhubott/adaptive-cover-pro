@@ -1777,7 +1777,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "cloud.irradiance_no_thresh": "irradiance ({entity})",
     "cloud.coverage": "cloud > {thresh}%",
     "cloud.coverage_no_thresh": "cloud ({entity})",
-    "cloud.weather_in": "weather in {{{states}}}",
+    "cloud.weather_in": "weather not in {{{states}}}",
     "cloud.when": " when {parts}",
     "cloud.fallback_cloudy": "cloudy position {pos}%",
     "cloud.fallback_default": "default ({default_pos}%)",

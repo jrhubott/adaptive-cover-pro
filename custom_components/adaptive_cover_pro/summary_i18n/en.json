@@ -110,7 +110,7 @@
     "irradiance_no_thresh": "irradiance ({entity})",
     "coverage": "cloud > {thresh}%",
     "coverage_no_thresh": "cloud ({entity})",
-    "weather_in": "weather in {{{states}}}",
+    "weather_in": "weather not in {{{states}}}",
     "when": " when {parts}",
     "fallback_cloudy": "cloudy position {pos}%",
     "fallback_default": "default ({default_pos}%)",

@@ -3086,7 +3086,7 @@ def test_custom_position_tilt_only_with_bound_no_no_effect_warning():
 
 
 def test_weather_state_list_in_cloud_line():
-    """CONF_WEATHER_STATE list renders as 'weather in {state, state}' on the cloud line."""
+    """CONF_WEATHER_STATE list renders as 'weather not in {state, state}' on the cloud line."""
     from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE
 
     cfg = {
@@ -3095,7 +3095,7 @@ def test_weather_state_list_in_cloud_line():
         CONF_WEATHER_STATE: ["cloudy", "rainy"],
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "weather in {cloudy, rainy}" in summary
+    assert "weather not in {cloudy, rainy}" in summary
 
 
 def test_outside_threshold_shown_on_climate_line():
