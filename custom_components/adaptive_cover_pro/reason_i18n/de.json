@@ -114,6 +114,7 @@
     "no_glare_zones": "keine aktiven Blendungszonen oder Sonne außerhalb des Akzeptanzwinkels",
     "cloud_skipped": "Wolkenunterdrückung übersprungen (Sonne außerhalb des Akzeptanzwinkels)",
     "cloud_inactive": "Wolkenunterdrückung inaktiv (direkte Sonne vorhanden oder Funktion deaktiviert)",
+    "cloud_deferred_extreme_heat": "Wolkenunterdrückung zurückgestellt — Extremhitze-Halteposition hat Vorrang",
     "weather_not_active": "Wetter-Außerkraftsetzung nicht aktiv",
     "custom_not_active": "benutzerdefinierte Position #{slot} nicht aktiv",
     "always_matches": "entspricht immer",

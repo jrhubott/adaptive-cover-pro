@@ -15,9 +15,9 @@ import numpy as np
 from ...cover_types import get_policy
 from ...cover_types.base import AXIS_NAME_TILT, CoverTypePolicy
 from ...engine.climate_crossings import (
-    extreme_heat_crossing,
     outside_high_crossing,
     resolve_current_temperature,
+    resolve_extreme_heat_active,
     summer_warm_crossing,
     winter_crossing,
 )
@@ -161,11 +161,9 @@ class ClimateCoverData:
         False when the feature is off (threshold None), the outside reading is
         unavailable (None), or either value is non-numeric.
         """
-        if self.extreme_heat_active is not None:
-            return self.extreme_heat_active
-        return extreme_heat_crossing(
-            self.outside_temperature, self.temp_extreme_heat, None
-        )[0]
+        return resolve_extreme_heat_active(
+            self.outside_temperature, self.temp_extreme_heat, self.extreme_heat_active
+        )
 
     @property
     def is_low_light(self) -> bool:

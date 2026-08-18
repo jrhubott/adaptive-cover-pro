@@ -28,6 +28,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_POS,
     CONF_SUNSET_TIME_ENTITY,
+    CONF_TEMP_EXTREME_HEAT,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     CONF_TRACKING_SEASONS,
@@ -972,6 +973,101 @@ def test_build_climate_temp_flags_default_none():
         is_sunset_active=False,
     )
     assert snapshot.climate_temp_flags is None
+
+
+@pytest.mark.unit
+def test_build_threads_climate_extreme_heat_active():
+    """build() resolves climate_extreme_heat_active when Climate Mode is on (#1272).
+
+    The carve-out CloudSuppressionHandler reads must be gated on Climate Mode
+    (``switch_mode``) so an install with Climate Mode off can never get a
+    spurious defer — see the sibling ``_disabled`` test.
+    """
+    builder, _, _ = _make_builder(switch_mode=True)
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    readings = ClimateReadings(
+        outside_temperature=40.0,
+        inside_temperature=22.0,
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+    )
+    snapshot = builder.build(
+        {CONF_DEFAULT_HEIGHT: 0, CONF_TEMP_EXTREME_HEAT: 35.0},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=readings,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.climate_extreme_heat_active is True
+
+
+@pytest.mark.unit
+def test_build_climate_extreme_heat_active_false_when_climate_mode_disabled():
+    """Climate Mode off must never produce a spurious defer (#1272)."""
+    builder, _, _ = _make_builder(switch_mode=False)
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    readings = ClimateReadings(
+        outside_temperature=40.0,
+        inside_temperature=22.0,
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+    )
+    snapshot = builder.build(
+        {CONF_DEFAULT_HEIGHT: 0, CONF_TEMP_EXTREME_HEAT: 35.0},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=readings,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.climate_extreme_heat_active is False
+
+
+@pytest.mark.unit
+def test_build_climate_extreme_heat_active_default_false():
+    """No climate config at all → climate_extreme_heat_active stays False (#1272)."""
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    snapshot = builder.build(
+        {CONF_DEFAULT_HEIGHT: 0},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.climate_extreme_heat_active is False
 
 
 @pytest.mark.unit

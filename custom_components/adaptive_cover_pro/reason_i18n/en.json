@@ -114,6 +114,7 @@
     "no_glare_zones": "no active glare zones or sun outside acceptance angle",
     "cloud_skipped": "cloud suppression skipped (sun outside acceptance angle)",
     "cloud_inactive": "cloud suppression inactive (direct sun present or feature disabled)",
+    "cloud_deferred_extreme_heat": "cloud suppression deferred — extreme-heat hold takes precedence",
     "weather_not_active": "weather override not active",
     "custom_not_active": "custom position #{slot} not active",
     "always_matches": "always matches",
