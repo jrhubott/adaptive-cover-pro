@@ -2197,6 +2197,7 @@ class ReasonCode(StrEnum):
     SKIP_NO_GLARE_ZONES = "skip.no_glare_zones"
     SKIP_CLOUD_SKIPPED = "skip.cloud_skipped"
     SKIP_CLOUD_INACTIVE = "skip.cloud_inactive"
+    SKIP_CLOUD_DEFERRED_EXTREME_HEAT = "skip.cloud_deferred_extreme_heat"
     SKIP_WEATHER_NOT_ACTIVE = "skip.weather_not_active"
     SKIP_CUSTOM_NOT_ACTIVE = "skip.custom_not_active"
     SKIP_ALWAYS_MATCHES = "skip.always_matches"

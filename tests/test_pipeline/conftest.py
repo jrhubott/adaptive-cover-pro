@@ -104,6 +104,7 @@ def make_snapshot(
     group_intent=None,
     cloud_suppression_active: bool | None = None,
     climate_temp_flags=None,
+    climate_extreme_heat_active: bool = False,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
@@ -187,4 +188,5 @@ def make_snapshot(
         group_intent=group_intent,
         cloud_suppression_active=cloud_suppression_active,
         climate_temp_flags=climate_temp_flags,
+        climate_extreme_heat_active=climate_extreme_heat_active,
     )

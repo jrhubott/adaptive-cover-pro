@@ -115,6 +115,7 @@ from ..const import (
     DEFAULT_TEMPLATE_COMBINE_MODE,
 )
 from ..cover_types.base import axis_inverted
+from ..engine.climate_crossings import resolve_extreme_heat_active
 from ..helpers import (
     _read_current_effective_default,
     custom_position_slot_configured,
@@ -827,6 +828,25 @@ class PipelineSnapshotBuilder:
         )
         solar_floor_active = not all_positionable
 
+        # Already-gated, already-resolved extreme-heat condition (issue #1272):
+        # the same smoothed-or-raw fallback ClimateCoverData.is_extreme_heat
+        # uses, AND gated on climate_mode_enabled so a Climate-Mode-off install
+        # can never get a spurious cloud-suppression defer.
+        climate_options = self.build_climate_options(options)
+        climate_extreme_heat_active = bool(
+            self._toggles.switch_mode
+            and climate_readings is not None
+            and resolve_extreme_heat_active(
+                climate_readings.outside_temperature,
+                climate_options.temp_extreme_heat,
+                (
+                    climate_temp_flags.extreme_heat
+                    if climate_temp_flags is not None
+                    else None
+                ),
+            )
+        )
+
         return PipelineSnapshot(
             cover=cover_data,
             config=cover_data.config,
@@ -839,7 +859,8 @@ class PipelineSnapshotBuilder:
             # never accessible to pipeline handler logic.
             climate_readings=climate_readings,
             climate_mode_enabled=self._toggles.switch_mode,
-            climate_options=self.build_climate_options(options),
+            climate_options=climate_options,
+            climate_extreme_heat_active=climate_extreme_heat_active,
             manual_override_active=manual_override_active,
             motion_timeout_active=motion_timeout_active,
             weather_override_active=weather_override_active,

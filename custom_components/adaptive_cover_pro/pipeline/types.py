@@ -580,6 +580,18 @@ class PipelineSnapshot:
     # comparison for its crossing.
     climate_temp_flags: ClimateTempFlags | None = None
 
+    # Already-gated, already-resolved extreme-heat condition (issue #1272).
+    # Resolved once per cycle by SnapshotBuilder via the same
+    # ``engine.climate_crossings.resolve_extreme_heat_active`` helper
+    # ``ClimateCoverData.is_extreme_heat`` delegates to (smoothed flag when
+    # present, else the raw outside-temperature crossing) — AND gated on
+    # ``climate_mode_enabled`` (the master Climate Mode switch), which
+    # ``climate_temp_flags`` alone does not carry. CloudSuppressionHandler
+    # reads this directly to defer to the extreme-heat hold; never recompute
+    # it elsewhere. Defaults False so snapshots that don't set it behave
+    # exactly as before.
+    climate_extreme_heat_active: bool = False
+
 
 # ---------------------------------------------------------------------------
 # Output types

@@ -222,6 +222,9 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ReasonCode.SKIP_CLOUD_INACTIVE: (
         "cloud suppression inactive (direct sun present or feature disabled)"
     ),
+    ReasonCode.SKIP_CLOUD_DEFERRED_EXTREME_HEAT: (
+        "cloud suppression deferred — extreme-heat hold takes precedence"
+    ),
     ReasonCode.SKIP_WEATHER_NOT_ACTIVE: "weather override not active",
     ReasonCode.SKIP_CUSTOM_NOT_ACTIVE: "custom position #{slot} not active",
     ReasonCode.SKIP_ALWAYS_MATCHES: "always matches",

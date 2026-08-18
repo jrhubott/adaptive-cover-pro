@@ -438,6 +438,11 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         {},
         "cloud suppression inactive (direct sun present or feature disabled)",
     ),
+    (
+        ReasonCode.SKIP_CLOUD_DEFERRED_EXTREME_HEAT,
+        {},
+        "cloud suppression deferred — extreme-heat hold takes precedence",
+    ),
     (ReasonCode.SKIP_WEATHER_NOT_ACTIVE, {}, "weather override not active"),
     (
         ReasonCode.SKIP_CUSTOM_NOT_ACTIVE,

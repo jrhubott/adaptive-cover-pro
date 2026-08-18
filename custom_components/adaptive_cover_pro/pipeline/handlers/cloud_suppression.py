@@ -48,6 +48,13 @@ class CloudSuppressionHandler(OverrideHandler):
             return None
         if not snapshot.cover.direct_sun_valid:
             return None
+        if snapshot.climate_extreme_heat_active:
+            # Issue #1272: a narrow carve-out, not a priority reordering. Cloud
+            # suppression (60) still outranks climate (50) for every other
+            # branch; only when climate would produce EXTREME_HEAT this same
+            # cycle does suppression stand down so the heat hold isn't briefly
+            # overridden by the default/cloudy position.
+            return None
         if not snapshot.cloud_suppression_active:
             return None
 
@@ -110,4 +117,6 @@ class CloudSuppressionHandler(OverrideHandler):
             return Reason(ReasonCode.SKIP_OUTSIDE_WINDOW)
         if not snapshot.cover.direct_sun_valid:
             return Reason(ReasonCode.SKIP_CLOUD_SKIPPED)
+        if snapshot.climate_extreme_heat_active:
+            return Reason(ReasonCode.SKIP_CLOUD_DEFERRED_EXTREME_HEAT)
         return Reason(ReasonCode.SKIP_CLOUD_INACTIVE)
