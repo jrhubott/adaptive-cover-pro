@@ -2029,3 +2029,437 @@ class TestExtremeHeatRule:
         result = sh.normal_with_presence()
         assert result == 0
         assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+
+# ---------------------------------------------------------------------------
+# Climate tilt honours the calibrated scale (issue #1222, defect 2)
+# ---------------------------------------------------------------------------
+# ``TiltPolicy.climate_tilt_percentage`` used to test only "is this MODE2?" and
+# fall back to a hardcoded 90° denominator otherwise. ``specify_angles`` is not
+# MODE2, so a calibrated cover's climate tilt was computed on MODE1's scale and
+# ignored ``tilt_angle_0``/``tilt_angle_100`` outright — the solar path honoured
+# the calibration and the climate path silently did not. Passing the engine lets
+# it answer from the same map both paths already share.
+
+
+def _climate_tilt_engine(mock_logger, mock_sun_data, **tilt_overrides):
+    """Tilt engine at a fixed geometry; only the tilt scale varies per case."""
+    return build_tilt_cover(
+        logger=mock_logger,
+        sol_azi=180.0,
+        sol_elev=45.0,
+        sunset_pos=0,
+        sunset_off=0,
+        sunrise_off=0,
+        sun_data=mock_sun_data,
+        fov_left=90,
+        fov_right=90,
+        win_azi=180,
+        h_def=50,
+        max_pos=100,
+        min_pos=0,
+        max_pos_bool=False,
+        min_pos_bool=False,
+        blind_spot_left=None,
+        blind_spot_right=None,
+        blind_spot_elevation=None,
+        blind_spot_on=False,
+        min_elevation=None,
+        max_elevation=None,
+        slat_distance=0.02,
+        depth=0.03,
+        **tilt_overrides,
+    )
+
+
+class TestClimateTiltHonoursTheCalibratedScale:
+    """The climate angle→percent translation reads the engine's map (#1222)."""
+
+    @pytest.mark.unit
+    def test_climate_tilt_honours_specify_angles_calibration(
+        self, mock_logger, mock_sun_data
+    ):
+        """A 0°/130° cover reaches 45° at 35 %, not at the MODE1 scale's 50 %."""
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_SUMMER_TILT_ANGLE,
+        )
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=0.0,
+            angle_100=130.0,
+        )
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=CLIMATE_SUMMER_TILT_ANGLE,
+                mode=cover.mode,
+                cover=cover,
+            )
+            == 35
+        )
+
+    @pytest.mark.unit
+    def test_climate_tilt_honours_the_midpoint(self, mock_logger, mock_sun_data):
+        """With horizontal calibrated to 50 %, a 45° slat is a quarter of travel."""
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_SUMMER_TILT_ANGLE,
+        )
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=0.0,
+            angle_100=130.0,
+            horizontal_percent=50.0,
+        )
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=CLIMATE_SUMMER_TILT_ANGLE,
+                mode=cover.mode,
+                cover=cover,
+            )
+            == 25
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("mode", ["mode1", "mode2"])
+    @pytest.mark.parametrize("sun_through", [False, True])
+    def test_preset_modes_answer_identically_with_and_without_the_engine(
+        self, mock_logger, mock_sun_data, mode, sun_through
+    ):
+        """Passing the engine must be a no-op wherever the scale is a preset.
+
+        The hemisphere mirror is gated on the pivot being strictly interior, so
+        MODE1 (pivot 100 %) declines it exactly as the static formula's early
+        return did, and MODE2 (pivot 50 %) takes it exactly as before.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_DEFAULT_TILT_ANGLE,
+            CLIMATE_SUMMER_TILT_ANGLE,
+        )
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = _climate_tilt_engine(mock_logger, mock_sun_data, mode=mode)
+        for angle_deg in (CLIMATE_SUMMER_TILT_ANGLE, CLIMATE_DEFAULT_TILT_ANGLE):
+            without = TiltPolicy.climate_tilt_percentage(
+                angle_deg=angle_deg, mode=mode, sun_through=sun_through
+            )
+            with_engine = TiltPolicy.climate_tilt_percentage(
+                angle_deg=angle_deg,
+                mode=mode,
+                sun_through=sun_through,
+                cover=cover,
+            )
+            assert with_engine == without
+
+    @pytest.mark.unit
+    def test_winter_mirror_lands_on_the_calibrated_open_hemisphere(
+        self, mock_logger, mock_sun_data
+    ):
+        """``sun_through`` mirrors across horizontal on the calibrated scale too.
+
+        The mirror is an ANGLE operation (90° + beta), so it has to happen
+        before the map, not on the percentage — on a hinged scale the two are
+        not the same thing.
+        """
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=0.0,
+            angle_100=130.0,
+            horizontal_percent=50.0,
+        )
+        # 90° + 20° = 110°, which the upper segment puts halfway to 100 %.
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=20.0, mode=cover.mode, sun_through=True, cover=cover
+            )
+            == 75
+        )
+
+    @pytest.mark.unit
+    def test_degenerate_calibration_falls_back_to_the_static_formula(
+        self, mock_logger, mock_sun_data
+    ):
+        """A zero-width scale has no map, so the engine declines and the
+        mode-based formula answers as it always did.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_SUMMER_TILT_ANGLE,
+        )
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=90.0,
+            angle_100=90.0,
+        )
+        assert cover.coverage_pivot_percentage() is None
+        assert TiltPolicy.climate_tilt_percentage(
+            angle_deg=CLIMATE_SUMMER_TILT_ANGLE, mode=cover.mode, cover=cover
+        ) == TiltPolicy.climate_tilt_percentage(
+            angle_deg=CLIMATE_SUMMER_TILT_ANGLE, mode=cover.mode
+        )
+
+
+# ---------------------------------------------------------------------------
+# The wiring itself, end to end (#1222 audit)
+# ---------------------------------------------------------------------------
+# The three ``cover=ctx.cover`` arguments in ``climate_modes`` are the only
+# thing that makes the calibrated-scale fix reach production, and every test
+# above calls ``TiltPolicy.climate_tilt_percentage`` directly with an explicit
+# ``cover=``. These drive ``ClimateCoverState.tilt_state()`` instead, on REAL
+# engines whose scale disagrees with the mode-based fallback, so dropping any
+# one of the three arguments changes the number that comes out of the router.
+#
+# ``specify_angles`` reaches two of the three rules. It cannot reach the third:
+# the winter branch is gated on ``is_tilt_mode2``, and a calibrated cover is not
+# MODE2. A louvered roof IS MODE2 and still has a rescaled travel, so it is the
+# engine that opens that door — and it pins the #1222-audit louvered-roof
+# behaviour change at the pipeline level while it is there.
+
+
+def _rescaled_louvered_roof(sol_elev: float):
+    """Build a MODE2 pergola whose 140° drive disagrees with MODE2's formula."""
+    from tests.cover_helpers import build_louvered_roof_cover
+
+    return build_louvered_roof_cover(
+        sol_azi=180.0,
+        sol_elev=sol_elev,
+        roof_pitch=0.0,
+        mode="mode2",
+        max_slat_angle=140,
+    )
+
+
+class TestClimateRoutersHandTheEngineOver:
+    """``tilt_state()`` answers on the cover's own scale, not the mode's (#1222)."""
+
+    @pytest.mark.unit
+    def test_summer_cooling_uses_the_calibrated_scale(self, mock_logger, mock_sun_data):
+        """``_tilt_summer`` on a 0°/130° venetian: 35 %, not MODE1's 50 %."""
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=0.0,
+            angle_100=130.0,
+        )
+        with patch.object(
+            type(cover), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+            state = ClimateCoverState(
+                make_snapshot_for_cover(cover, cover.config.h_def),
+                _make_climate(
+                    policy=get_policy("cover_tilt"),
+                    inside_temperature="27.0",
+                    outside_temperature="30.0",
+                    temp_high=25.0,
+                    temp_summer_outside=22.0,
+                    is_presence=True,
+                    is_sunny=True,
+                ),
+            )
+            result = state.tilt_state()
+
+        assert state.climate_strategy.name == "SUMMER_COOLING"
+        assert result == 35
+
+    @pytest.mark.unit
+    def test_glare_fallback_default_tilt_uses_the_calibrated_scale(
+        self, mock_logger, mock_sun_data
+    ):
+        """``_tilt_default`` on the same venetian: 80° is 62 %, not 89 %."""
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=0.0,
+            angle_100=130.0,
+        )
+        with patch.object(
+            type(cover), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+            state = ClimateCoverState(
+                make_snapshot_for_cover(cover, cover.config.h_def),
+                _make_climate(
+                    policy=get_policy("cover_tilt"),
+                    inside_temperature="22.0",
+                    outside_temperature="22.0",
+                    is_presence=True,
+                    is_sunny=True,
+                ),
+            )
+            result = state.tilt_state()
+
+        assert state.climate_strategy.name == "GLARE_CONTROL"
+        assert result == 62
+
+    @pytest.mark.unit
+    def test_winter_heating_mirror_uses_the_rescaled_travel(self):
+        """``_tilt_winter_mode2`` on a 140° pergola: β=30° mirrors to 86 %.
+
+        MODE2's formula answers 67 % — ``(90 + 30)/180`` — on a drive whose
+        travel is 140°, not 180°. The engine puts the same 120° slat at 86 % of
+        the travel it actually has.
+        """
+        cover = _rescaled_louvered_roof(sol_elev=60.0)
+        assert float(np.rad2deg(cover.beta)) == pytest.approx(30.0)
+
+        with patch.object(
+            type(cover), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+            state = ClimateCoverState(
+                make_snapshot_for_cover(cover, cover.config.h_def),
+                _make_climate(
+                    policy=get_policy("cover_louvered_roof"),
+                    inside_temperature="15.0",
+                    outside_temperature="5.0",
+                    temp_low=20.0,
+                    is_presence=False,
+                    is_sunny=True,
+                ),
+            )
+            result = state.tilt_state()
+
+        assert state.climate_strategy.name == "WINTER_HEATING"
+        assert result == 86
+
+
+# ---------------------------------------------------------------------------
+# A drive short of the climate target, through the real router (#1222 audit)
+# ---------------------------------------------------------------------------
+# ``TestADriveShortOfTheTargetKeepsItsOwnEnd`` in
+# ``tests/test_adaptive_tilt_cover.py`` pins the engine's answer. These drive
+# ``ClimateCoverState.tilt_state()`` so the whole route is covered: the climate
+# router picks ``_tilt_default`` (GLARE_CONTROL) or ``_tilt_summer``
+# (SUMMER_COOLING), each hands the engine over, and the engine's own scale
+# decides. A louvered roof reaches them on a PRESET mode — nothing about this
+# needs the opt-in three-point calibration.
+
+
+def _short_louvered_roof(max_slat_angle: int, mode: str = "mode1"):
+    """Build a pergola whose drive stops short of ``CLIMATE_DEFAULT_TILT_ANGLE``."""
+    from tests.cover_helpers import build_louvered_roof_cover
+
+    return build_louvered_roof_cover(
+        sol_azi=180.0,
+        sol_elev=45.0,
+        roof_pitch=0.0,
+        mode=mode,
+        max_slat_angle=max_slat_angle,
+    )
+
+
+def _glare_control(cover, policy_name):
+    """Run ``tilt_state()`` down the GLARE_CONTROL catch-all for *cover*."""
+    with patch.object(type(cover), "valid", new_callable=PropertyMock) as mock_valid:
+        mock_valid.return_value = True
+        state = ClimateCoverState(
+            make_snapshot_for_cover(cover, cover.config.h_def),
+            _make_climate(
+                policy=get_policy(policy_name),
+                inside_temperature="22.0",
+                outside_temperature="22.0",
+                is_presence=True,
+                is_sunny=True,
+            ),
+        )
+        result = state.tilt_state()
+    assert state.climate_strategy.name == "GLARE_CONTROL"
+    return result
+
+
+def _summer_cooling(cover, policy_name):
+    """Run ``tilt_state()`` down the SUMMER_COOLING branch for *cover*."""
+    with patch.object(type(cover), "valid", new_callable=PropertyMock) as mock_valid:
+        mock_valid.return_value = True
+        state = ClimateCoverState(
+            make_snapshot_for_cover(cover, cover.config.h_def),
+            _make_climate(
+                policy=get_policy(policy_name),
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                is_presence=True,
+                is_sunny=True,
+            ),
+        )
+        result = state.tilt_state()
+    assert state.climate_strategy.name == "SUMMER_COOLING"
+    return result
+
+
+class TestAShortDriveIsNotSentFullyClosed:
+    """The router's answer on a drive that cannot reach the target (#1222)."""
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("mode", ["mode1", "mode2"])
+    @pytest.mark.parametrize("max_slat_angle", [45, 60, 70, 79, 80])
+    def test_glare_control_opens_a_short_pergola_to_its_top_end(
+        self, mode, max_slat_angle
+    ):
+        """80° is past every one of these drives, so all of them answer 100 %.
+
+        ``max_slat_angle = 80`` is the crossover — the last drive whose top rail
+        IS the target. The four below it overshoot, and every one of them must
+        still come out of the router at its top end rather than swinging to the
+        fully-closed rail.
+        """
+        assert (
+            _glare_control(
+                _short_louvered_roof(max_slat_angle, mode), "cover_louvered_roof"
+            )
+            == 100
+        )
+
+    @pytest.mark.unit
+    def test_summer_cooling_opens_a_very_short_pergola_to_its_top_end(self):
+        """A 30° drive cannot reach 45° either, and answers its top end."""
+        assert _summer_cooling(_short_louvered_roof(30), "cover_louvered_roof") == 100
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("angle_0", "angle_100", "expected"),
+        [(0.0, 45.0, 100), (0.0, 60.0, 100), (20.0, 70.0, 100), (0.0, 30.0, 100)],
+    )
+    def test_glare_control_on_a_calibration_below_horizontal(
+        self, mock_logger, mock_sun_data, angle_0, angle_100, expected
+    ):
+        """The ``specify_angles`` half of the same case, through the router."""
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=angle_0,
+            angle_100=angle_100,
+        )
+        assert _glare_control(cover, "cover_tilt") == expected
+
+    @pytest.mark.unit
+    def test_summer_cooling_on_a_calibration_below_horizontal(
+        self, mock_logger, mock_sun_data
+    ):
+        """A 0°/30° venetian cannot reach 45° under summer cooling either."""
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=0.0,
+            angle_100=30.0,
+        )
+        assert _summer_cooling(cover, "cover_tilt") == 100

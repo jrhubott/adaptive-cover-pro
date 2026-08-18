@@ -9,7 +9,7 @@ from math import ceil, cos, floor, radians
 
 from ...config_context_adapter import ConfigContextAdapter
 from ...config_types import CoverConfig
-from ...const import ReasonCode
+from ...const import VERTICAL_GLASS_PITCH_DEG, ReasonCode
 from ...reason_i18n import Reason, render_en
 from ...sun import SunData
 from ..sun_geometry import SunGeometry, azimuth_within_fov
@@ -163,6 +163,27 @@ class AdaptiveGeneralCover(ABC):
         pitched-plane form. Positive means the sun strikes the outer face.
         """
         return cos(radians(self.sol_elev)) * cos(radians(self.gamma))
+
+    @property
+    def plane_tilt_deg(self) -> float:
+        """Tilt of this cover's working plane FROM HORIZONTAL, in degrees.
+
+        The companion of :attr:`cos_aoi`: that answers "how obliquely does the
+        beam strike this plane?", this answers "how much sky and how much ground
+        does the plane see?" — the two view factors the isotropic sky-diffuse
+        and ground-reflected terms of the solar-gain estimate need (#1237).
+
+        ``0`` = flat (a skylight sees the whole sky, no ground); ``90`` = the
+        default vertical facade (half sky, half ground). Pitched-plane cover
+        types override with their configured roof pitch, so no consumer has to
+        know which family it is holding.
+
+        A PROPERTY on purpose, never a ``_last_calc_details`` key: that trace is
+        #682's shipped contract with exact per-cover-type key sets, and adding a
+        term the position calculation does not use would break it for a value no
+        position consumer reads.
+        """
+        return VERTICAL_GLASS_PITCH_DEG
 
     @property
     def sun_behind_plane(self) -> bool:
@@ -373,11 +394,12 @@ class AdaptiveGeneralCover(ABC):
         engine's own angle→percentage map, and a scale calibrated entirely to one
         side of that angle images it outside the range (a louvered roof with
         ``max_slat_angle`` under 90°, or a one-sided ``specify_angles`` pair).
-        That is still the right answer for consumers that only ORDER by it —
-        the map is affine, so distance from the pivot stays proportional to
-        distance from maximum openness wherever the pivot sits, which is what
-        :meth:`round_toward_coverage` and
-        ``CoverTypePolicy.more_protective_position`` need. It is also the answer
+        That is still the right answer for consumers that only ORDER by it:
+        :meth:`round_toward_coverage` asks only which SIDE of maximum openness a
+        percentage falls on, and ``CoverTypePolicy.more_protective_position``
+        ranks by distance from it — measured through :meth:`coverage_distance`,
+        which is where any per-side scaling belongs. Neither needs the pivot to
+        be reachable. It is also the answer
         that tells them which END of an off-travel scale covers, which the
         axis's static ``open_blocks_sun`` flag gets backwards on an inverted
         calibration. A consumer that ANCHORS arithmetic on the pivot must pull
@@ -390,6 +412,45 @@ class AdaptiveGeneralCover(ABC):
         the pipeline and ``position_utils`` layers that consume the answer.
         """
         return None
+
+    def coverage_distance(self, pct: float) -> float | None:
+        """How much coverage *pct* carries, as a distance from the pivot (#1222).
+
+        The ordering metric behind ``CoverTypePolicy.more_protective_position``,
+        asked of the engine rather than computed by the policy. The policy used
+        to take ``abs(pct − coverage_pivot_percentage())`` itself, which is
+        correct exactly while the percentage↔angle map is GLOBALLY affine —
+        distance in percentage is then proportional to distance from maximum
+        openness, with the constant of proportionality cancelling out of any
+        comparison. A three-point tilt calibration hinges that map at the pivot
+        and gives the two sides different degrees-per-percent, so the constant
+        stops cancelling and a cross-pivot comparison can invert. Moving the
+        metric onto the engine puts it where the scale is known.
+
+        The base answer keeps the percentage measure verbatim, so every
+        monotonic axis and every affine tilt scale ranks exactly as before —
+        :class:`~.tilt.AdaptiveTiltCover` overrides it to measure in ANGLE
+        space, which is proportional to this on every affine map and the only
+        correct answer under a hinge.
+
+        ``None`` mirrors :meth:`coverage_pivot_percentage` — and mirrors it
+        EXACTLY, which is a contract on every override rather than a
+        convenience. ``CoverTypePolicy.more_protective_position`` is the sole
+        caller, and it reads the pivot FIRST and then subtracts two distances
+        without checking either for ``None``; an override that could decline a
+        distance while still reporting a pivot would raise ``TypeError`` inside
+        the comparator, not fall back to the axis rule. The two implementations
+        satisfy the coupling by deriving both answers from the same
+        degenerate-scale test: this one reads the pivot directly, and the slat
+        override declines on exactly the scales whose forward map declines.
+        Pinned by ``tests/test_cover_types/test_protective.py`` ::
+        ``test_a_distance_exists_wherever_a_pivot_does`` — an override that
+        needs to say "no ordering here" must say it through the pivot.
+        """
+        pivot = self.coverage_pivot_percentage()
+        if pivot is None:
+            return None
+        return abs(float(pct) - pivot)
 
     def coverage_travel_bounds(self) -> tuple[float, float]:
         """Lowest and highest percentage this axis can be COMMANDED to (#1104).

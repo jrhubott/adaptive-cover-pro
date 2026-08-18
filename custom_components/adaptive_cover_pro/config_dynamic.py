@@ -265,6 +265,51 @@ def window_facing_schema(
     return vol.Schema(fields)
 
 
+def solar_properties_schema(
+    hass: HomeAssistant | None = None, options: Mapping | None = None
+) -> vol.Schema:
+    """Build the optional solar-property description fields (#1236, #1237).
+
+    Six fields — a master toggle, mounting side, shade darkness, an optional
+    direct ``g_total`` override, the unshaded glazing g-value, and the optional
+    glazed-area override — composed onto EVERY cover type's geometry step
+    through this single seam, exactly like :func:`window_facing_schema`. How
+    much solar energy the assembly rejects, and how much glass there is, are
+    properties of the window rather than of the drive mechanism, so there is no
+    per-policy branch and no key duplicated into ten geometry schemas.
+
+    The area override in particular MUST reach every cover type: the types that
+    cannot derive an area from their geometry are precisely the ones whose users
+    need to type one in.
+
+    Markers and selectors come straight from the ``config_fields`` registry so
+    the bounds, defaults and validators stay single-sourced; this function owns
+    only the grouping and the order.
+    """
+    from .config_fields import (
+        CONF_SOLAR_COVER_SHADE,
+        CONF_SOLAR_COVER_SIDE,
+        CONF_SOLAR_G_GLAZING,
+        CONF_SOLAR_G_TOTAL,
+        CONF_SOLAR_PROPERTIES_ENABLED,
+        FIELD_SPECS,
+    )
+    from .const import CONF_GLASS_AREA
+
+    fields: dict = {}
+    for key in (
+        CONF_SOLAR_PROPERTIES_ENABLED,
+        CONF_SOLAR_COVER_SIDE,
+        CONF_SOLAR_COVER_SHADE,
+        CONF_SOLAR_G_TOTAL,
+        CONF_SOLAR_G_GLAZING,
+        CONF_GLASS_AREA,
+    ):
+        marker, sel = FIELD_SPECS[key].to_marker(hass, dict(options or {}))
+        fields[marker] = sel
+    return vol.Schema(fields)
+
+
 def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     """Sun-tracking (behavioural) schema. ``hass=None`` → metric labels.
 
@@ -580,6 +625,13 @@ def light_cloud_schema(
     hass: HomeAssistant | None = None, options: dict | None = None
 ) -> vol.Schema:
     """Light/cloud schema. Lux/irradiance thresholds accept number or template."""
+    from .config_fields import FIELD_SPECS
+    from .const import CONF_IRRADIANCE_PLANE
+
+    _irradiance_plane_marker, _irradiance_plane_selector = FIELD_SPECS[
+        CONF_IRRADIANCE_PLANE
+    ].to_marker(hass, options)
+
     schema: dict = {
         vol.Optional(CONF_CLOUD_SUPPRESSION, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_CLOUDY_POSITION): selector.NumberSelector(
@@ -606,6 +658,11 @@ def light_cloud_schema(
         vol.Optional(CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED): numeric_selector(
             device_class="irradiance"
         ),
+        # Which plane the sensor above measures (#1237) — rendered immediately
+        # after it, from the field registry so the options and default stay
+        # single-sourced. Affects only the estimated-solar-gain figure; the
+        # cloud-suppression threshold reads the same entity unchanged.
+        _irradiance_plane_marker: _irradiance_plane_selector,
         vol.Optional(
             CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
         ): numeric_selector(),

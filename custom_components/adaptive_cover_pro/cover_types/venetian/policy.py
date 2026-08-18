@@ -88,7 +88,7 @@ from ...managers.manual_override import (
 from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
 from ...position_utils import PositionConverter
-from .._helpers import window_dimensions_lines
+from .._helpers import window_dimensions_lines, window_glass_area_m2
 from .._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from ..base import (
     CAP_HAS_SET_POSITION,
@@ -349,28 +349,13 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self, config: dict[str, Any], labels: dict[str, str] | None = None
     ) -> list[str]:
         """Render window dimensions plus the slat-config block."""
-        from ...const import (
-            CONF_TILT_ANGLE_0,
-            CONF_TILT_ANGLE_100,
-            CONF_TILT_DEPTH,
-            CONF_TILT_DISTANCE,
-            CONF_TILT_MODE,
-            TiltMode,
-        )
+        from .._helpers import slat_geometry_parts
 
         L = {**GEOMETRY_LABELS_EN, **(labels or {})}
-        tilt_parts: list[str] = []
-        if (v := config.get(CONF_TILT_DEPTH)) is not None:
-            tilt_parts.append(L["geometry.slat.depth"].format(v=v))
-        if (v := config.get(CONF_TILT_DISTANCE)) is not None:
-            tilt_parts.append(L["geometry.slat.spacing"].format(v=v))
-        if (v := config.get(CONF_TILT_MODE)) is not None:
-            tilt_parts.append(L["geometry.slat.mode"].format(v=v))
-        if config.get(CONF_TILT_MODE) == TiltMode.SPECIFY_ANGLES.value:
-            if (v := config.get(CONF_TILT_ANGLE_0)) is not None:
-                tilt_parts.append(L["geometry.slat.angle_0"].format(v=v))
-            if (v := config.get(CONF_TILT_ANGLE_100)) is not None:
-                tilt_parts.append(L["geometry.slat.angle_100"].format(v=v))
+        # Same fragment the tilt-only policy renders, and deliberately the same
+        # call: venetian's geometry schema composes the tilt one, so a field
+        # added there has to surface here too, without a second edit.
+        tilt_parts = slat_geometry_parts(config, labels)
         slat_line = [", ".join(tilt_parts)] if tilt_parts else []
         skip_above = config.get(
             CONF_VENETIAN_TILT_SKIP_ABOVE, DEFAULT_VENETIAN_TILT_SKIP_ABOVE
@@ -521,6 +506,14 @@ class VenetianPolicy(CoverTypePolicy, register=True):
     ) -> float | None:
         """Venetian lift axis travels the configured window height."""
         return config_service.get_vertical_data(options).h_win
+
+    def glass_area_m2(
+        self,
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,
+    ) -> float | None:
+        """Height × width — both dimensions are on the geometry step (#1237)."""
+        return window_glass_area_m2(options)
 
     def build_calc_engine(
         self,
@@ -713,13 +706,32 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         The base predicate derives its answer from three hooks, and this policy
         trips one of them: it overrides ``post_pipeline_resolve``. That hook's
         only write to ``PipelineResult.position`` is
-        :meth:`_pin_tilt_only_carriage`, and that pin is skipped for every
-        control method in ``_EXPLICIT_USER_POSITION_METHODS`` — which contains
-        both ``MANUAL`` and ``GROUP_LOCK``, the only two winners that ever set
-        ``held_position`` and so the only two the registry ever judges per
-        cover. Under a hold this hook resolves a tilt and leaves the position
+        :meth:`_pin_tilt_only_carriage`, and the pin is skipped for every winner
+        the registry can hand per-cover verdicts. That is SIX control methods,
+        not the two real holds:
+
+        * ``MANUAL`` and ``GROUP_LOCK`` set ``held_position`` themselves — both
+          are in ``_EXPLICIT_USER_POSITION_METHODS``;
+        * since #943 item B, ``_as_outside_window_pseudo_hold`` sets it on
+          whichever non-safety handler computed a closed-clock cycle, which is
+          reachable for ``DEFAULT``, ``CUSTOM_POSITION``, ``MOTION`` and
+          ``GROUP_SCENE``. Those four are the whole set, derived from the
+          handlers rather than counted: every windowed handler (solar, climate,
+          cloud suppression, glare zone) returns ``None`` out there, ``WEATHER``
+          is declined as ``is_safety``, and the two real holds never reach the
+          conversion. ``MOTION`` qualifies because only its hold_position branch
+          reads ``in_time_window`` — outside the window it falls through to the
+          ungated return-to-default branch, which sets no ``held_position``.
+          ``CUSTOM_POSITION``, ``MOTION`` and ``GROUP_SCENE`` are in the exempt
+          set; ``DEFAULT`` is skipped by its own separate condition (#1153
+          finding 2).
+
+        Under any of the six this hook resolves a tilt and leaves the position
         exactly as the registry left it, which is the condition the base
-        predicate is really asking about.
+        predicate is really asking about. The pseudo-hold also strips
+        ``held_position`` back off before the result leaves the registry, so
+        what actually arrives here is an ordinary-looking result — one more
+        reason the premise has to be locked by name rather than inferred.
 
         Nothing else here is per-entity: ``resolve_entity_target`` is the
         identity default (one slat angle and one carriage position per cover),
@@ -729,9 +741,11 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         cover's slats without moving anybody's carriage, which is precisely
         what one shared position cannot express.
 
-        ``tests/test_cover_types/test_venetian_post_pipeline.py`` locks the
-        premise — if the pin ever starts firing under a hold, that test fails
-        rather than this silently becoming wrong.
+        ``tests/test_cover_types/test_venetian_post_pipeline.py``
+        ``::test_tilt_only_pin_skips_every_per_cover_judged_winner`` locks the
+        premise as a set — if the pin ever starts firing under one of them, or a
+        seventh method becomes per-cover judgable, that test fails rather than
+        this silently becoming wrong.
         """
         return True
 
@@ -917,6 +931,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
                 "backrotate_publish_lag_seconds",
                 DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             ),
+            mark_air_busy=kwargs.get("mark_air_busy"),
         )
         # Drift-reset scope (issue #808) is a policy-level gate: the policy owns
         # the ControlMethod == SOLAR decision (cover-type knowledge stays inside
@@ -1120,6 +1135,12 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             current_position=current_position,
             reason=reason,
             force=True,
+            # Issue #1234 (#684 leak): reuse the shared eligibility predicate
+            # with a null context rather than open-coding a scope comparison
+            # here. A user-requested tilt is by definition not a
+            # solar-tracking win, so this evaluates to "eligible iff scope is
+            # all_tilt_commands" — exactly right for a user command.
+            drift_reset_eligible=self._drift_reset_eligible(None),
         )
         return True
 
@@ -1189,6 +1210,9 @@ class VenetianPolicy(CoverTypePolicy, register=True):
                 if self._sequencer is not None
                 else None
             ),
+            # Inverse-tilt normalisation (issue #1227) — see
+            # ``SecondaryAxisCheck.inverted`` for the wire/logical rationale.
+            inverted=(self._sequencer is not None and self._sequencer.tilt_inverted),
         )
 
     def _drift_reset_eligible(self, context: Any) -> bool:

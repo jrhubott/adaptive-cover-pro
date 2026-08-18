@@ -146,3 +146,23 @@ def extreme_heat_crossing(
         return False, True
     activate = value > fthreshold
     return _pair(activate, value, release_threshold, lambda v, r: v <= r)
+
+
+def resolve_extreme_heat_active(
+    outside_temperature: float | str | None,
+    temp_extreme_heat: float | None,
+    smoothed: bool | None,
+) -> bool:
+    """Resolve whether the extreme-heat hold is active this cycle (issue #1272).
+
+    Exact extraction of the smoothed-flag-else-raw-crossing fallback that
+    already lives on ``ClimateCoverData.is_extreme_heat``: the smoothed flag
+    wins when the coordinator's ``ClimateSmoothingManager`` has resolved one
+    (issue #917); otherwise falls back to ``extreme_heat_crossing``'s raw
+    single-crossing ``activate_met``. Shared by ``ClimateCoverData.is_extreme_heat``
+    and ``SnapshotBuilder`` (for the cloud-suppression carve-out) so both
+    consumers agree on the same resolved boolean without recomputing it.
+    """
+    if smoothed is not None:
+        return smoothed
+    return extreme_heat_crossing(outside_temperature, temp_extreme_heat, None)[0]

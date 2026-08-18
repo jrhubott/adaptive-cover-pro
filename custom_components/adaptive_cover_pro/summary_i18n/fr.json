@@ -30,8 +30,8 @@
   "rules": {
     "weather": "🌧️ Sécurité météo : si {wx_condition} → stores se rétractent à {weather_pos}%{weather_min}{delay}{bypass}",
     "manual": "✋ Dérogation manuelle : pause le contrôle automatique quand vous bougez le store{detail}",
-    "custom_tilt_only": "🎯 Personnalisé #{slot} : si {trigger} est activé → inclinaison seulement (lamelle fixée à {slat}% ; position pilotée par le suivi solaire)",
-    "custom": "🎯 Personnalisé #{slot} : si {trigger} est activé → {target}{cp_min}{tilt_note} — contourne les portes delta et le contrôle automatique{safety}",
+    "custom_tilt_only": "🎯 {label} : si {trigger} est activé → inclinaison seulement (lamelle fixée à {slat}% ; position pilotée par le suivi solaire)",
+    "custom": "🎯 {label} : si {trigger} est activé → {target}{cp_min}{tilt_note} — contourne les portes delta et le contrôle automatique{safety}",
     "motion": "**Occupation** (🚶 {motion_timeout}s)\n\nLorsque l'occupation est détectée dans les capteurs sélectionnés:\n- {sources} (alimentation détectée)\n- {action}",
     "cloud": "☁️ Suppression de nuages : ignore le suivi solaire{cloud} → {fallback}",
     "climate": "🌡️ Mode climatique : ajuste la stratégie pour le chauffage/refroidissement{detail}",
@@ -75,21 +75,27 @@
     "tilt_bound_min": ", inclinaison d'au moins {min}%",
     "tilt_bound_max": ", inclinaison d'au plus {max}%",
     "tilt_bound_range": ", inclinaison {min}–{max}%",
-    "no_position_claim": "la position calculée"
+    "no_position_claim": "la position calculée",
+    "outside_window": "🕗 {label} : les limites min/max restent actives hors de la plage horaire (l'emplacement ne pilote jamais une position là-bas pour autant).",
+    "slot_label_default": "Personnalisé #{slot}"
   },
   "warnings": {
-    "custom_position_bound_conflict": "⚠️ Personnalisé #{slot} : le maximum ({max}%) est inférieur au minimum ({min}%) — le minimum l'emporte et le maximum est ignoré.",
-    "custom_tilt_only_conflict": "⚠️ Personnalisé #{slot} : inclinaison seulement est activé — Utiliser comme minimum / Utiliser ma position sont ignorés pour cet emplacement.",
+    "custom_position_bound_conflict": "⚠️ {label} : le maximum ({max}%) est inférieur au minimum ({min}%) — le minimum l'emporte et le maximum est ignoré.",
+    "custom_tilt_only_conflict": "⚠️ {label} : inclinaison seulement est activé — Utiliser comme minimum / Utiliser ma position sont ignorés pour cet emplacement.",
     "motion_hold_no_sensors": "Aucun capteur d'occupation configuré. La détection d'occupation est désactivée.",
     "cloudy_pos_ignored": "⚠️ Position nuageux ({pos}%) configurée mais suppression de nuages est désactivée — la valeur sera ignorée.",
     "sun_track_min_below_floor": "⚠️ Min suivi solaire {sun_min}% < position min {min_pos}% — le plancher toujours actif domine ; le plancher suivi solaire sera relevé à {min_pos}%.",
     "mode2_min_position": "⚠️ Inclinaison MODE2 + position min {min_pos}% — en MODE2 l'angle de lamelle ouvert (horizontal) EST 50%, donc toute position min ≥ 50 réduit à néant chaque décision de contrôle climatique/éblouissement au plancher et le store cesse de bloquer la chaleur.",
     "somfy_my_unset": "⚠️ Préréglage Somfy My est activé pour une ou plusieurs cibles mais Valeur du préréglage My n'est pas définie — revient au % configuré.",
     "proxy_no_min": "⚠️ Store mandataire est activé mais aucun emplacement de position personnalisée n'a Utiliser comme minimum activé — le store géré ne limitera pas.",
-    "custom_and_no_sensors": "⚠️ Personnalisé #{slot} : le mode de combinaison ET est défini mais aucun capteur déclencheur n'est configuré — le template seul active le slot.",
+    "custom_and_no_sensors": "⚠️ {label} : le mode de combinaison ET est défini mais aucun capteur déclencheur n'est configuré — le template seul active le slot.",
     "group_empty": "⚠️ Ce groupe n'a pas de membres — il ne commandera rien.",
     "forecast_source_no_weather_entity": "⚠️ La source de température extérieure est basée sur les prévisions mais aucune entité météo n'est configurée — les prévisions vont silencieusement revenir au relevé en direct. Configurez une entité météo dans Météo, lumière & nuages.",
-    "travel_time_unmeasurable": "⚠️ {entities} signalent un état supposé, donc leur temps de course ne peut pas être mesuré et aucun n'a été entré — les tableaux de bord ne les montreront pas en mouvement. Entrez une durée sous Étalonnage → Temps de course."
+    "travel_time_unmeasurable": "⚠️ {entities} signalent un état supposé, donc leur temps de course ne peut pas être mesuré et aucun n'a été entré — les tableaux de bord ne les montreront pas en mouvement. Entrez une durée sous Étalonnage → Temps de course.",
+    "custom_tilt_only_bounds_discarded": "⚠️ {label} : lamelle fixée à {slat}% — les limites d'inclinaison configurées sont ignorées pour cet emplacement.",
+    "custom_tilt_only_no_effect": "⚠️ {label} : inclinaison seulement est activé sans angle de lamelle et sans limite d'inclinaison configurée — cet emplacement n'a aucun effet.",
+    "custom_outside_window_no_bounds": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais cet emplacement ne configure aucun minimum ni maximum — le réglage n'a aucun effet. Seules les limites min/max restent actives là-bas ; une position exacte jamais.",
+    "custom_outside_window_redundant": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais la priorité 100 agit déjà hors de la plage horaire (et passe outre le contrôle automatique et les seuils delta) — le réglage ne change rien ici."
   },
   "motion": {
     "action_hold": "les stores maintiennent la position actuelle (retournent à la position par défaut quand le soleil quitte l'angle d'ouverture solaire)",
@@ -104,7 +110,7 @@
     "irradiance_no_thresh": "rayonnement ({entity})",
     "coverage": "nuages > {thresh}%",
     "coverage_no_thresh": "nuages ({entity})",
-    "weather_in": "météo dans {{{states}}}",
+    "weather_in": "météo hors de {{{states}}}",
     "when": " quand {parts}",
     "fallback_cloudy": "position nuageux {pos}%",
     "fallback_default": "défaut ({default_pos}%)",
@@ -165,6 +171,7 @@
   "timing": {
     "from_entity": "de {entity}",
     "from_time": "de {time}",
+    "from_sunrise": "du lever du soleil",
     "until_entity": "jusqu'à {entity}",
     "until_time": "jusqu'à {time}",
     "active_daylight": "Actif pendant la lumière du jour",
@@ -258,7 +265,8 @@
       "spacing": "espacement {v}cm",
       "mode": "mode : {v}",
       "angle_0": "angle 0 % {v}°",
-      "angle_100": "angle 100 % {v}°"
+      "angle_100": "angle 100 % {v}°",
+      "horizontal_percent": "horizontale à {v}%"
     },
     "oscillating": {
       "arm": "bras {v}m",
@@ -329,5 +337,8 @@
   "axes": {
     "position": "Position",
     "tilt": "Inclinaison"
+  },
+  "movement": {
+    "queue": "🚦 Commandes sérialisées sur la file d'attente « {queue} » (intervalle {gap}s)"
   }
 }

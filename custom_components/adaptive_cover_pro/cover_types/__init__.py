@@ -29,9 +29,12 @@ from .dual_panel import DualPanelPolicy
 # registry-derived menus (``SENSOR_TYPE_MENU`` follows registration order).
 # The building profile is not a physical cover (``controls_cover = False``);
 # the group controls covers but is an orchestrator (``is_orchestrator =
-# True``) — both are filtered out of the cover-type picker by capability.
+# True``); the command queue is not a cover either (``is_command_queue = True``,
+# issue #1189) — all three are filtered out of the cover-type picker by
+# capability.
 from .building_profile import BuildingProfilePolicy
 from .group import GroupPolicy
+from .command_queue import CommandQueuePolicy
 
 
 def get_policy(cover_type) -> CoverTypePolicy:
@@ -93,6 +96,7 @@ __all__ = [
     "AwningPolicy",
     "BlindPolicy",
     "BuildingProfilePolicy",
+    "CommandQueuePolicy",
     "CoverTypePolicy",
     "DayNightShadePolicy",
     "DualPanelPolicy",

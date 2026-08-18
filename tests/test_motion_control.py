@@ -1,6 +1,7 @@
 """Tests for motion-based automatic control feature."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock
 
@@ -920,6 +921,129 @@ def test_motion_status_sensor_attributes_no_data():
     assert attrs == {"motion_timeout_seconds": 300}
     assert "motion_timeout_end_time" not in attrs
     assert "last_motion_time" not in attrs
+
+
+@pytest.mark.asyncio
+async def test_motion_timeout_end_time_measures_from_timer_start():
+    """motion_timeout_end_time is timer-start + timeout, not detection + timeout.
+
+    Regression for issue #1266: ``last_motion_time`` is stamped when occupancy
+    is *detected*, but the no-motion timer starts later, on the *clear* edge.
+    When occupancy outlasts the configured timeout, ``last_motion_time +
+    timeout_seconds`` lands in the past the instant the timer starts, so any
+    consumer deriving "expires in" from it reads "expired" for the whole live
+    countdown. Here occupancy was held for 120s against a 30s timeout, so the
+    old formula would publish an end time 90s in the past; the correct end
+    time is ~30s in the future from when the timer actually started.
+    """
+    mgr = _make_motion_mgr(timeout_seconds=30)
+    now = datetime.now(UTC)
+    mgr._last_motion_time = (now - timedelta(seconds=120)).timestamp()
+
+    mgr.start_motion_timeout(AsyncMock())
+
+    coordinator = MagicMock()
+    coordinator._motion_mgr = mgr
+    sensor = _make_motion_status_sensor(coordinator)
+    attrs = sensor.extra_state_attributes
+
+    end_time = datetime.fromisoformat(attrs["motion_timeout_end_time"])
+    assert end_time > now
+    assert abs((end_time - (now + timedelta(seconds=30))).total_seconds()) < 1
+
+    mgr.cancel_motion_timeout()
+
+
+@pytest.mark.asyncio
+async def test_motion_timeout_end_time_published_without_last_motion_time():
+    """A running timer publishes motion_timeout_end_time even with no detection stamp.
+
+    Regression for issue #1266: today the two attributes share one gate keyed
+    off ``last_motion_time`` (sensor.py:876), so an in-flight timer with no
+    detection stamp on record silently drops the end-time attribute despite
+    the timer being real. The two attributes must be independently gated.
+    """
+    coordinator = MagicMock()
+    coordinator._motion_mgr = _make_motion_mgr(
+        last_motion_time=None,
+        timeout_pending=True,
+        timeout_seconds=30,
+    )
+
+    sensor = _make_motion_status_sensor(coordinator)
+    attrs = sensor.extra_state_attributes
+
+    assert "motion_timeout_end_time" in attrs
+    assert "last_motion_time" not in attrs
+
+    coordinator._motion_mgr.cancel_motion_timeout()
+
+
+def test_motion_timeout_end_time_absent_when_no_timer_started():
+    """No motion_timeout_end_time when set_no_motion() fires without ever starting a timer.
+
+    Guards the startup path (no occupancy at HA start): ``set_no_motion()``
+    sets the no-motion flag directly with no timer ever having started, so
+    there is no timer-start timestamp to report an end time from.
+    """
+    coordinator = MagicMock()
+    coordinator._motion_mgr = _make_motion_mgr(
+        last_motion_time=None,
+        timeout_active=True,
+        timeout_seconds=30,
+    )
+
+    sensor = _make_motion_status_sensor(coordinator)
+    attrs = sensor.extra_state_attributes
+
+    assert attrs["motion_timeout_seconds"] == 30
+    assert "motion_timeout_end_time" not in attrs
+
+
+@pytest.mark.asyncio
+async def test_motion_timeout_end_time_absent_after_timer_expires():
+    """No motion_timeout_end_time once the real expiry handler has fired.
+
+    Regression for issue #1266 Part B. Unlike ``_make_motion_mgr``'s
+    ``timeout_active=True`` path (which reaches the active state via
+    ``set_no_motion()``, a *different* code path that already clears the
+    stamp), this test drives the real ``_on_motion_timeout_expired`` body —
+    the seam no existing test crosses. ``start_motion_timeout`` stamps
+    ``_timeout_started_at``; the expiry handler must clear it the same way
+    ``record_motion_detected``, ``cancel_motion_timeout``, and
+    ``set_no_motion`` already do, or ``timeout_end_time`` keeps returning a
+    timestamp in the past forever — the sensor attribute publishes an
+    already-expired end time indefinitely ("expires in expired").
+
+    Also guards #122/#75: the ``motion_status`` value string must not move
+    as a side effect of this fix.
+    """
+    hass = MagicMock()
+    state = MagicMock()
+    state.state = "off"
+    hass.states.get.return_value = state
+    logger = MagicMock()
+
+    mgr = MotionManager(hass=hass, logger=logger)
+    mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=30)
+
+    mgr.start_motion_timeout(AsyncMock())
+    assert mgr.timeout_end_time is not None  # timer really is pending
+
+    await mgr._on_motion_timeout_expired(30, AsyncMock())
+
+    assert mgr.is_motion_timeout_active is True
+    assert mgr.timeout_end_time is None
+
+    coordinator = MagicMock()
+    coordinator._motion_mgr = mgr
+    type(coordinator).is_motion_detected = property(lambda self: False)
+    sensor = _make_motion_status_sensor(coordinator)
+
+    assert sensor.native_value == "no_motion"
+    assert "motion_timeout_end_time" not in sensor.extra_state_attributes
+
+    mgr.cancel_motion_timeout()  # tear down the still-sleeping background task
 
 
 def test_motion_status_sensor_no_timestamp_device_class():

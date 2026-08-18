@@ -55,6 +55,7 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum, StrEnum
+from types import MappingProxyType
 from typing import Any
 
 # =============================================================================
@@ -67,6 +68,13 @@ DOMAIN = "adaptive_cover_pro"  # HA integration domain; must match manifest.json
 # outside the coordinator so it survives a reload (when entry.runtime_data is
 # briefly unset) and can be served by the diagnostics download as a stale fallback.
 DIAG_CACHE_KEY = f"{DOMAIN}_last_diagnostics"
+# hass.data slot holding the named cover-command dispatch queues, keyed by the
+# NORMALIZED queue name (issue #1189). Cross-entry shared state by construction:
+# a queue serializes commands across independent config entries, so it must
+# outlive any single member's reload and therefore cannot live on
+# ``entry.runtime_data``. Members attach/detach with a refcount; the key is
+# dropped when the last one leaves.
+COMMAND_QUEUE_REGISTRY_KEY = f"{DOMAIN}_command_queues"
 LOGGER = logging.getLogger(__package__)  # package-scoped logger
 _LOGGER = logging.getLogger(__name__)  # module-scoped; also imported by button.py
 
@@ -126,6 +134,47 @@ OPT_OUT_ALL_SCENES = "*"
 CONF_GROUP_STAGGER_DELAY = "group_stagger_delay"
 DEFAULT_GROUP_STAGGER_DELAY = 0.0
 _RANGE_GROUP_STAGGER = (0.0, 30.0)
+
+# ── Named cover-command dispatch queue (issue #1189) ─────────────────────────
+# A cover names the queue it belongs to; every cover naming the same queue
+# transmits one at a time, the queue staying busy for ``gap`` seconds after each
+# send. Deliberately disjoint from the group stagger above: that one is
+# group-scoped AND group-triggered (it only spaces a group fan-out), this one
+# spaces a cover's OWN routine dispatch across independent config entries.
+#
+# The name is stored on the cover (blank = no queue = today's behaviour); the
+# gap lives on the optional "Command Queue" config entry that owns the name. A
+# name with no matching entry still serializes, at DEFAULT_COMMAND_QUEUE_GAP —
+# naming a queue must never require creating one.
+CONF_COMMAND_QUEUE = "command_queue"
+CONF_COMMAND_QUEUE_GAP = "command_queue_gap"
+DEFAULT_COMMAND_QUEUE_GAP = 5.0
+_RANGE_COMMAND_QUEUE_GAP = (0.0, 60.0)
+# Hard ceiling on how long any one command may sit in a queue. NOT an option in
+# v1: it is the bounded-wait invariant, not a preference. A queue wait is a
+# long-blocking dispatch inside the coordinator's update cycle — exactly issue
+# #756's shape — so on expiry the command transmits anyway rather than being
+# withheld. Wider than the worst backend queue #1139 measured (33.7 s) would be
+# pointless; narrower than it would expire routinely.
+COMMAND_QUEUE_MAX_WAIT_SECONDS = 30.0
+# How much of its OWN interval one reconciliation pass may spend waiting on the
+# queue, in total across every entity it resends. The pass is not a dispatch: it
+# is the retry loop, and HA re-arms the interval listener before dispatching each
+# fire as its own background task, so a pass still running when the next one
+# starts leaves two of them mutating the same ``PerEntityState``.
+#
+# A whole-PASS allowance rather than a per-entity one, because the per-entity
+# ceiling above bounds the wrong thing here: N entities each waiting up to
+# COMMAND_QUEUE_MAX_WAIT_SECONDS is N x 30 s against a 60 s interval. Half the
+# interval leaves the other half as slack for the transmissions themselves —
+# ``async_call`` against a slow backend was measured at 33.7 s in #1139 — and for
+# scheduler jitter, so the bound holds without having to model either.
+#
+# At the shipped 1-minute interval and 5 s gap that is 30 s of spacing per pass,
+# i.e. seven covers resent per minute on one queue. Raising it buys throughput
+# out of the overlap margin; it is not an option because the trade is between two
+# invariants, not two preferences.
+COMMAND_QUEUE_PASS_BUDGET_FRACTION = 0.5
 
 # The scene select's "no scene" option (wire-stable select state). Not a
 # GroupScene member — it is the absence of a scene: choosing it clears the
@@ -443,6 +492,14 @@ CONF_TILT_ANGLE_0 = "tilt_angle_0"  # raw slat angle at 0% tilt, degrees
 CONF_TILT_ANGLE_100 = "tilt_angle_100"  # raw slat angle at 100% tilt, degrees
 DEFAULT_TILT_ANGLE_0 = 0  # degrees — downward closed endpoint at 0% tilt
 DEFAULT_TILT_ANGLE_100 = 180  # degrees — upward closed endpoint at 100% tilt
+# Optional third calibration point for specify-angles (issue #1222): the tilt
+# percentage at which the slats are exactly horizontal. 0 = DISABLED (the scale
+# stays the two-point affine one, byte-identical to pre-#1222 behaviour) — the
+# same "0 means use the default shape" sentinel CONF_MAX_SLAT_ANGLE uses, which
+# is what makes a BOX selector safe here (clearing it saves 0, which is the
+# off state rather than a meaningless boundary value).
+CONF_TILT_HORIZONTAL_PERCENT = "tilt_horizontal_percent"
+DEFAULT_TILT_HORIZONTAL_PERCENT = 0  # percent — 0 = two-point calibration
 CONF_MAX_TILT = "max_tilt"  # cap on sun-derived tilt %, 0-100
 DEFAULT_MAX_TILT = 100  # default: no upper cap
 CONF_MIN_TILT = "min_tilt"  # floor on sun-derived tilt %, 0-100
@@ -1120,6 +1177,17 @@ def _custom_position_slot_keys(n: int) -> dict[str, str]:
         "position_max": f"custom_position_position_max_{n}",
         "tilt_min": f"custom_position_tilt_min_{n}",
         "tilt_max": f"custom_position_tilt_max_{n}",
+        # Keep this slot's CONSTRAINT claims binding once the user's start/end
+        # clock window has closed (issue #943 item B). Opt-in, absent = off.
+        # Scoped to the bounded claims (`min_mode` floor, `position_max`,
+        # `tilt_min`, `tilt_max`): a FIXED claim — an exact position, a real
+        # fixed slat angle, `use_my` — is never admitted, because a slot that
+        # DRIVES a position outside the window is the #215/#216/#223 defect
+        # class re-armed by a checkbox. A clamp only ever moves the axis it
+        # bounds; every other axis is commanded to the cover's current read.
+        # Deliberately NOT tilt-gated: it also governs `min_mode` and
+        # `position_max`, which every cover type has.
+        "outside_window": f"custom_position_outside_window_{n}",
         # `enabled` is opt-out: existing entries lack the key and behave as
         # enabled. Set to False to silence a slot without clearing its
         # configuration — used by the companion card's slot toggle UI.
@@ -1156,6 +1224,7 @@ CUSTOM_POSITION_FORM_KEYS: dict[str, str] = {
     "position_max": "custom_position_position_max",
     "tilt_min": "custom_position_tilt_min",
     "tilt_max": "custom_position_tilt_max",
+    "outside_window": "custom_position_outside_window",
 }
 
 
@@ -1530,7 +1599,12 @@ DEFAULT_MOTION_TIMEOUT_MODE = MOTION_TIMEOUT_MODE_RETURN  # default mode
 POSITION_CHECK_INTERVAL_MINUTES = 1  # minutes — recheck cadence
 # Default for the now-configurable CONF_POSITION_TOLERANCE (issue #507). Still
 # the fixed floor for the manual-override threshold (effective_manual_threshold
-# in managers/manual_override.py reads this constant directly, NOT the option).
+# in managers/manual_override/secondary_axis.py reads this constant directly,
+# NOT the option — see that function's docstring for why a widened arrival
+# tolerance must not raise the false-positive floor).
+# It is also why both manual-override axes compare with STRICT ``>`` (#1273):
+# a delta this predicate's own `<=` reading calls "arrived" must not also read
+# as a user touch.
 POSITION_TOLERANCE_PERCENT = 3  # % — "position matches" tolerance (default)
 MAX_POSITION_RETRIES = 3  # maximum re-send attempts before giving up
 # Default for CONF_ENABLE_POSITION_MATCHING (issue #591). False = matching off:
@@ -2076,6 +2150,17 @@ class ReasonCode(StrEnum):
     # from the trace (audit findings A / B).
     REGISTRY_TILT_BOUND_INACTIVE = "registry.tilt_bound_inactive"
     REGISTRY_TILT_CLAMPED = "registry.tilt_clamped"
+    # An active claim the CLOSED clock window dropped (issue #943 item B). Its
+    # own code rather than floor_inactive / tilt_bound_inactive, which both
+    # assert the winner was already on the satisfied side — untrue here. The
+    # bound would have bound; the clock and the slot's own opt-in are the only
+    # reasons it did not.
+    REGISTRY_CONSTRAINT_OUTSIDE_WINDOW = "registry.constraint_outside_window"
+    # A tilt bound resolved to its own edge because nothing set a tilt this
+    # cycle and the closed window rules out carrying the bounds forward (the
+    # venetian engine-suppressed branch drops them). Distinct from
+    # tilt_clamped, which always names the value it clamped FROM.
+    REGISTRY_TILT_BOUND_ENFORCED = "registry.tilt_bound_enforced"
 
     # -- diagnostics builder (control-state reason + position explanation)
     BUILDER_UNKNOWN = "builder.unknown"
@@ -2112,6 +2197,7 @@ class ReasonCode(StrEnum):
     SKIP_NO_GLARE_ZONES = "skip.no_glare_zones"
     SKIP_CLOUD_SKIPPED = "skip.cloud_skipped"
     SKIP_CLOUD_INACTIVE = "skip.cloud_inactive"
+    SKIP_CLOUD_DEFERRED_EXTREME_HEAT = "skip.cloud_deferred_extreme_heat"
     SKIP_WEATHER_NOT_ACTIVE = "skip.weather_not_active"
     SKIP_CUSTOM_NOT_ACTIVE = "skip.custom_not_active"
     SKIP_ALWAYS_MATCHES = "skip.always_matches"
@@ -2193,11 +2279,20 @@ class TriageCode(StrEnum):
     ENDPOINT_POSITION_NOT_TRACKING = "triage.endpoint_position_not_tracking"
     # -- rule 26: a weather override deploys the cover instead of protecting it
     WEATHER_OVERRIDE_INVERTED = "triage.weather_override_inverted"
+    # -- rule 27: an internal-mounted cover rejects little solar energy (#1236)
+    SOLAR_INTERNAL_COVER_WEAK_REJECTION = "triage.solar_internal_cover_weak_rejection"
     # -- fragment (NOT a rule): the localized "N minutes ago" clause the three
     # skip findings splice in when a skip timestamp is known. Rendered only as a
     # nested param of the skip templates, never emitted as a top-level finding —
     # so it has a template but no rule row (mirrors ReasonCode's FRAGMENT_*).
     SKIP_AGE = "triage.skip_age"
+    # -- fragments (NOT rules): rule 27's two PRESET-ONLY clauses. Both quote the
+    # ``(side, shade)`` preset table, so both are omitted when the user declared
+    # ``solar_g_total`` by hand — their shade select is very likely the untouched
+    # default and the table their number never came from has no standing against
+    # it. Spliced as nested params, exactly like SKIP_AGE.
+    SOLAR_SHADE_WORD = "triage.solar_shade_word"
+    SOLAR_EXTERNAL_COMPARISON = "triage.solar_external_comparison"
 
 
 # =============================================================================
@@ -2230,6 +2325,135 @@ SAFETY_MARGIN_HIGH_ELEV_MAX = 0.1  # +10% at high sun elevation (>75°)
 SAFETY_MARGIN_USER_SLACK_MAX = SAFETY_MARGIN_GAMMA_MAX + max(
     SAFETY_MARGIN_LOW_ELEV_MAX, SAFETY_MARGIN_HIGH_ELEV_MAX
 )  # 0.35
+
+# Tolerance for treating two coverage distances as EQUAL, so a tie falls through
+# to whatever fallback the caller has instead of being decided by rounding
+# noise. Unit-free on purpose: the metric is percentage points on the base
+# engine and degrees off horizontal on the slat engine, and both live on the
+# same 0–180 scale, which is what lets one absolute band serve both.
+#
+# It sits in a nine-order-of-magnitude gap, and both walls of that gap are
+# structural rather than estimated. ABOVE it, the smallest difference two
+# distances can GENUINELY have: the comparator is handed integer percentages,
+# and every scale it can meet is built from integer-degree endpoints, an
+# integer ``max_slat_angle`` and an integer hinge percentage, so each distance
+# is a rational whose denominator is bounded by the hinge split ``h × (100 − h)
+# ≤ 2500``. A real difference is therefore at least 4e-4. BELOW it, the ulp
+# spread of the interpolation itself — ~1e-13 at these magnitudes, which is what
+# made ``44`` and ``56`` — both exactly 10.8° off horizontal — compare unequal
+# and hand 13 symmetric MODE2 pairs to the wrong side (#1222 audit).
+#
+# It lives here rather than beside either consumer because both need it and they
+# are on opposite sides of the HA boundary: ``CoverTypePolicy.
+# more_protective_position`` ranks two candidate percentages by it, and
+# ``AdaptiveTiltCover._pin_climate_target`` ranks the two ends of a scale by it,
+# and ``engine/`` cannot import ``cover_types/``. Two epsilons that only happened
+# to agree would be two epsilons that one day did not.
+#
+# Same shape and rationale as ``engine.covers.oscillating._COVERAGE_PLATEAU_EPS``,
+# which treats two coverage-floor heights as equal for the same reason.
+COVERAGE_DISTANCE_TIE_EPS = 1e-6
+
+
+# =============================================================================
+# Solar transmittance (issue #1236)
+# =============================================================================
+# Optional, opt-in description of how much solar ENERGY the glazing+cover
+# assembly lets through — orthogonal to the geometry the calc engines already
+# model (where the beam lands) and to the day/night shade's ``opacity_*`` keys,
+# which describe LIGHT opacity for one cover type only.
+#
+# Every value here is an ESTIMATE drawn from the EN ISO 52022 / EN 13363 bands,
+# never a measurement of the user's hardware. Absent keys ⇒ feature off ⇒ the
+# integration behaves byte-identically to before.
+CONF_SOLAR_PROPERTIES_ENABLED = "solar_properties_enabled"  # bool master toggle
+CONF_SOLAR_COVER_SIDE = "solar_cover_side"  # external | internal mounting
+CONF_SOLAR_COVER_SHADE = "solar_cover_shade"  # light | medium | dark
+CONF_SOLAR_G_TOTAL = "solar_g_total"  # optional direct g_total override (0-1)
+CONF_SOLAR_G_GLAZING = "solar_g_glazing"  # unshaded glazing g-value (0-1)
+
+SOLAR_COVER_SIDE_EXTERNAL = "external"
+SOLAR_COVER_SIDE_INTERNAL = "internal"
+SOLAR_COVER_SIDES = (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SIDE_INTERNAL)
+
+SOLAR_COVER_SHADE_LIGHT = "light"
+SOLAR_COVER_SHADE_MEDIUM = "medium"
+SOLAR_COVER_SHADE_DARK = "dark"
+SOLAR_COVER_SHADES = (
+    SOLAR_COVER_SHADE_LIGHT,
+    SOLAR_COVER_SHADE_MEDIUM,
+    SOLAR_COVER_SHADE_DARK,
+)
+
+DEFAULT_SOLAR_COVER_SIDE = SOLAR_COVER_SIDE_EXTERNAL
+DEFAULT_SOLAR_COVER_SHADE = SOLAR_COVER_SHADE_MEDIUM
+# Glazing alone, no shading device. Midpoint of the 0.65-0.75 band for common
+# double glazing. The SINGLE constant for "how much energy bare glass admits" —
+# it is both the default ``g_unshaded`` here and the fallback assembly g-value
+# for the estimated-solar-gain sensor, so there is no second default to drift.
+DEFAULT_SOLAR_G_GLAZING = 0.70
+
+# ``(cover_side, cover_shade) -> g_total`` for the fully-covered assembly.
+# Midpoints of the normative bands (external light 0.10-0.15, external dark
+# 0.20-0.25, internal 0.45-0.55); "medium" is interpolated. One frozen mapping,
+# read by the pure engine and by the triage rule — never re-tabulated.
+SOLAR_G_PRESETS: dict[tuple[str, str], float] = MappingProxyType(
+    {
+        (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SHADE_LIGHT): 0.12,
+        (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SHADE_MEDIUM): 0.18,
+        (SOLAR_COVER_SIDE_EXTERNAL, SOLAR_COVER_SHADE_DARK): 0.22,
+        (SOLAR_COVER_SIDE_INTERNAL, SOLAR_COVER_SHADE_LIGHT): 0.45,
+        (SOLAR_COVER_SIDE_INTERNAL, SOLAR_COVER_SHADE_MEDIUM): 0.50,
+        (SOLAR_COVER_SIDE_INTERNAL, SOLAR_COVER_SHADE_DARK): 0.55,
+    }
+)
+
+# Above this fully-covered g-value an internal-mounted cover is admitting more
+# solar energy than most users expect, so the troubleshoot surface says so once.
+# Gating on the number (rather than merely "side == internal") keeps the finding
+# from becoming a permanent banner for every internal-mount install.
+SOLAR_WEAK_REJECTION_THRESHOLD = 0.40
+
+
+# =============================================================================
+# Estimated solar gain (issue #1237)
+# =============================================================================
+# Turning a measured irradiance reading into watts through the glass needs three
+# published physical constants plus one numeric guard. Every value here is
+# standard textbook physics, not a tunable — the tunables are options.
+#
+# Tilt of a plane FROM HORIZONTAL: 0 = flat, 90 = vertical. Promoted here from
+# ``engine/covers/roof_window.py`` on its third consumer (roof window, louvered
+# roof, and now ``AdaptiveGeneralCover.plane_tilt_deg``); that module re-exports
+# it so its existing imports keep resolving.
+VERTICAL_GLASS_PITCH_DEG = 90.0
+
+# Solar irradiance at the top of the atmosphere at 1 AU, WMO/ASTM value.
+SOLAR_CONSTANT_W_M2 = 1367.0
+
+# Ground reflectance for the isotropic transposition's ground-reflected term.
+# 0.2 is the standard default for ordinary vegetated / built ground (snow would
+# be 0.6-0.8, which the model deliberately does not try to detect).
+DEFAULT_GROUND_ALBEDO = 0.2
+
+# Below this sun elevation the decomposition's ``1 / sin h`` term is numerically
+# unstable and the true gain is negligible anyway, so the estimate reports a
+# hard 0 W rather than a large, meaningless number.
+MIN_GAIN_SUN_ELEVATION_DEG = 3.0
+
+# Which plane the user's irradiance sensor measures. A pyranometer lies flat
+# (global horizontal); a cell taped to the glass already reads the window plane
+# and needs no transposition at all.
+CONF_IRRADIANCE_PLANE = "irradiance_plane"
+IRRADIANCE_PLANE_HORIZONTAL = "horizontal"
+IRRADIANCE_PLANE_WINDOW = "window_plane"
+IRRADIANCE_PLANES = (IRRADIANCE_PLANE_HORIZONTAL, IRRADIANCE_PLANE_WINDOW)
+DEFAULT_IRRADIANCE_PLANE = IRRADIANCE_PLANE_HORIZONTAL
+
+# Optional override of the glazed area in m². Blank = derive it from the window
+# geometry the cover type already carries; set it when the frame eats enough of
+# the rough aperture to matter (typically 10-25 %).
+CONF_GLASS_AREA = "glass_area"
 
 
 # =============================================================================
@@ -2302,6 +2526,12 @@ _RANGE_LENGTH_AWNING = (0.3, 6.0)  # CONF_LENGTH_AWNING, metres
 _RANGE_AWNING_ANGLE = (0, 45)  # CONF_AWNING_ANGLE, degrees
 _RANGE_TILT_ANGLE_0 = (-180, 180)  # CONF_TILT_ANGLE_0, degrees
 _RANGE_TILT_ANGLE_100 = (0, 360)  # CONF_TILT_ANGLE_100, degrees
+# CONF_TILT_HORIZONTAL_PERCENT, percent (0 = disabled, two-point calibration).
+# The coarse bound only; a stored value must additionally be STRICTLY interior
+# and straddled by the endpoint angles to take effect — that cross-field rule
+# lives in options_service/config_flow, which is the only layer that can see
+# the other two keys.
+_RANGE_TILT_HORIZONTAL_PERCENT = (0, 100)
 
 # Geometry — oscillating (drop-arm) awning.
 _RANGE_ARM_LENGTH = (0.1, 6.0)  # CONF_ARM_LENGTH, metres
@@ -2392,6 +2622,15 @@ _RANGE_TILT = (0, 100)  # per-slot/default/sunset tilt, percent
 # Day/Night shade (#993): fabric opacity + blackout-engage threshold, all percent.
 _RANGE_DAY_NIGHT_OPACITY = (0, 100)
 _RANGE_DAY_NIGHT_BLACKOUT_THRESHOLD = (0, 100)
+
+# Solar transmittance (#1236): g-values are dimensionless 0-1 ratios, shared by
+# CONF_SOLAR_G_TOTAL and CONF_SOLAR_G_GLAZING.
+_RANGE_SOLAR_G = (0.0, 1.0)
+
+# Estimated solar gain (#1237): the optional glazed-area override, in m². The
+# ceiling comfortably covers a full-height patio door wall without letting a
+# stray keystroke report kilowatts through a bedroom window.
+_RANGE_GLASS_AREA = (0.1, 50.0)
 
 # Motion.
 _RANGE_MOTION_TIMEOUT = (30, 3600)  # CONF_MOTION_TIMEOUT, seconds
@@ -2552,6 +2791,11 @@ class CoverType(StrEnum):
     # (``controls_cover = True``) but is not geometry-driven: setup branches
     # on ``is_orchestrator`` to a ``GroupCoordinator`` (issue #790).
     GROUP = "cover_group"
+    # Virtual entry type — owns the gap for ONE named dispatch queue (issue
+    # #1189). Controls nothing itself (``controls_cover = False``); covers join
+    # by naming it, and a name with no matching entry still serializes, at the
+    # default gap. Registers no platforms and builds no coordinator.
+    COMMAND_QUEUE = "cover_command_queue"
 
     @property
     def display_name(self) -> str:
@@ -2574,6 +2818,7 @@ class CoverType(StrEnum):
             self.DUAL_PANEL: "Dual Panel Shade",
             self.BUILDING_PROFILE: "Building Profile",
             self.GROUP: "Cover Group",
+            self.COMMAND_QUEUE: "Command Queue",
         }[self]
 
 

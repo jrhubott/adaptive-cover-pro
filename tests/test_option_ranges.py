@@ -192,3 +192,90 @@ def test_tilt_safety_margin_in_option_ranges() -> None:
         CONF_TILT_SAFETY_MARGIN in OPTION_RANGES
     ), "tilt_safety_margin missing from OPTION_RANGES"
     assert OPTION_RANGES[CONF_TILT_SAFETY_MARGIN] == (0.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Solar transmittance (#1236) — both g-value sliders are registry-declared.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("key", ["solar_g_total", "solar_g_glazing"])
+def test_solar_g_values_in_option_ranges(key: str) -> None:
+    """Both g-values are 0-1 ratios single-sourced through the field registry."""
+    assert OPTION_RANGES[key] == (0.0, 1.0)
+    assert key in FIELD_VALIDATORS
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "key",
+    [
+        "solar_properties_enabled",
+        "solar_cover_side",
+        "solar_cover_shade",
+        "solar_g_total",
+        "solar_g_glazing",
+    ],
+)
+def test_solar_keys_are_service_settable(key: str) -> None:
+    """A key with a FIELD_VALIDATORS entry must be reachable from a service.
+
+    Otherwise the validator is dead code — the documented convention in
+    ``services/options_service.py``.
+    """
+    from custom_components.adaptive_cover_pro.services.options_service import (
+        ALL_SETTABLE_KEYS,
+    )
+
+    assert key in FIELD_VALIDATORS
+    assert key in ALL_SETTABLE_KEYS
+
+
+@pytest.mark.unit
+def test_solar_g_total_is_clearable() -> None:
+    """The optional override must round-trip a cleared value (#1267)."""
+    from custom_components.adaptive_cover_pro.config_fields import FIELD_SPECS
+
+    assert FIELD_SPECS["solar_g_total"].clearable is True
+    assert FIELD_SPECS["solar_g_glazing"].clearable is False
+
+
+# ---------------------------------------------------------------------------
+# Estimated solar gain (#1237) — the two new options are registry-declared.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_glass_area_in_option_ranges() -> None:
+    from custom_components.adaptive_cover_pro.const import _RANGE_GLASS_AREA
+
+    assert OPTION_RANGES["glass_area"] == _RANGE_GLASS_AREA
+    assert "glass_area" in FIELD_VALIDATORS
+
+
+@pytest.mark.unit
+def test_glass_area_is_clearable() -> None:
+    """Blank means "derive from geometry", so a cleared value must vanish."""
+    from custom_components.adaptive_cover_pro.config_fields import FIELD_SPECS
+
+    assert FIELD_SPECS["glass_area"].clearable is True
+
+
+@pytest.mark.unit
+def test_irradiance_plane_validator_accepts_only_the_two_planes() -> None:
+    from custom_components.adaptive_cover_pro.const import IRRADIANCE_PLANES
+
+    assert "irradiance_plane" in FIELD_VALIDATORS
+    assert IRRADIANCE_PLANES == ("horizontal", "window_plane")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("key", ["glass_area", "irradiance_plane"])
+def test_gain_keys_are_service_settable(key: str) -> None:
+    from custom_components.adaptive_cover_pro.services.options_service import (
+        ALL_SETTABLE_KEYS,
+    )
+
+    assert key in FIELD_VALIDATORS
+    assert key in ALL_SETTABLE_KEYS

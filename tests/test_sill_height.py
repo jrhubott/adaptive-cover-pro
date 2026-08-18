@@ -2,11 +2,13 @@
 
 The sill_height parameter accounts for windows that do not start at floor level.
 When a window sill is at height S above the floor, the blind bottom is also at
-height S. The sill already blocks S/tan(elevation) meters of horizontal sun
-penetration for free, so the effective distance the blind needs to cover is
-reduced. This means the blind can be raised higher (smaller blind height needed).
+height S. The sill already blocks S·cos(gamma)/tan(elevation) meters of
+PERPENDICULAR sun penetration for free (discussion #1283 — the offset is
+perpendicular to the glass, the same units as ``distance``, never a ray path
+length), so the effective distance the blind needs to cover is reduced. This
+means the blind can be raised higher (smaller blind height needed).
 
-Implementation: effective_distance -= sill_height / max(tan(elevation), 0.05)
+Implementation: effective_distance -= sill_height * cos(gamma) / max(tan(elevation), 0.05)
 
 When effective_distance goes negative (sill shadow deeper than shaded distance),
 the blind must be FULLY CLOSED (position=0), not fully open. See the geometry
@@ -21,6 +23,7 @@ import pytest
 from custom_components.adaptive_cover_pro.calculation import (
     AdaptiveVerticalCover,
 )
+from custom_components.adaptive_cover_pro.engine.sun_geometry import clamped_cos_gamma
 from tests.cover_helpers import build_horizontal_cover, build_vertical_cover
 
 
@@ -130,16 +133,91 @@ class TestBackwardCompatibility:
             )
 
 
+class TestSillOffsetIsPerpendicular:
+    """Discussion #1283: the sill offset must be a PERPENDICULAR depth, not a
+    ray path length.
+
+    ``_elevation_offset(sill_height, sol_elev)`` returns ``sill/tan(elev)`` — a
+    horizontal PATH LENGTH. ``calculate_position`` subtracts that path length
+    from ``distance``, a PERPENDICULAR depth, and ``_project_drop`` then
+    divides the whole difference by ``cos(gamma)`` a SECOND time. Net effect:
+    ``position = D·tan(theta)/cos(gamma) - sill/cos(gamma)``, over-subtracting
+    the sill by a factor of ``1/cos(gamma)`` at every gamma != 0. The correct
+    form (derived from ``H = sill_height + position``, ray perpendicular
+    penetration ``y = H·cos(gamma)/tan(theta)``, contract ``y <= D``) is
+    ``position = clip(D·tan(theta)/cos(gamma) - sill_height, 0, h_win)`` — no
+    ``1/cos(gamma)`` on the sill term.
+    """
+
+    def test_sill_offset_is_perpendicular_not_path_length(self, base_cover_params):
+        """Reporter's exact geometry (discussion #1283): distance=1.25m,
+        h_win=0.98m, window_depth=0.25m, sill_height=1.04m, set_azimuth=300,
+        FOV +/-73.
+
+        Today both points return 0.0 (the sill's path-length over-subtraction
+        drives ``effective_distance`` negative, tripping the #358 clamp).
+        Correct: (elev=38.70, gamma=-45.65) -> 0.3926 m,
+        (elev=38.67, gamma=-68.76) -> 0.98 m (fully open, exactly h_win).
+        """
+        params = base_cover_params.copy()
+        params["win_azi"] = 300
+        params["fov_left"] = 73
+        params["fov_right"] = 73
+        params["distance"] = 1.25
+        params["h_win"] = 0.98
+        params["window_depth"] = 0.25
+        params["sill_height"] = 1.04
+
+        cover_a = make_vertical_cover(params, gamma=-45.65, sol_elev=38.70)
+        cover_b = make_vertical_cover(params, gamma=-68.76, sol_elev=38.67)
+
+        assert cover_a.calculate_position() == pytest.approx(
+            0.3926, abs=1e-4
+        ), f"expected ~0.3926m, got {cover_a.calculate_position():.4f}m"
+        assert cover_b.calculate_position() == pytest.approx(
+            0.98, abs=1e-4
+        ), f"expected ~0.98m (fully open), got {cover_b.calculate_position():.4f}m"
+
+    def test_sill_height_zero_is_bit_identical_across_gamma(self, base_cover_params):
+        """``sill_height=0`` must be an exact no-op at every gamma, not just
+        gamma=0 — the ``cos(gamma)`` factor this fix adds to
+        ``_elevation_offset`` is multiplied against a zero sill, so it must
+        stay bit-identical to omitting ``sill_height`` entirely.
+        """
+        for gamma in range(-85, 86, 5):
+            cover_no_sill = make_vertical_cover(
+                base_cover_params, gamma=float(gamma), sol_elev=45.0
+            )
+            cover_zero_sill = make_vertical_cover(
+                base_cover_params,
+                gamma=float(gamma),
+                sol_elev=45.0,
+                sill_height=0.0,
+            )
+            pos_no_sill = cover_no_sill.calculate_position()
+            pos_zero_sill = cover_zero_sill.calculate_position()
+            assert pos_no_sill == pos_zero_sill, (
+                f"gamma={gamma}: no_sill={pos_no_sill!r}, "
+                f"zero_sill={pos_zero_sill!r}"
+            )
+
+
 class TestGeometrySillHeightEffect:
     """Tests that verify the correct geometric effect of sill_height.
 
     Correct geometry: When a window sill is at height S above the floor, the blind
-    bottom starts at S meters height. The sill already provides S/tan(elevation) meters
-    of "free" horizontal sun protection. So the effective distance the blind needs to
-    cover is reduced by S/tan(elevation), meaning:
-      - effective_distance = distance - sill_height / tan(elevation)
+    bottom starts at S meters height. The sill already provides a PERPENDICULAR
+    S·cos(gamma)/tan(elevation) meters of "free" sun protection (discussion #1283
+    — the offset is perpendicular to the glass, the same units as ``distance``,
+    never a ray path length). So the effective distance the blind needs to
+    cover is reduced by S·cos(gamma)/tan(elevation), meaning:
+      - effective_distance = distance - sill_height * cos(gamma) / tan(elevation)
       - base_height = effective_distance * tan(elevation) / cos(gamma)
       - base_height DECREASES with sill_height (blind can be raised higher)
+
+    All tests in this class use gamma=0.0 (cos(gamma)=1), where this is an
+    exact no-op vs. the pre-#1283 path-length formula — see
+    ``TestSillOffsetIsPerpendicular`` for the gamma != 0 behaviour.
 
     When effective_distance goes negative (sill shadow deeper than shaded distance),
     it is clamped to 0 → blind fully closed. See TestRaysAbovefloorAtShadedBoundary.
@@ -502,6 +580,13 @@ class TestInteractionWithWindowDepth:
         drives effective_distance (#1169 — window_depth no longer adds a
         continuous ``depth·sin(gamma)`` term; see ``TestLintelGate`` in
         test_geometric_accuracy.py for the full-open gate itself).
+
+        The sill offset is PERPENDICULAR (discussion #1283): it is
+        ``sill_height * cos(gamma) / tan(elevation)``, not
+        ``sill_height / tan(elevation)`` — the latter is a ray path length,
+        and subtracting it from ``distance`` (a perpendicular depth) then
+        dividing by ``cos(gamma)`` a second time over-subtracts the sill by
+        ``1/cos(gamma)``.
         """
         gamma = 30.0
         sol_elev = 45.0
@@ -510,10 +595,11 @@ class TestInteractionWithWindowDepth:
 
         # window_depth contributes nothing below the gate — only sill_height
         # moves effective_distance.
-        sill_offset = sill_height / math.tan(math.radians(sol_elev))
+        cos_gamma = clamped_cos_gamma(gamma)
+        sill_offset = sill_height * cos_gamma / math.tan(math.radians(sol_elev))
         expected_effective_dist = 0.5 - sill_offset  # base distance=0.5
 
-        expected_path_length = expected_effective_dist / math.cos(math.radians(gamma))
+        expected_path_length = expected_effective_dist / cos_gamma
         expected_base_height = expected_path_length * math.tan(math.radians(sol_elev))
 
         cover_both = make_vertical_cover(
@@ -676,8 +762,12 @@ class TestIssue358ReporterRegression:
     Reporter config: sill_height=1.6m, h_win=0.55m, distance=1.0m,
     sol_elev=47.4°, gamma≈35.8°.
 
-    Geometry: sill_offset = 1.6 / tan(47.4°) ≈ 1.467m
-    effective_distance = 1.0 - 1.467 = -0.467 (< 0 → clamp to 0 → position=0)
+    Geometry: sill_offset = 1.6 · cos(35.8°) / tan(47.4°) ≈ 1.193m
+    effective_distance = 1.0 - 1.193 = -0.193 (< 0 → clamp to 0 → position=0)
+
+    The offset is perpendicular, not a ray path length (#1290). The pre-#1290
+    formula (1.6 / tan(47.4°) ≈ 1.467m) gave a different effective_distance but
+    the same clamped outcome, which is why this case reads identically either way.
 
     The sun enters through 0.55m of glass above the sill and every ray through
     that glass is still above the floor at the 1.0m shaded boundary. The blind
@@ -773,9 +863,11 @@ class TestSillGeometryInvariant:
     """Parametrized invariant: whenever analytical effective_distance < 0, position==0.
 
     Sweeps a grid of (sill, distance, sol_elev, gamma) values. Any combination where
-    sill_offset = sill/tan(elev) exceeds shaded_distance analytically must produce
-    position=0 from calculate_position(). This guard makes any future "return h_win
-    when effective_distance <= 0" regression break dozens of cases at once.
+    sill_offset = sill * clamped_cos_gamma(gamma) / tan(elev) — the PERPENDICULAR
+    offset (discussion #1283), same units as `distance`, never a bare path length —
+    exceeds shaded_distance analytically must produce position=0 from
+    calculate_position(). This guard makes any future "return h_win when
+    effective_distance <= 0" regression break dozens of cases at once.
     """
 
     @pytest.mark.parametrize(
@@ -816,14 +908,16 @@ class TestSillGeometryInvariant:
     ):
         """Any (sill, dist, elev, gamma) where effective_distance <= 0 must yield position=0.
 
-        effective_distance = distance - sill_height / max(tan(sol_elev), 0.05)
-        When <= 0, every ray through the glass is above the floor at the shaded
-        boundary. Blind must be fully closed.
+        effective_distance = distance - sill_height * clamped_cos_gamma(gamma) / max(tan(sol_elev), 0.05)
+        (the PERPENDICULAR sill offset, same units as `distance` — discussion #1283;
+        never the bare path-length `sill_height / tan(sol_elev)`). When <= 0, every
+        ray through the glass is above the floor at the shaded boundary. Blind must
+        be fully closed.
         """
         import math
 
         tan_elev = max(math.tan(math.radians(sol_elev)), 0.05)
-        sill_offset = sill_height / tan_elev
+        sill_offset = sill_height * clamped_cos_gamma(gamma) / tan_elev
         analytical_effective_distance = distance - sill_offset
 
         # Only run the assertion for cases that analytically trigger the clamp
@@ -846,6 +940,34 @@ class TestSillGeometryInvariant:
             f"effective_distance={analytical_effective_distance:.4f} ≤ 0 → "
             f"expected position=0.0, got {position}"
         )
+
+    def test_high_gamma_is_not_in_the_clamp_regime(self, base_cover_params):
+        """(sill=0.5, dist=0.5, elev=20°, gamma=75°) is the exact case where the
+        old (pre-#1290) path-length threshold and the corrected perpendicular
+        one disagree (issue #1290).
+
+        Old (buggy) path-length threshold: sill_offset = 0.5/tan(20°) = 1.3737,
+        effective_distance = 0.5 - 1.3737 = -0.8737 <= 0 -> would assert
+        position == 0 (wrongly, since the engine no longer computes this).
+
+        Corrected perpendicular threshold: sill_offset =
+        0.5*clamped_cos_gamma(75°)/tan(20°) = 0.35555, effective_distance =
+        0.5 - 0.35555 = +0.14445 > 0 -> NOT in the clamp regime, so this row
+        must never be added to TestSillGeometryInvariant's parametrize list
+        (it would silently land in that test's `pytest.skip` branch instead
+        of asserting anything). Pinning it here as its own asserting test
+        instead gives this exact divergence explicit, non-skippable coverage.
+        """
+        cover = make_vertical_cover(
+            base_cover_params,
+            gamma=75.0,
+            sol_elev=20.0,
+            sill_height=0.5,
+            distance=0.5,
+        )
+        position = cover.calculate_position()
+        assert position > 0.0
+        assert position == pytest.approx(0.2032, abs=1e-3)
 
 
 class TestNumericalStability:

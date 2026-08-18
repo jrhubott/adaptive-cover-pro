@@ -19,6 +19,7 @@ from custom_components.adaptive_cover_pro.engine.climate_crossings import (
     extreme_heat_crossing,
     outside_high_crossing,
     resolve_current_temperature,
+    resolve_extreme_heat_active,
     summer_warm_crossing,
     winter_crossing,
 )
@@ -253,6 +254,63 @@ class TestExtremeHeatCrossing:
         )
         assert act is False
         assert cleared is True
+
+
+# ---------------------------------------------------------------------------
+# resolve_extreme_heat_active — smoothed flag wins; else raw crossing (#1272)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveExtremeHeatActive:
+    """resolve_extreme_heat_active: the shared smoothed-or-raw fallback.
+
+    Exact extraction of the two-line fallback already living on
+    ``ClimateCoverData.is_extreme_heat`` — used both by that property AND by
+    ``SnapshotBuilder`` to resolve ``PipelineSnapshot.climate_extreme_heat_active``
+    for the cloud-suppression carve-out (issue #1272), so both consumers agree
+    on the same answer without recomputing it.
+    """
+
+    def test_resolve_extreme_heat_active_prefers_smoothed_flag(self):
+        """A non-None smoothed flag wins over what the raw crossing would say."""
+        # Raw crossing would be False here (10.0 <= 40.0), smoothed says True.
+        assert (
+            resolve_extreme_heat_active(
+                outside_temperature=10.0, temp_extreme_heat=40.0, smoothed=True
+            )
+            is True
+        )
+        # Raw crossing would be True here (45.0 > 40.0), smoothed says False.
+        assert (
+            resolve_extreme_heat_active(
+                outside_temperature=45.0, temp_extreme_heat=40.0, smoothed=False
+            )
+            is False
+        )
+
+    def test_resolve_extreme_heat_active_falls_back_to_raw_crossing(self):
+        """smoothed=None falls back to extreme_heat_crossing's activate_met."""
+        assert (
+            resolve_extreme_heat_active(
+                outside_temperature=41.0, temp_extreme_heat=40.0, smoothed=None
+            )
+            is True
+        )
+        assert (
+            resolve_extreme_heat_active(
+                outside_temperature=39.0, temp_extreme_heat=40.0, smoothed=None
+            )
+            is False
+        )
+
+    def test_resolve_extreme_heat_active_false_when_threshold_unset(self):
+        """Feature off (threshold None) with no smoothed flag → False."""
+        assert (
+            resolve_extreme_heat_active(
+                outside_temperature=50.0, temp_extreme_heat=None, smoothed=None
+            )
+            is False
+        )
 
 
 # ---------------------------------------------------------------------------

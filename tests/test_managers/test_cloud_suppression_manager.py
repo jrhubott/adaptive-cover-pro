@@ -72,6 +72,20 @@ def _readings(
     )
 
 
+def _primed_manager(logger, *, hold_time_seconds: int) -> CloudSuppressionManager:
+    """Build an enabled manager that already observed its resting (sunny) state.
+
+    The FIRST observation after construction or a config reload is seeded in-line
+    (issue #1238): it is the world as found, not a change, so it commits without
+    starting a hold timer. Every test below is about the SECOND reading — the one
+    that is a genuine transition and therefore the one the hold-time governs.
+    """
+    m = CloudSuppressionManager(logger=logger)
+    m.update_config(enabled=True, hold_time_seconds=hold_time_seconds)
+    m.evaluate(_readings())
+    return m
+
+
 # ---------------------------------------------------------------------------
 # (a) Back-compat: hold=0 + blank release ⇒ resolved bool == raw OR
 # ---------------------------------------------------------------------------
@@ -141,8 +155,7 @@ class TestHoldTimeDebounce:
 
     def test_pending_transition_does_not_flip_and_signals_timer(self, logger):
         """Instantaneous flip with hold>0 keeps state and signals start-timer."""
-        m = CloudSuppressionManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
 
         signal = m.evaluate(_readings(is_sunny=False))
         assert signal == "should_start_timeout"
@@ -151,8 +164,7 @@ class TestHoldTimeDebounce:
     @pytest.mark.asyncio
     async def test_revert_before_expiry_cancels_timer(self, logger):
         """If instantaneous reverts before the timer fires, it is cancelled."""
-        m = CloudSuppressionManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
 
         assert m.evaluate(_readings(is_sunny=False)) == "should_start_timeout"
         m.start_hold_timeout(AsyncMock())
@@ -167,8 +179,7 @@ class TestHoldTimeDebounce:
     @pytest.mark.asyncio
     async def test_second_evaluate_while_timer_running_does_not_resignal(self, logger):
         """A still-pending transition does not ask to start a second timer."""
-        m = CloudSuppressionManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
         assert m.evaluate(_readings(is_sunny=False)) == "should_start_timeout"
         m.start_hold_timeout(AsyncMock())
         # Same instantaneous, timer already running → no new signal.
@@ -188,8 +199,7 @@ class TestTimerExpiry:
     @pytest.mark.asyncio
     async def test_expiry_commits_and_calls_refresh(self, logger):
         """Expiry flips the resolved bool and invokes the refresh callback."""
-        m = CloudSuppressionManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
         m.evaluate(_readings(is_sunny=False))
         assert m.is_suppression_active is False
 
@@ -244,3 +254,50 @@ class TestDisabled:
         """No readings → inactive."""
         assert mgr.evaluate(None) is None
         assert mgr.is_suppression_active is False
+
+
+# ---------------------------------------------------------------------------
+# (g) A transient readings outage re-seeds the debounce (issue #1238)
+# ---------------------------------------------------------------------------
+
+
+class TestReadingsOutage:
+    """``readings is None`` resets, so the next reading is a first sighting again."""
+
+    @pytest.mark.asyncio
+    async def test_outage_during_a_pending_hold_recovers_in_line(self, logger):
+        """Outage → the next valid reading commits without re-arming the hold.
+
+        The outage is what ends the pending transition: ``_reset`` cancels the
+        timer, drops the pending target and forces the resolved bool back to
+        False — it did that before issue #1238 too. The seed only decides what
+        the NEXT valid reading costs, and committing it in-line is the intended
+        recovery: re-arming a full hold there would buy another hold-time of the
+        wrong state after a one-cycle blip. Nothing is swallowed — the pending
+        transition still lands, just sooner.
+        """
+        m = _primed_manager(logger, hold_time_seconds=120)
+
+        assert m.evaluate(_readings(is_sunny=False)) == "should_start_timeout"
+        m.start_hold_timeout(AsyncMock())
+        assert m.is_timeout_running is True
+
+        # One cycle without readings: timer cancelled, resolved back to False.
+        assert m.evaluate(None) is None
+        assert m.is_timeout_running is False
+        assert m.is_suppression_active is False
+
+        # The reading that follows is the world as found → commits in-line.
+        assert m.evaluate(_readings(is_sunny=False)) is None
+        assert m.is_suppression_active is True
+        assert m.is_timeout_running is False
+
+    def test_the_transition_after_an_outage_still_debounces(self, logger):
+        """The re-seed is one-shot — the next genuine change holds again."""
+        m = _primed_manager(logger, hold_time_seconds=120)
+        m.evaluate(None)
+        m.evaluate(_readings(is_sunny=False))  # re-seeded → in-line
+        assert m.is_suppression_active is True
+
+        assert m.evaluate(_readings(is_sunny=True)) == "should_start_timeout"
+        assert m.is_suppression_active is True  # release edge held

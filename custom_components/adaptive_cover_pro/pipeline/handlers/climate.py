@@ -15,9 +15,9 @@ import numpy as np
 from ...cover_types import get_policy
 from ...cover_types.base import AXIS_NAME_TILT, CoverTypePolicy
 from ...engine.climate_crossings import (
-    extreme_heat_crossing,
     outside_high_crossing,
     resolve_current_temperature,
+    resolve_extreme_heat_active,
     summer_warm_crossing,
     winter_crossing,
 )
@@ -91,6 +91,14 @@ class ClimateCoverData:
     summer_warm_active: bool | None = None
     outside_high_active: bool | None = None
     extreme_heat_active: bool | None = None
+    # Smoothed LIGHT-threshold flag (issue #1238) — the same seam, a different
+    # family of thresholds, so it is deliberately not folded into the season
+    # block above. The resolved cloud-suppression bool already carries the
+    # per-trigger Schmitt latches AND the hold-time debounce the user configured
+    # (issue #864); the LOW_LIGHT branch is the second consumer of those very
+    # readings and reads that answer instead of recomputing it raw. None =
+    # cloud suppression off / not threaded → the raw OR fallback.
+    low_light_active: bool | None = None
 
     @property
     def get_current_temperature(self) -> float | None:
@@ -153,11 +161,24 @@ class ClimateCoverData:
         False when the feature is off (threshold None), the outside reading is
         unavailable (None), or either value is non-numeric.
         """
-        if self.extreme_heat_active is not None:
-            return self.extreme_heat_active
-        return extreme_heat_crossing(
-            self.outside_temperature, self.temp_extreme_heat, None
-        )[0]
+        return resolve_extreme_heat_active(
+            self.outside_temperature, self.temp_extreme_heat, self.extreme_heat_active
+        )
+
+    @property
+    def is_low_light(self) -> bool:
+        """True when there is no real sun to manage (issue #1238).
+
+        Returns the smoothed flag (``low_light_active``) when the coordinator has
+        resolved one — that is ``cloud_suppression_active``, already carrying the
+        hysteresis latches and the ``cloud_suppression_hold_time`` debounce.
+        Otherwise falls back to the raw single-crossing OR, so every install with
+        cloud suppression off and every direct-constructor test behaves
+        byte-identically to before the smoothing existed.
+        """
+        if self.low_light_active is not None:
+            return self.low_light_active
+        return bool(self.lux or self.irradiance or not self.is_sunny)
 
     @property
     def lux(self) -> bool:
@@ -531,6 +552,14 @@ class ClimateHandler(OverrideHandler):
             summer_warm_active=flags.summer_warm if flags is not None else None,
             outside_high_active=flags.outside_high if flags is not None else None,
             extreme_heat_active=flags.extreme_heat if flags is not None else None,
+            # Smoothed light thresholds (issue #1238). The resolved
+            # cloud-suppression bool is only meaningful when the feature is on;
+            # otherwise None keeps the raw OR fallback.
+            low_light_active=(
+                snapshot.cloud_suppression_active
+                if opts.cloud_suppression_enabled
+                else None
+            ),
         )
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:

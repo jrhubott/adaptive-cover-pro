@@ -1273,3 +1273,397 @@ class TestAcpNamespaceInClimateTemplates:
         hass.states.async_set(entity_id, "off")
         await hass.async_block_till_done()
         assert getattr(provider.read(**{field: tmpl}), reading) is False
+
+
+# ---------------------------------------------------------------------------
+# Threshold truth table — the #864 red line (issue #1237)
+# ---------------------------------------------------------------------------
+# CHARACTERISATION test, not a red test: it pins the EXACT activate /
+# release-cleared pair each of the three numeric readers produces today, across
+# every branch of ``_read_numeric_threshold`` — including the fail-open
+# ``(False, True)`` a disabled, unconfigured, unavailable or non-numeric read
+# must return so a sensor failure can never strand a cover suppressed.
+#
+# It exists so the refactor that promotes the reader's 2-tuple to a frozen
+# ``ThresholdReading`` (so the raw W/m² can reach the solar-gain estimate) is
+# provably behaviour-preserving: it passed against the code BEFORE that refactor
+# and must keep passing after it, unmodified.
+
+
+class _ThresholdReaderSpec:
+    """One numeric reader's kwarg names, result fields, and band polarity."""
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        enabled_kw: str,
+        entity_kw: str,
+        threshold_kw: str,
+        release_kw: str,
+        activate_field: str,
+        cleared_field: str,
+        entity_id: str,
+    ) -> None:
+        self.name = name
+        self.enabled_kw = enabled_kw
+        self.entity_kw = entity_kw
+        self.threshold_kw = threshold_kw
+        self.release_kw = release_kw
+        self.activate_field = activate_field
+        self.cleared_field = cleared_field
+        self.entity_id = entity_id
+
+    def __repr__(self) -> str:  # pragma: no cover - test id only
+        return self.name
+
+
+_LUX_READER = _ThresholdReaderSpec(
+    "lux",
+    enabled_kw="use_lux",
+    entity_kw="lux_entity",
+    threshold_kw="lux_threshold",
+    release_kw="lux_release_threshold",
+    activate_field="lux_below_threshold",
+    cleared_field="lux_release_cleared",
+    entity_id="sensor.lux",
+)
+_IRRADIANCE_READER = _ThresholdReaderSpec(
+    "irradiance",
+    enabled_kw="use_irradiance",
+    entity_kw="irradiance_entity",
+    threshold_kw="irradiance_threshold",
+    release_kw="irradiance_release_threshold",
+    activate_field="irradiance_below_threshold",
+    cleared_field="irradiance_release_cleared",
+    entity_id="sensor.solar",
+)
+_CLOUD_READER = _ThresholdReaderSpec(
+    "cloud",
+    enabled_kw="use_cloud_coverage",
+    entity_kw="cloud_coverage_entity",
+    threshold_kw="cloud_coverage_threshold",
+    release_kw="cloud_coverage_release_threshold",
+    activate_field="cloud_coverage_above_threshold",
+    cleared_field="cloud_coverage_release_cleared",
+    entity_id="sensor.cloud",
+)
+
+_ALL_THRESHOLD_READERS = (_LUX_READER, _IRRADIANCE_READER, _CLOUD_READER)
+
+# Activate thresholds chosen so the structural cases below can feed a state that
+# WOULD activate the reader — proving the early return wins, not the comparison.
+_ACTIVATE_THRESHOLD = {"lux": 5000, "irradiance": 300, "cloud": 75}
+_ACTIVATING_STATE = {"lux": "4000", "irradiance": "250", "cloud": "80"}
+
+
+def _threshold_pair(
+    provider,
+    mock_hass,
+    reader: _ThresholdReaderSpec,
+    *,
+    state: str | None,
+    threshold: int | None,
+    enabled: bool = True,
+    entity: bool = True,
+    release: float | None = None,
+) -> tuple[bool, bool]:
+    """Drive one reader through ``provider.read`` and return its two booleans."""
+    if state is None:
+        mock_hass.states.get.return_value = None
+    else:
+        mock_hass.states.get.return_value = _mock_state(reader.entity_id, state)
+    kwargs = {
+        reader.enabled_kw: enabled,
+        reader.entity_kw: reader.entity_id if entity else None,
+        reader.threshold_kw: threshold,
+        reader.release_kw: release,
+    }
+    readings = provider.read(**kwargs)
+    return (
+        getattr(readings, reader.activate_field),
+        getattr(readings, reader.cleared_field),
+    )
+
+
+class TestNumericThresholdTruthTable:
+    """Every branch of the shared numeric-threshold reader, pinned exactly."""
+
+    # -- structural branches: identical for all three readers ---------------
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("reader", _ALL_THRESHOLD_READERS, ids=str)
+    def test_disabled_fails_open(self, provider, mock_hass, reader):
+        """Disabled → (False, True) even when the state WOULD activate."""
+        assert _threshold_pair(
+            provider,
+            mock_hass,
+            reader,
+            state=_ACTIVATING_STATE[reader.name],
+            enabled=False,
+            threshold=_ACTIVATE_THRESHOLD[reader.name],
+        ) == (False, True)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("reader", _ALL_THRESHOLD_READERS, ids=str)
+    def test_no_entity_fails_open(self, provider, mock_hass, reader):
+        assert _threshold_pair(
+            provider,
+            mock_hass,
+            reader,
+            state=_ACTIVATING_STATE[reader.name],
+            entity=False,
+            threshold=_ACTIVATE_THRESHOLD[reader.name],
+        ) == (False, True)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("reader", _ALL_THRESHOLD_READERS, ids=str)
+    def test_no_threshold_fails_open(self, provider, mock_hass, reader):
+        assert _threshold_pair(
+            provider,
+            mock_hass,
+            reader,
+            state=_ACTIVATING_STATE[reader.name],
+            threshold=None,
+        ) == (False, True)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("reader", _ALL_THRESHOLD_READERS, ids=str)
+    def test_missing_state_fails_open(self, provider, mock_hass, reader):
+        assert _threshold_pair(
+            provider,
+            mock_hass,
+            reader,
+            state=None,
+            threshold=_ACTIVATE_THRESHOLD[reader.name],
+        ) == (False, True)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("reader", _ALL_THRESHOLD_READERS, ids=str)
+    def test_unavailable_state_fails_open(self, provider, mock_hass, reader):
+        assert _threshold_pair(
+            provider,
+            mock_hass,
+            reader,
+            state="unavailable",
+            threshold=_ACTIVATE_THRESHOLD[reader.name],
+        ) == (False, True)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("reader", _ALL_THRESHOLD_READERS, ids=str)
+    def test_non_numeric_state_fails_open(self, provider, mock_hass, reader):
+        assert _threshold_pair(
+            provider,
+            mock_hass,
+            reader,
+            state="not-a-number",
+            threshold=_ACTIVATE_THRESHOLD[reader.name],
+        ) == (False, True)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("reader", _ALL_THRESHOLD_READERS, ids=str)
+    def test_structural_fail_open_holds_with_a_release_edge_too(
+        self, provider, mock_hass, reader
+    ):
+        """A configured release band must not rescue a failed read."""
+        assert _threshold_pair(
+            provider,
+            mock_hass,
+            reader,
+            state="not-a-number",
+            threshold=_ACTIVATE_THRESHOLD[reader.name],
+            release=1.0,
+        ) == (False, True)
+
+    # -- band polarity: lux / irradiance activate at-or-BELOW ---------------
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("reader", (_LUX_READER, _IRRADIANCE_READER), ids=str)
+    @pytest.mark.parametrize(
+        ("state", "release", "expected"),
+        [
+            # Blank release → zero-width band → cleared == not activate.
+            ("250", None, (True, False)),
+            ("300", None, (True, False)),  # at the edge: ``le`` includes it
+            ("301", None, (False, True)),
+            # Release edge configured → hysteresis band (300, 500).
+            ("250", 500.0, (True, False)),
+            ("400", 500.0, (False, False)),  # inside the band: latch holds
+            ("500", 500.0, (False, True)),  # at the release edge: cleared
+            ("600", 500.0, (False, True)),
+        ],
+    )
+    def test_at_or_below_band(
+        self, provider, mock_hass, reader, state, release, expected
+    ):
+        assert (
+            _threshold_pair(
+                provider,
+                mock_hass,
+                reader,
+                state=state,
+                threshold=300,
+                release=release,
+            )
+            == expected
+        )
+
+    # -- band polarity: cloud coverage activates at-or-ABOVE ----------------
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("state", "release", "expected"),
+        [
+            ("80", None, (True, False)),
+            ("75", None, (True, False)),  # at the edge: ``ge`` includes it
+            ("74", None, (False, True)),
+            # Inverted band: release (50) sits BELOW activate (75).
+            ("80", 50.0, (True, False)),
+            ("60", 50.0, (False, False)),  # inside the band: latch holds
+            ("50", 50.0, (False, True)),  # at the release edge: cleared
+            ("40", 50.0, (False, True)),
+        ],
+    )
+    def test_at_or_above_band(self, provider, mock_hass, state, release, expected):
+        assert (
+            _threshold_pair(
+                provider,
+                mock_hass,
+                _CLOUD_READER,
+                state=state,
+                threshold=75,
+                release=release,
+            )
+            == expected
+        )
+
+    # -- the three readers stay independent ---------------------------------
+
+    @pytest.mark.unit
+    def test_readers_do_not_cross_contaminate(self, provider, mock_hass):
+        """Only the enabled reader reports; the other two stay failed-open."""
+        mock_hass.states.get.return_value = _mock_state("sensor.solar", "250")
+        readings = provider.read(
+            use_irradiance=True,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=300,
+        )
+        assert readings.irradiance_below_threshold is True
+        assert readings.irradiance_release_cleared is False
+        assert readings.lux_below_threshold is False
+        assert readings.lux_release_cleared is True
+        assert readings.cloud_coverage_above_threshold is False
+        assert readings.cloud_coverage_release_cleared is True
+
+
+# ---------------------------------------------------------------------------
+# Raw irradiance value (issue #1237)
+# ---------------------------------------------------------------------------
+
+
+class TestRawIrradianceValue:
+    """The W/m² float survives the read, on its OWN admission rule.
+
+    Cloud suppression collapses the irradiance sensor to two booleans, and the
+    number never left the provider. The estimated-solar-gain sensor needs the
+    number itself, and it must NOT depend on cloud suppression being enabled —
+    so the raw value is admitted whenever the entity is configured, while the
+    activate/release pair keeps its existing ``use_irradiance`` gate exactly.
+    """
+
+    @pytest.mark.unit
+    def test_defaults_to_none_on_a_bare_readings_object(self):
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=None,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        assert readings.irradiance_value is None
+
+    @pytest.mark.unit
+    def test_value_present_with_cloud_suppression_off(self, provider, mock_hass):
+        """The headline case: no cloud suppression, still a number."""
+        mock_hass.states.get.return_value = _mock_state("sensor.solar", "612.5")
+        readings = provider.read(
+            use_irradiance=False,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=300,
+        )
+        assert readings.irradiance_value == pytest.approx(612.5)
+        # ...and the booleans are untouched by the new read.
+        assert readings.irradiance_below_threshold is False
+        assert readings.irradiance_release_cleared is True
+
+    @pytest.mark.unit
+    def test_value_present_without_a_threshold_configured(self, provider, mock_hass):
+        """A gain-only user need not configure a suppression threshold at all."""
+        mock_hass.states.get.return_value = _mock_state("sensor.solar", "410")
+        readings = provider.read(
+            use_irradiance=False,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=None,
+        )
+        assert readings.irradiance_value == pytest.approx(410.0)
+
+    @pytest.mark.unit
+    def test_value_present_when_the_threshold_path_already_read_it(
+        self, provider, mock_hass
+    ):
+        mock_hass.states.get.return_value = _mock_state("sensor.solar", "250")
+        readings = provider.read(
+            use_irradiance=True,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=300,
+        )
+        assert readings.irradiance_value == pytest.approx(250.0)
+        assert readings.irradiance_below_threshold is True
+
+    @pytest.mark.unit
+    def test_none_when_no_entity_is_configured(self, provider, mock_hass):
+        mock_hass.states.get.return_value = _mock_state("sensor.solar", "250")
+        readings = provider.read(use_irradiance=False, irradiance_entity=None)
+        assert readings.irradiance_value is None
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("state", ["unavailable", "unknown", "not-a-number"])
+    @pytest.mark.parametrize("use_irradiance", [False, True])
+    def test_none_when_the_state_is_not_a_number(
+        self, provider, mock_hass, state, use_irradiance
+    ):
+        mock_hass.states.get.return_value = _mock_state("sensor.solar", state)
+        readings = provider.read(
+            use_irradiance=use_irradiance,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=300,
+        )
+        assert readings.irradiance_value is None
+
+    @pytest.mark.unit
+    def test_the_entity_is_read_exactly_once_per_cycle(self, provider, mock_hass):
+        """No double read: the fallback only fires when the latch path skipped it."""
+        mock_hass.states.get.return_value = _mock_state("sensor.solar", "250")
+        provider.read(
+            use_irradiance=True,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=300,
+        )
+        reads = [
+            c
+            for c in mock_hass.states.get.call_args_list
+            if c.args and c.args[0] == "sensor.solar"
+        ]
+        assert len(reads) == 1
+
+    @pytest.mark.unit
+    def test_lux_and_cloud_gain_no_raw_value_field(self, provider, mock_hass):
+        """Only irradiance carries a raw value — the other two stay booleans."""
+        mock_hass.states.get.return_value = _mock_state("sensor.lux", "4000")
+        readings = provider.read(
+            use_lux=True, lux_entity="sensor.lux", lux_threshold=5000
+        )
+        assert not hasattr(readings, "lux_value")
+        assert not hasattr(readings, "cloud_coverage_value")

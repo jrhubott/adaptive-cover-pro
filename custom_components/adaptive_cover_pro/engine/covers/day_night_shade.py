@@ -27,7 +27,7 @@ import math
 from dataclasses import dataclass
 
 from ...config_types import CoverConfig, DayNightShadeConfig, VerticalConfig
-from ...const import POSITION_OPEN
+from ...position_utils import covered_fraction
 from ...sun import SunData
 from .venetian import DualAxisResult
 from .vertical import AdaptiveVerticalCover
@@ -115,12 +115,15 @@ class DayNightShadeCalculation:
         )
         blend = DAY_NIGHT_BLACKOUT if blackout else DAY_NIGHT_SHEER
         opacity = self._dn.opacity_blackout if blackout else self._dn.opacity_sheer
-        covered_fraction = (POSITION_OPEN - position) / POSITION_OPEN
+        # The carriage rides the position axis with blind polarity (0 % = fully
+        # covered), so the shared primitive answers it — the arithmetic is not
+        # re-spelt here (#1236).
+        covered = covered_fraction(position, open_blocks_sun=False)
         return FabricSelection(
             blend=blend,
             opacity=opacity,
-            covered_fraction=covered_fraction,
-            filtering_estimate=opacity * covered_fraction,
+            covered_fraction=covered,
+            filtering_estimate=opacity * covered,
         )
 
     def calculate_dual(

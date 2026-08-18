@@ -36,6 +36,13 @@ def _make_coordinator(
     coordinator.clock_window_open = (
         check_adaptive_time if clock_window_open is None else clock_window_open
     )
+    # No outside-window constraint admission in these scenarios (#943 item B);
+    # pinned because a bare MagicMock attribute is truthy. Same reason for the
+    # result itself: the force-send path reads
+    # ``_pipeline_result.outside_window_constraint_active`` to decide whether to
+    # route per cover through ``_dispatch_to_cover``.
+    coordinator._pipeline_acts_outside_clock_window = False
+    coordinator._pipeline_result = None
     coordinator.automatic_control = automatic_control
     coordinator.entities = ["cover.test"]
     coordinator.logger = MagicMock()

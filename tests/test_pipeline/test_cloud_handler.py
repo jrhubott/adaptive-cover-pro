@@ -566,3 +566,60 @@ class TestCloudHandlerResolvedBoolGate:
             in_time_window=False,
         )
         assert self.handler.evaluate(snap) is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #1272 — cloud suppression defers to an active extreme-heat hold
+# ---------------------------------------------------------------------------
+
+
+class TestCloudHandlerExtremeHeatCarveOut:
+    """CloudSuppressionHandler stands down when climate would hit EXTREME_HEAT.
+
+    A narrow carve-out, not a priority reordering: cloud suppression (60) still
+    outranks climate (50) for every other climate branch. Only when the
+    already-resolved ``climate_extreme_heat_active`` flag is True does the
+    handler return ``None`` so ClimateHandler's EXTREME_HEAT rule can win.
+    """
+
+    handler = CloudSuppressionHandler()
+
+    def test_defers_when_extreme_heat_active_even_with_sun_in_fov_and_suppression_active(
+        self,
+    ) -> None:
+        """Extreme heat active → defer, even though every other gate says fire."""
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            cloud_suppression_active=True,
+            climate_extreme_heat_active=True,
+        )
+        assert self.handler.evaluate(snap) is None
+
+    def test_still_fires_when_extreme_heat_inactive(self) -> None:
+        """The carve-out is narrow: extreme heat inactive → fires normally."""
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            cloud_suppression_active=True,
+            climate_extreme_heat_active=False,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.CLOUD
+
+    def test_describe_skip_reports_extreme_heat_deferral(self) -> None:
+        """describe_skip() names the extreme-heat deferral as the stand-down reason."""
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            in_time_window=True,
+            climate_extreme_heat_active=True,
+        )
+        assert (
+            self.handler.describe_skip(snap).code
+            == ReasonCode.SKIP_CLOUD_DEFERRED_EXTREME_HEAT
+        )

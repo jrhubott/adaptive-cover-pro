@@ -9,7 +9,13 @@ import pytest
 
 from homeassistant.components.sensor import SensorDeviceClass
 
-from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, CoverType
+from custom_components.adaptive_cover_pro.const import (
+    BLIND_SPOT_ELEV_MODE_ABOVE,
+    CONF_SENSOR_TYPE,
+    CoverType,
+    DEFAULT_BLIND_SPOT_ELEVATION_MODE,
+)
+from custom_components.adaptive_cover_pro.diagnostics.builder import DiagnosticsBuilder
 from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverClimateStatusSensor,
     AdaptiveCoverControlStatusSensor,
@@ -17,6 +23,8 @@ from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverSunPositionSensor,
     _DIAGNOSTIC_SPECS,
 )
+
+from tests.test_diagnostics.test_builder import _base_ctx
 
 
 def _make_config_entry(sensor_type=CoverType.BLIND):
@@ -314,6 +322,231 @@ def test_sun_position_attributes_blind_spot_ranges_multi_slot():
     # New multi-slot attr: slot 1 then slot 2.
     # slot 2: left_edge = 45 - 20 = 25, right_edge = 45 - 15 = 30
     assert attrs["blind_spot_ranges"] == [[40.0, 35.0], [30.0, 25.0]]
+
+
+def test_sun_position_attributes_blind_spot_slots_includes_elevation_gate():
+    """blind_spot_slots carries the per-slot elevation gate alongside the range."""
+    coord = _make_coordinator(
+        diagnostics={
+            "sun_azimuth": 180.0,
+            "sun_elevation": 45.0,
+            "gamma": None,
+            "configuration": {
+                "azimuth": 180,
+                "fov_left": 45,
+                "fov_right": 45,
+                "enable_blind_spot": True,
+                "blind_spot_left": 10.0,
+                "blind_spot_right": 5.0,
+                "blind_spot_elevation": 20.0,
+                "blind_spot_elevation_mode": BLIND_SPOT_ELEV_MODE_ABOVE,
+            },
+        }
+    )
+    entry = _make_config_entry()
+    sensor = AdaptiveCoverSunPositionSensor(
+        unique_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    # left_edge = fov_left - blind_spot_left = 45 - 10 = 35
+    # right_edge = fov_left - blind_spot_right = 45 - 5 = 40
+    assert attrs["blind_spot_slots"] == [
+        {
+            "range": [40.0, 35.0],
+            "elevation": 20.0,
+            "elevation_mode": BLIND_SPOT_ELEV_MODE_ABOVE,
+        }
+    ]
+
+
+def test_sun_position_attributes_blind_spot_slots_multi_slot_and_gamma_source():
+    """blind_spot_slots enumerates every slot in the same order as blind_spot_ranges.
+
+    Slot 1 is sourced from the signed-gamma keys and carries an explicit
+    elevation gate; slot 2 is sourced from the legacy left/right keys and has
+    no elevation gate configured, so it falls back to
+    ``DEFAULT_BLIND_SPOT_ELEVATION_MODE``.
+    """
+    coord = _make_coordinator(
+        diagnostics={
+            "sun_azimuth": 180.0,
+            "sun_elevation": 45.0,
+            "gamma": None,
+            "configuration": {
+                "azimuth": 180,
+                "fov_left": 45,
+                "fov_right": 45,
+                "enable_blind_spot": True,
+                "blind_spot_left_gamma": 35.0,
+                "blind_spot_right_gamma": -40.0,
+                "blind_spot_elevation": 20.0,
+                "blind_spot_elevation_mode": BLIND_SPOT_ELEV_MODE_ABOVE,
+                "blind_spot_left_2": 20.0,
+                "blind_spot_right_2": 15.0,
+            },
+        }
+    )
+    entry = _make_config_entry()
+    sensor = AdaptiveCoverSunPositionSensor(
+        unique_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    slots = attrs["blind_spot_slots"]
+    assert [slot["range"] for slot in slots] == attrs["blind_spot_ranges"]
+    assert slots == [
+        {
+            "range": [40.0, 35.0],
+            "elevation": 20.0,
+            "elevation_mode": BLIND_SPOT_ELEV_MODE_ABOVE,
+        },
+        {
+            "range": [30.0, 25.0],
+            "elevation": None,
+            "elevation_mode": DEFAULT_BLIND_SPOT_ELEVATION_MODE,
+        },
+    ]
+
+
+def test_sun_position_attributes_blind_spot_slots_none_elevation_mode_falls_back_to_default():
+    """A present-but-None elevation_mode (legacy pre-#702 config) still defaults.
+
+    ``diagnostics/builder.py`` materializes ``blind_spot_elevation_mode`` in the
+    ``configuration`` dict unconditionally via ``options.get(...)`` — for a blind
+    spot configured before #702 introduced the elevation-mode option and never
+    re-saved, the raw option is absent, so the copied value is ``None`` rather
+    than the key being absent entirely. ``config.get(key, DEFAULT)`` would not
+    catch this, since the key IS present (with value ``None``). The engine
+    (``config_types.py``) already treats an unset elevation_mode as
+    ``DEFAULT_BLIND_SPOT_ELEVATION_MODE``, so the sensor attribute must publish
+    the same gate the engine actually applies, not ``None``.
+    """
+    coord = _make_coordinator(
+        diagnostics={
+            "sun_azimuth": 180.0,
+            "sun_elevation": 45.0,
+            "gamma": None,
+            "configuration": {
+                "azimuth": 180,
+                "fov_left": 45,
+                "fov_right": 45,
+                "enable_blind_spot": True,
+                "blind_spot_left": 10.0,
+                "blind_spot_right": 5.0,
+                "blind_spot_elevation": None,
+                "blind_spot_elevation_mode": None,
+            },
+        }
+    )
+    entry = _make_config_entry()
+    sensor = AdaptiveCoverSunPositionSensor(
+        unique_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    assert attrs["blind_spot_slots"] == [
+        {
+            "range": [40.0, 35.0],
+            "elevation": None,
+            "elevation_mode": DEFAULT_BLIND_SPOT_ELEVATION_MODE,
+        }
+    ]
+
+
+def _build_diagnostics_for_config_options(config_options: dict) -> dict:
+    """Run the REAL ``DiagnosticsBuilder`` over the given raw options.
+
+    Unlike the hand-fed ``configuration`` dicts above (which prove only that
+    ``_sun_position_attrs`` branches correctly on whatever keys it's handed),
+    this drives the actual production chain — options -> DiagnosticsBuilder
+    -> diagnostics['configuration'] — so a bug in the builder's key-forwarding
+    (#1291) is actually caught.
+    """
+    diag, _ = DiagnosticsBuilder().build(_base_ctx(config_options=config_options))
+    return diag
+
+
+@pytest.mark.unit
+def test_sun_position_attrs_gamma_only_slot1_publishes_blind_spot_ranges():
+    """A gamma-only slot-1 entry (today's only write shape) publishes
+    blind_spot_range/blind_spot_ranges through the real DiagnosticsBuilder
+    (#1291 regression guard).
+
+    Before the fix, ``_build_configuration`` forwarded only the legacy
+    left/right sub-keys, so a gamma-only options dict produced an empty
+    ``ranges`` list in ``_sun_position_attrs`` and neither attribute was
+    emitted, even though the calculation engine (which reads raw options
+    independently) computed the position correctly.
+    """
+    diag = _build_diagnostics_for_config_options(
+        {
+            "blind_spot": True,
+            "blind_spot_left_gamma": 35,
+            "blind_spot_right_gamma": 40,
+            "fov_left": 45,
+            "fov_right": 45,
+            "azimuth": 180,
+        }
+    )
+    coord = _make_coordinator(diagnostics=diag)
+    entry = _make_config_entry()
+    sensor = AdaptiveCoverSunPositionSensor(
+        unique_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    assert attrs["blind_spot_ranges"] == [[-40, 35]]
+    assert attrs["blind_spot_range"] == [-40, 35]
+
+
+@pytest.mark.unit
+def test_sun_position_attrs_unconfigured_slot_publishes_no_spurious_range():
+    """Slot 1 gamma-only configured; slots 2/3 entirely absent (no gamma AND
+    no legacy keys) must not leak a spurious range for the unconfigured slots.
+
+    #1071 regression guard extended to the widened builder tuple (#1291):
+    the length-1 result proves an absent slot's ``None``/``None`` pair still
+    ``continue``s rather than producing e.g. ``[None, None]``.
+    """
+    diag = _build_diagnostics_for_config_options(
+        {
+            "blind_spot": True,
+            "blind_spot_left_gamma": 35,
+            "blind_spot_right_gamma": 40,
+            "fov_left": 45,
+            "fov_right": 45,
+            "azimuth": 180,
+        }
+    )
+    coord = _make_coordinator(diagnostics=diag)
+    entry = _make_config_entry()
+    sensor = AdaptiveCoverSunPositionSensor(
+        unique_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    assert attrs["blind_spot_ranges"] == [[-40, 35]]
 
 
 # ---------------------------------------------------------------------------

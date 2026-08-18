@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 import datetime as dt
 from dataclasses import asdict, dataclass, field
+import logging
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -13,7 +14,12 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_FRIENDLY_NAME, MATCH_ALL, PERCENTAGE
+from homeassistant.const import (
+    ATTR_FRIENDLY_NAME,
+    MATCH_ALL,
+    PERCENTAGE,
+    UnitOfPower,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -23,6 +29,7 @@ from .const import (
     BLIND_SPOT_SLOTS,
     CONF_CLIMATE_MODE,
     CONF_TRAVEL_TIME_CALIBRATION,
+    DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     TRAVEL_CALIBRATION_STATE_CANCELLED,
     TRAVEL_CALIBRATION_STATE_COMPLETE,
     TRAVEL_CALIBRATION_STATE_FAILED,
@@ -64,6 +71,8 @@ from .helpers import (
 from .reason_i18n import Reason, render, reason_to_dict
 from .templates import is_template_string
 from .unit_system import length_display_unit, to_display_length
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _localized_reason(
@@ -281,6 +290,42 @@ class _ACPRestorableDiagnosticSensor(_ACPDiagnosticSensor, RestoreEntity):
         return False
 
 
+def _parse_restored_expiry(entity_id: str, raw: Any) -> dt.datetime | None:
+    """Parse one restored expiry value, or return None if it is unusable (#1273).
+
+    Rejects anything ``fromisoformat`` cannot take, and anything it CAN take but
+    that comes back naive — a naive value compares fine here and then raises
+    ``TypeError`` against the tz-aware ``now`` at the call site, so it has to be
+    caught at the parse rather than trusted through.
+    """
+    if not isinstance(raw, str):
+        _LOGGER.warning(
+            "Discarding restored manual-override expiry for %s: expected an "
+            "ISO-8601 string, got %s",
+            entity_id,
+            type(raw).__name__,
+        )
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(raw)
+    except ValueError:
+        _LOGGER.warning(
+            "Discarding unparseable restored manual-override expiry for %s: %r",
+            entity_id,
+            raw,
+        )
+        return None
+    if parsed.tzinfo is None:
+        _LOGGER.warning(
+            "Discarding restored manual-override expiry for %s: %r carries no "
+            "timezone, so its true instant is unknown",
+            entity_id,
+            raw,
+        )
+        return None
+    return parsed
+
+
 class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
     """Concrete: rehydrate manual-override manager from per_entity expiry dict."""
 
@@ -290,6 +335,14 @@ class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
         per_entity maps cover entity_id → ISO-8601 UTC expiry string.
         Entries that are expired or not in the current cover set are dropped.
         Returns True if at least one entity was restored.
+
+        A malformed value is dropped with a warning rather than raised (issue
+        #1273). The payload is whatever some earlier build wrote, so this cannot
+        assume its own output shape: an unparseable or non-string value would
+        otherwise raise straight out of ``async_added_to_hass``, and a NAIVE
+        timestamp — the shape a rolled-back build could persist — parses cleanly
+        and then raises ``TypeError`` on the comparison below. One bad cover must
+        not cost every other cover its override (cf. #1232).
         """
         now = dt.datetime.now(dt.UTC)
         manager = self.coordinator.manager
@@ -298,17 +351,10 @@ class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
         for eid, expiry_iso in per_entity.items():
             if eid not in manager.covers:
                 continue
-            expiry = dt.datetime.fromisoformat(expiry_iso)
-            if expiry <= now:
+            expiry = _parse_restored_expiry(eid, expiry_iso)
+            if expiry is None or expiry <= now:
                 continue
             manager.restore_override(eid, expiry)
-            manager._record_event(  # noqa: SLF001
-                eid,
-                "restored",
-                our_state=None,
-                new_position=None,
-                reason="restored from RestoreEntity after reboot",
-            )
             restored_any = True
 
         return restored_any
@@ -354,11 +400,43 @@ class _PositionVerificationSensor(_ACPRestorableDiagnosticSensor):
 # ---------------------------------------------------------------------------
 
 
-def _cover_position_value(s: _ACPSensor) -> Any:
-    held = s.data.states.get("held_position")
-    if held is not None:
+def _target_position(states: Mapping[str, Any], result: Any) -> Any:
+    """Resolve where ACP is putting this cover — the Target Position value.
+
+    The one definition behind all three of this sensor's target surfaces — its
+    own state, its ``target_distance``, and its ``all_at_target`` verdict. Each
+    derived the target separately before #1175, and they disagreed.
+
+    A hold winner keeps the cover's *physical* position rather than proposing a
+    computed one, so ``held_position`` is the honest answer while the hold is
+    holding: it beats the value the hold merely shadows (#534 / #809). It stops
+    being the answer once a user-configured bound outranks the holder and clamps
+    it — the hold no longer decides where this cover goes, while
+    ``held_position`` still carries the pre-clamp read (#1175).
+
+    ⚠️ The gate is ``position_constraint_applied``, NOT ``skip_command``. The
+    tilt axis clears ``skip_command`` too, but there the position axis stayed
+    inert and the winner's ``position`` was rewritten from the held read — the
+    cover is being commanded to where it already is, so the physical read is
+    still right. Only the position-axis flag means a bound re-targeted this
+    winner.
+
+    ``position_constraint_applied`` says a bound re-targeted the winner; it does
+    NOT say a frame reached the motor, and this surface does not claim one did.
+    It reports the pipeline's resolved target — as it already does for every
+    winner the dispatch gates go on to suppress — not a dispatch log.
+    """
+    held = states.get("held_position")
+    clamped = result is not None and result.position_constraint_applied
+    if held is not None and not clamped:
         return held
-    return s.data.states["state"]
+    return states["state"]
+
+
+def _cover_position_value(s: _ACPSensor) -> Any:
+    """Return the Target Position sensor's own value."""
+    result = s.coordinator._pipeline_result  # noqa: SLF001
+    return _target_position(s.data.states, result)
 
 
 def _compute_distance_attrs(
@@ -415,6 +493,9 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         attrs["reason"] = _localized_reason(
             s.coordinator, pipeline_result.reason_payload, pipeline_result.reason
         )
+    # Resolved once and shared by both surfaces below, from the result already
+    # in hand — the sensor's value goes through the same helper (#1175).
+    target_position = _target_position(s.data.states, pipeline_result)
     diagnostics = s.coordinator.data.diagnostics if s.coordinator.data else None
     if diagnostics:
         position_explanation = diagnostics.get("position_explanation")
@@ -477,12 +558,13 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         }
 
         # all_at_target: True when every cover with a known position is within
-        # tolerance of the coordinator's current target position.
-        target = s.data.states.get("state")
+        # tolerance of the target this sensor reports. Measured against that
+        # target and not the raw ``state``, or a hold reads as "not at target"
+        # while every cover sits exactly where the hold is holding it (#1175).
         tolerance = s.coordinator._cmd_svc._position_tolerance  # noqa: SLF001
-        if target is not None:
+        if target_position is not None:
             try:
-                target_int = int(target)
+                target_int = int(target_position)
                 attrs["all_at_target"] = all(
                     pos is not None and abs(pos - target_int) <= tolerance
                     for pos in actual_positions.values()
@@ -492,10 +574,7 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         else:
             attrs["all_at_target"] = None
 
-    target_pos = s.data.states.get("held_position")
-    if target_pos is None:
-        target_pos = s.data.states.get("state")
-    distance_attrs = _compute_distance_attrs(s.coordinator, snapshot, target_pos)
+    distance_attrs = _compute_distance_attrs(s.coordinator, snapshot, target_position)
     if distance_attrs is not None:
         attrs.update(distance_attrs)
 
@@ -596,8 +675,11 @@ def _sun_position_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
         # One [right_edge, left_edge] pair per active slot (issue #701). Slot 1
         # reuses the legacy unsuffixed keys. ``blind_spot_range`` keeps emitting
         # only slot 1 for Lovelace-card back-compat; ``blind_spot_ranges`` lists
-        # every active slot.
+        # every active slot. ``blind_spot_slots`` (issue #1292) pairs each range
+        # with the elevation gate that decides when the slot is active, built in
+        # this same loop so the two attributes never drift out of sync.
         ranges: list[list[float]] = []
+        slots: list[dict[str, Any]] = []
         for keys in BLIND_SPOT_SLOTS.values():
             # Signed-gamma keys are the primary source (issue #247): the wedge is
             # -right_gamma..left_gamma, so the emitted [right, left] pair is
@@ -605,16 +687,32 @@ def _sun_position_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
             lg = config.get(keys["left_gamma"])
             rg = config.get(keys["right_gamma"])
             if lg is not None and rg is not None:
-                ranges.append([-rg, lg])
-                continue
-            bs_left = config.get(keys["left"])
-            bs_right = config.get(keys["right"])
-            if bs_left is None or bs_right is None:
-                continue
-            ranges.append([fov_left - bs_right, fov_left - bs_left])
+                pair = [-rg, lg]
+            else:
+                bs_left = config.get(keys["left"])
+                bs_right = config.get(keys["right"])
+                if bs_left is None or bs_right is None:
+                    continue
+                pair = [fov_left - bs_right, fov_left - bs_left]
+            ranges.append(pair)
+            slots.append(
+                {
+                    "range": pair,
+                    "elevation": config.get(keys["elevation"]),
+                    # ``configuration`` always materializes this key (builder.py
+                    # copies it unconditionally via options.get(...)), so a
+                    # key-absent default would never fire for a legacy
+                    # pre-#702 blind spot whose raw option is genuinely unset —
+                    # coalesce the None instead, matching config_types.py's
+                    # ``elevation_mode or DEFAULT_BLIND_SPOT_ELEVATION_MODE``.
+                    "elevation_mode": config.get(keys["elevation_mode"])
+                    or DEFAULT_BLIND_SPOT_ELEVATION_MODE,
+                }
+            )
         if ranges:
             attrs["blind_spot_range"] = ranges[0]
             attrs["blind_spot_ranges"] = ranges
+            attrs["blind_spot_slots"] = slots
 
     return attrs or None
 
@@ -736,11 +834,16 @@ def _last_action_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
 
 
 def _manual_override_expiries(s: _ManualOverrideEndSensor) -> dict[str, dt.datetime]:
-    """Per-entity resolved override end times, via the manager's single authority."""
+    """Per-entity resolved override end times, via the manager's single authority.
+
+    Iterates ``active_entities()`` rather than a raw state store (issue #1273),
+    so this sensor and the ``manual_override_state`` diagnostics block cannot
+    disagree about which covers are held.
+    """
     manager = s.coordinator.manager
     return {
         entity_id: expiry
-        for entity_id in manager.manual_control_time
+        for entity_id in manager.active_entities()
         if (expiry := manager.expiry_for(entity_id)) is not None
     }
 
@@ -840,12 +943,11 @@ def _motion_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
         "motion_timeout_seconds": mgr._timeout_seconds
     }  # noqa: SLF001
 
+    end = mgr.timeout_end_time
+    if end is not None:
+        attrs["motion_timeout_end_time"] = end.isoformat()
+
     if mgr.last_motion_time is not None:
-        if mgr.has_pending_timeout or mgr.is_motion_timeout_active:
-            end_ts = mgr.last_motion_time + mgr._timeout_seconds  # noqa: SLF001
-            attrs["motion_timeout_end_time"] = dt_util.utc_from_timestamp(
-                end_ts
-            ).isoformat()
         attrs["last_motion_time"] = dt_util.utc_from_timestamp(
             mgr.last_motion_time
         ).isoformat()
@@ -971,6 +1073,48 @@ def _solar_calculation_value(s: _ACPDiagnosticSensor) -> int | None:
 def _solar_calculation_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
     """Attributes = the full raw calculation_details trace dict."""
     return _solar_calculation_details(s)
+
+
+def _solar_gain_block(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
+    """Read the estimated-solar-gain block from diagnostics (single source).
+
+    The same dict the diagnostics download surfaces, so the sensor and the
+    download can never disagree — mirroring ``_solar_calculation_details``.
+    """
+    diagnostics = s.data.diagnostics if s.data else None
+    if not diagnostics:
+        return None
+    return diagnostics.get("solar_gain") or None
+
+
+def _solar_gain_value(s: _ACPDiagnosticSensor) -> int | None:
+    """State = whole watts, or ``None`` when a term of the estimate is missing.
+
+    Integer watts on purpose: the display precision is 0, the estimate's error
+    band is ±30 %, and rounding here caps recorder churn by pairing with the
+    render-signature write suppression on the entity base. ``0`` is a real
+    value (the sun is down), so the ``is None`` check must not become falsy.
+    """
+    block = _solar_gain_block(s)
+    if block is None:
+        return None
+    gain_w = block.get("gain_w")
+    if gain_w is None:
+        return None
+    return int(round(gain_w))
+
+
+def _solar_gain_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
+    """Attributes = every input and its provenance, minus the state itself.
+
+    This is the "assemble it yourself" escape hatch: irradiance components,
+    clearness index, area, transmittance, plane, model, and the reason a figure
+    is missing — enough for a user to audit any number they do not believe.
+    """
+    block = _solar_gain_block(s)
+    if block is None:
+        return None
+    return {k: v for k, v in block.items() if k != "gain_w"}
 
 
 def _decision_trace_value(s: _ACPDiagnosticSensor) -> str:
@@ -1443,6 +1587,27 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         # Per-entity dicts that only change when a run does — recording them
         # would store the same blob indefinitely between calibrations.
         unrecorded_attributes=frozenset({"results", "calibration"}),
+    ),
+    _SensorSpec(
+        suffix="solar_gain",
+        display_name="Estimated Solar Gain",
+        icon="mdi:solar-power-variant",
+        translation_key="solar_gain",
+        device_class=SensorDeviceClass.POWER,
+        unit=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=_solar_gain_value,
+        attrs_fn=_solar_gain_attrs,
+        # Only created when the user actually has an irradiance sensor: #1237
+        # ships no clear-sky fallback, so without a reading there is nothing
+        # credible to report and an entity permanently ``unknown`` is worse
+        # than no entity at all.
+        enabled_when=lambda e: bool(e.options.get(CONF_IRRADIANCE_ENTITY)),
+        # Deliberately EMPTY, unlike solar_calculation's MATCH_ALL: these are a
+        # handful of small scalars whose history is exactly what makes the
+        # estimate auditable over a day.
+        unrecorded_attributes=frozenset(),
     ),
     _SensorSpec(
         suffix="climate_status",

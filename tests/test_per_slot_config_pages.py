@@ -208,6 +208,46 @@ async def test_blind_spot_slot_saves_only_its_slot():
     assert "blind_spot_left_gamma" not in flow.options  # slot-1 untouched
 
 
+@pytest.mark.asyncio
+async def test_blind_spot_slot_clears_elevation_and_right_gamma_when_omitted():
+    """Clearing elevation (or right_gamma, slots 2/3) must round-trip to None.
+
+    Regression for issue #1267: a field omitted from the POST because the
+    user cleared it was simply excluded from ``mapped``, leaving the stale
+    stored value untouched — worse than #323's "overwritten with the wrong
+    thing", here nothing happens at all. ``elevation`` (None = applies at all
+    elevations, const.py) and slot-2/3 ``right_gamma`` are bare Optionals with
+    no schema default, so voluptuous drops them from user_input when blanked.
+    """
+    flow = _options_flow({"fov_left": 45, "fov_right": 45})
+    flow.async_step_blind_spot = AsyncMock(return_value={"type": "menu"})
+
+    await flow.async_step_blind_spot_slot_2(None)
+    await flow.async_step_blind_spot_slot(
+        {
+            BLIND_SPOT_FORM_KEYS["left_gamma"]: 35,
+            BLIND_SPOT_FORM_KEYS["right_gamma"]: -15,
+            BLIND_SPOT_FORM_KEYS["elevation"]: 45,
+        }
+    )
+    assert flow.options["blind_spot_left_gamma_2"] == 35
+    assert flow.options["blind_spot_right_gamma_2"] == -15
+    assert flow.options["blind_spot_elevation_2"] == 45
+
+    # Re-open the slot and submit again with elevation omitted — simulates
+    # the user clearing that single slider.
+    await flow.async_step_blind_spot_slot_2(None)
+    await flow.async_step_blind_spot_slot(
+        {
+            BLIND_SPOT_FORM_KEYS["left_gamma"]: 35,
+            BLIND_SPOT_FORM_KEYS["right_gamma"]: -15,
+        }
+    )
+    assert (
+        flow.options["blind_spot_elevation_2"] is None
+    ), f"blind_spot_elevation_2 should be None after clearing, got {flow.options['blind_spot_elevation_2']!r}"
+
+
 # ---------------------------------------------------------------------------
 # Slot delete — full-key-map clear (issue #1071)
 # ---------------------------------------------------------------------------
@@ -299,6 +339,7 @@ _CUSTOM_POSITION_SAMPLE: dict[str, object] = {
     "position_max": 80,
     "tilt_min": 10,
     "tilt_max": 90,
+    "outside_window": True,
     "enabled": False,
 }
 

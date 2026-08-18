@@ -238,11 +238,95 @@ class PerEntityState:
     # frame to describe.
     dispatch_token: Any = None
     sent_at: dt.datetime | None = None
+    # The raw axis value read at the moment ``target`` was dispatched (issue
+    # #1139) — the SAME ``prior_position`` value both ``sent_at`` writers
+    # (``CoverCommandService._prepare_service_call``,
+    # ``CoverCommandService.send_my_position``) already compute, stamped in
+    # the same breath. Lets ``StateClassifier`` distinguish "this cover has
+    # not reacted to the command at all" (still resting exactly where it
+    # stood at dispatch) from "this cover moved, then stalled somewhere
+    # else" — the #172/#518 guard tests hinge on exactly that distinction;
+    # see the equal-distance arm in ``state_classifier.py``. ``None`` means
+    # "no dispatch origin recorded": every row before its first command, and
+    # every target ``restore_target`` rehydrates after a reload (a
+    # rehydration is not a dispatch, so it must not let the classifier
+    # suppress a clear). Read only by ``StateClassifier``, via
+    # ``CoverCommandService.get_position_at_send`` — dropped with the whole
+    # row by ``discard_target``, no bespoke clearing needed.
+    position_at_send: int | None = None
     waiting: bool = False
     last_progress_at: dt.datetime | None = None
     retry_count: int = 0
     gave_up: bool = False
+    # Whether ``target`` above is a safety-protected number — the question both
+    # readers ask: ``clear_non_safety_targets()`` decides whether to sweep
+    # ``target``, and ``run_reconciliation_pass`` steps 3/4 decide whether to
+    # resend it with automatic control off or outside the time window. Both
+    # ignore a row whose ``target`` is None. It is a verdict ABOUT the booked
+    # number, which is what makes its lifetime differ from ``dispatch_token``'s
+    # just above: the token describes how one dispatch expressed the value, the
+    # verdict describes what is protecting it.
+    #
+    # "About the booked number" is the INTENT, not an invariant this dataclass
+    # enforces. Two writers keep the pair in step by construction:
+    # ``_prepare_service_call``, which books and stamps in the same breath on
+    # every real dispatch, and ``_record_safety_verdict``, which the three
+    # ``apply_position`` gates that skip WITHOUT dispatching all call — revoke
+    # unconditionally, grant only when the booked target is the number that
+    # cycle routed to, never inside a booking's value-change guard. That rule
+    # and the failure behind each half are argued on the helper (#1165).
+    # ``clear_safety_targets()`` is a third writer: a blanket reset that clears
+    # the verdict on every row without touching any target.
+    #
+    # FIVE other sites write ``target`` and leave the verdict exactly as they
+    # found it, so a row can pair a fresh target with an older decision's
+    # verdict:
+    #
+    # * ``CoverCommandService.restore_target`` — rehydration after a reload.
+    # * ``CoverCommandService.send_my_position`` — books the configured My
+    #   percent (no production caller today).
+    # * ``coordinator.py``'s two external-stop -> My paths. Step 2 of
+    #   ``run_reconciliation_pass`` drops an entity under manual override
+    #   before it ever reads this field, but only one site gets that for free:
+    #   ``async_apply_user_stop`` (``coordinator.py:4608``) books below an
+    #   unconditional ``mark_user_command``. ``async_check_cover_service_call``
+    #   (``coordinator.py:1288``) books whether or not
+    #   ``handle_stop_service_call`` engaged the override — it RETURNS that
+    #   answer and the booking ignores it — so an untracked cover, or one the
+    #   #875 wait-for-target gate declined, books with no override behind it.
+    # * ``cover_types/venetian/sequencer.py``'s carriage rebase — pushes the
+    #   observed carriage position back through ``set_commanded_position``
+    #   (== ``set_target``) after a tilt-only send back-drives it.
+    #
+    # Today's blast radius is small, but the inheritance is real, and it is why
+    # ``_record_safety_verdict`` declines to GRANT on a row with nothing
+    # booked: an unbooked True is inert against both readers, yet any of the
+    # five would hand it straight to the next target.
+    #
+    # A reconciliation resend RESTATES the recorded value rather than
+    # re-deciding it (#1134), because a resend makes no new verdict.
     is_safety: bool = False
+    # Whether ``target`` above was booked under an ADMITTED outside-the-clock-
+    # window constraint (issue #943 item B) — an opted-in Custom Position slot
+    # whose min/max bound actually clamped that cycle. One reader:
+    # ``run_reconciliation_pass`` step 4, which resends a licensed target while
+    # the user's clock window is closed.
+    #
+    # A SEPARATE field from ``is_safety`` above, deliberately. Reusing that one
+    # would hand a constraint dispatch every other licence safety carries —
+    # surviving ``clear_non_safety_targets()``, resending with automatic control
+    # off — and reopening #1165's stale-verdict class in the process. The two
+    # never co-write: ``is_safety`` keeps the writers documented above, and this
+    # field has exactly one writer of its own (``_prepare_service_call``, from
+    # ``PositionContext.outside_window_constraint``) and one sweeper
+    # (``clear_outside_window_targets``, on the coordinator's non-admitted
+    # outside-window cycle). ``discard_target`` drops both with the whole row on
+    # the manual-override edge.
+    #
+    # Never restored after a reload: ``restore_target`` rehydrates the number
+    # without the licence, because the licence is a live-cycle verdict and the
+    # first-refresh admission re-establishes it from a fresh result.
+    outside_window_constraint: bool = False
     last_reconcile_at: dt.datetime | None = None
     # Display-only assumed position (issue #888). Set on covers with no native
     # position axis (Somfy-RTS-style open/close-only) when ACP drives them — an
@@ -275,6 +359,26 @@ class PerEntityState:
     # value differs from the new target.
     forced_endpoint: int | None = None
 
+    @property
+    def acts_outside_clock_window(self) -> bool:
+        """Whether this booked target may be resent outside the clock window.
+
+        The per-entity half of the shared admission rule. It reaches the SAME
+        predicate ``PipelineResult.acts_outside_clock_window`` does, which is
+        the point: the live result and the booked record answer the question in
+        different shapes and at different times, but the rule itself exists once
+        (CODING_GUIDELINES § No Duplication).
+        """
+        # Local import keeps this a leaf module at import time.
+        from ...pipeline.axis_constraints import (  # noqa: PLC0415
+            may_act_outside_clock_window,
+        )
+
+        return may_act_outside_clock_window(
+            is_safety=self.is_safety,
+            constraint_admitted=self.outside_window_constraint,
+        )
+
 
 @dataclasses.dataclass
 class PositionContext:
@@ -298,6 +402,13 @@ class PositionContext:
     is_safety: bool = (
         False  # Safety-critical target (persists across window boundaries; bypasses auto_control)
     )
+    # This cycle's outside-the-clock-window constraint admission (issue #943
+    # item B) — set by the coordinator from
+    # ``PipelineResult.outside_window_constraint_active``. Stamped onto
+    # ``PerEntityState.outside_window_constraint`` at the single booking site so
+    # reconciliation may resend the licensed target overnight. Strictly narrower
+    # than ``is_safety``: it grants the clock crossing and nothing else.
+    outside_window_constraint: bool = False
     bypass_auto_control: bool = (
         False  # Sanctioned one-shot bypass of auto_control gate (e.g. switch return-to-default)
     )

@@ -232,3 +232,49 @@ def test_set_position_limits_field_is_default_percentage_not_default_height():
     fields = _load()["set_position_limits"]["fields"]
     assert "default_percentage" in fields
     assert "default_height" not in fields
+
+
+def test_set_position_limits_min_position_sun_tracking_field_exists_with_correct_range():
+    """Issue #1242: min_position_sun_tracking must be a set_position_limits field —
+    the option key is already wired into FIELD_VALIDATORS and
+    _SECTION_POSITION_LIMITS (options_service.py), and translations/en.json already
+    carries a services.set_position_limits.fields.min_position_sun_tracking entry;
+    only services.yaml was missing the field the UI actually renders from.
+    """
+    fields = _load()["set_position_limits"]["fields"]
+    assert "min_position_sun_tracking" in fields
+    sel = fields["min_position_sun_tracking"]["selector"]["number"]
+    assert sel["min"] == 0
+    assert sel["max"] == 99
+    assert sel["step"] == 1
+    assert sel["mode"] == "slider"
+    assert sel["unit_of_measurement"] == "%"
+
+
+def test_set_position_limits_en_json_fields_match_services_yaml():
+    """services.yaml and en.json set_position_limits fields must match 1:1 — mirrors
+    test_set_blind_spot_en_json_fields_match_services_yaml (issue #247's guard).
+    Without this lock, a yaml field can ship with no translation (silently falls back
+    to raw English in the Actions UI, confirmed in issue #1242's screenshot for
+    enable_position_matching) or a translation entry can exist with no yaml field
+    behind it (silently invisible in the Actions UI — issue #1242's root cause for
+    min_position_sun_tracking).
+    """
+    import json
+
+    yaml_fields = set(_load()["set_position_limits"]["fields"])
+    en_path = (
+        Path(__file__).parent.parent
+        / "custom_components"
+        / "adaptive_cover_pro"
+        / "translations"
+        / "en.json"
+    )
+    with en_path.open(encoding="utf-8") as fh:
+        en = json.load(fh)
+    en_fields = set(en["services"]["set_position_limits"]["fields"])
+    assert en_fields == yaml_fields, (
+        "services.yaml and en.json set_position_limits fields disagree: "
+        f"only in yaml={sorted(yaml_fields - en_fields)}, "
+        f"only in en.json={sorted(en_fields - yaml_fields)}"
+    )

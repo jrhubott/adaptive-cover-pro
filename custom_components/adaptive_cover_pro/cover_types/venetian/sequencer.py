@@ -63,7 +63,7 @@ from ...managers.cover_command.gates import (
     filter_endpoint_specials,
 )
 from ...managers.cover_command.transit import is_state_in_transit
-from ...position_utils import inverse_state
+from ...position_utils import flip_if
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -148,6 +148,7 @@ class DualAxisSequencer:
         backrotate_publish_lag_seconds: float = (
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
         ),
+        mark_air_busy: Callable[[], None] | None = None,
     ) -> None:
         """Bind HA + cmd_svc dependencies; per-entity timestamps start empty.
 
@@ -169,6 +170,12 @@ class DualAxisSequencer:
         self._hass = hass
         self._logger = logger
         self._grace_mgr = grace_mgr
+        # Reports a tilt frame to the instance's command queue (issue #1189).
+        # Every tilt send is a transmission the queue never gated: the tail runs
+        # outside the slot by design, and the pre-send runs inside one it is
+        # about to hand back. ``None`` for an unqueued instance and for the
+        # sequencers unit tests build directly.
+        self._mark_air_busy = mark_air_busy
         self._get_current_position = get_current_position
         self._set_commanded_position = set_commanded_position
         self._position_tolerance = position_tolerance
@@ -240,17 +247,29 @@ class DualAxisSequencer:
 
     # -- tilt inversion ---------------------------------------------------- #
 
+    @property
+    def tilt_inverted(self) -> bool:
+        """Whether this instance's tilt axis is currently wire-inverted.
+
+        Public seam (issue #1227 PR-2) so a policy building a
+        ``SecondaryAxisCheck`` can state the frame declaratively
+        (``inverted=self.tilt_inverted``) instead of reaching for the private
+        ``_to_wire`` method — the single source of truth for "is this axis
+        inverted right now?" that ``_to_wire`` itself delegates to below.
+        """
+        return self._invert_tilt is not None and self._invert_tilt()
+
     def _to_wire(self, tilt: int) -> int:
         """Convert logical tilt to wire value, applying inversion if configured.
 
         Symmetric: applied to a logical value yields wire; applied to a wire
         value yields logical. Both directions go through the same inversion
         check, so callers reading the actuator can use this to compare
-        against a logical target.
+        against a logical target. Delegates to :func:`flip_if` — the project's
+        single source of truth for the "flip on inversion" conditional
+        (issues #1036/#1042) — rather than re-deriving the ternary here.
         """
-        if self._invert_tilt is not None and self._invert_tilt():
-            return inverse_state(tilt)
-        return tilt
+        return flip_if(tilt, inverted=self.tilt_inverted)
 
     def _publish_matches(self, new_value: float, logical_tilt: int) -> bool:
         """Whether a published wire value matches a LOGICAL tilt within tolerance."""
@@ -717,8 +736,15 @@ class DualAxisSequencer:
             )
             if verify and entity_id not in self._tilt_targets_verified:
                 await asyncio.sleep(VENETIAN_POST_TILT_REBASE_DELAY_SECONDS)
+                # Issue #1234: pass the RAW drift_reset_eligible parameter,
+                # deliberately not the derived drift_reset_enabled — a retry
+                # spawned from here re-derives its own _reset_in_progress /
+                # threshold > 0 folds inside _send_tilt_command itself.
                 await self._verify_and_record_tilt(
-                    entity_id, tilt_target, _retry_depth=_retry_depth
+                    entity_id,
+                    tilt_target,
+                    _retry_depth=_retry_depth,
+                    drift_reset_eligible=drift_reset_eligible,
                 )
             return False
 
@@ -833,6 +859,21 @@ class DualAxisSequencer:
             )
             return False
 
+        # A tilt frame keys the radio and the command queue never gated it
+        # (issue #1189). The post-settle tail runs OUTSIDE the slot on purpose —
+        # ``_wait_for_position_settle`` is capped at
+        # ``VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS`` (60 s), and holding the
+        # slot across that would starve every other member, while #1115's
+        # day/night guard depends on the tail not holding it — so by the time
+        # this frame goes out the queue believes the air is free and the next
+        # member is free to key on top of it. Reported here, at the one
+        # chokepoint every real tilt send passes through, exactly as
+        # ``StopTracker.call_stop_cover`` reports a stop. Deduped, dry-run and
+        # min-delta-gated sends returned above and report nothing: they owe the
+        # air only what they actually used.
+        if self._mark_air_busy is not None:
+            self._mark_air_busy()
+
         self._record_event(
             "tilt_command_sent",
             entity_id=entity_id,
@@ -868,8 +909,16 @@ class DualAxisSequencer:
         # may back-rotate the slats during position movement, leaving the cover
         # at tilt=0 even though we sent tilt=N. If we detect drift, clear the
         # recorded target so the next update_tilt_only cycle retries.
+        #
+        # Issue #1234: pass the RAW drift_reset_eligible parameter, deliberately
+        # not the derived drift_reset_enabled — a retry spawned from here
+        # re-derives its own _reset_in_progress / threshold > 0 folds inside
+        # _send_tilt_command itself.
         await self._verify_and_record_tilt(
-            entity_id, tilt_target, _retry_depth=_retry_depth
+            entity_id,
+            tilt_target,
+            _retry_depth=_retry_depth,
+            drift_reset_eligible=drift_reset_eligible,
         )
 
         if position_settled:
@@ -1295,7 +1344,12 @@ class DualAxisSequencer:
         )
 
     async def _verify_and_record_tilt(
-        self, entity_id: str, tilt_target: int, *, _retry_depth: int = 0
+        self,
+        entity_id: str,
+        tilt_target: int,
+        *,
+        _retry_depth: int = 0,
+        drift_reset_eligible: bool = True,
     ) -> None:
         """Poll actual tilt up to N samples; accept on the first in-tolerance read.
 
@@ -1315,6 +1369,14 @@ class DualAxisSequencer:
         retry passes ``_retry_depth=1`` to block further recursion: a still-
         drifting second attempt drops out and the next coordinator cycle
         owns ultimate recovery.
+
+        ``drift_reset_eligible`` (issue #1234) rides along with the retry
+        send. Without it, the flag could not survive the round trip
+        ``_send_tilt_command`` → ``_verify_and_record_tilt`` →
+        ``_send_tilt_command``: the retry always re-defaulted to eligible,
+        silently re-arming drift-reset accumulation on a send that the
+        caller had already ruled ineligible (e.g. ``sun_tracking_only``
+        scope on a non-solar win).
         """
         if self._get_current_tilt_position is None:
             return
@@ -1386,5 +1448,10 @@ class DualAxisSequencer:
                 reason="drift_retry",
                 force=True,
                 verify=True,
+                # Issue #1234: forward the caller's eligibility rather than
+                # letting it fall back to the True default — otherwise a
+                # scope-ineligible primary send that drifts silently re-arms
+                # drift-reset accumulation on the retry.
+                drift_reset_eligible=drift_reset_eligible,
                 _retry_depth=1,
             )

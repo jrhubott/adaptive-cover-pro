@@ -28,6 +28,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_POS,
     CONF_SUNSET_TIME_ENTITY,
+    CONF_TEMP_EXTREME_HEAT,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     CONF_TRACKING_SEASONS,
@@ -534,6 +535,47 @@ def test_build_recomputes_effective_default_when_omitted():
 
 
 @pytest.mark.unit
+def test_snapshot_carries_clock_window_open_default_true():
+    """``clock_window_open`` is a separate predicate from ``in_time_window``.
+
+    ``in_time_window`` is the gate-folded ``check_adaptive_time``; the
+    outside-window constraint capability keys on the user's start/end CLOCK
+    alone (#656's split). Both are threaded independently, and the default is
+    True so every snapshot built without it behaves exactly as before.
+    """
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    cover_data.sun_data.astral_sunset = None
+    cover_data.sun_data.astral_sunrise = None
+    cover_data.sun_data.now = None
+
+    def _build(**kwargs):
+        return builder.build(
+            {CONF_DEFAULT_HEIGHT: 55},
+            cover_data=cover_data,
+            cover_type="cover_blind",
+            climate_readings=None,
+            manual_override_active=False,
+            motion_timeout_active=False,
+            weather_override_active=False,
+            current_cover_position=None,
+            is_glare_zone_enabled=lambda idx: True,
+            **kwargs,
+        )
+
+    assert _build(in_time_window=True).clock_window_open is True
+    # Gate dark but clock open (#656): the two disagree and both are honest.
+    assert (
+        _build(in_time_window=False, clock_window_open=True).clock_window_open is True
+    )
+    assert (
+        _build(in_time_window=False, clock_window_open=False).clock_window_open is False
+    )
+
+
+@pytest.mark.unit
 def test_build_fallback_uses_configured_sunset_time_entity():
     """The fallback branch must honor CONF_SUNSET_TIME_ENTITY, not astral (#1048).
 
@@ -934,6 +976,101 @@ def test_build_climate_temp_flags_default_none():
 
 
 @pytest.mark.unit
+def test_build_threads_climate_extreme_heat_active():
+    """build() resolves climate_extreme_heat_active when Climate Mode is on (#1272).
+
+    The carve-out CloudSuppressionHandler reads must be gated on Climate Mode
+    (``switch_mode``) so an install with Climate Mode off can never get a
+    spurious defer — see the sibling ``_disabled`` test.
+    """
+    builder, _, _ = _make_builder(switch_mode=True)
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    readings = ClimateReadings(
+        outside_temperature=40.0,
+        inside_temperature=22.0,
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+    )
+    snapshot = builder.build(
+        {CONF_DEFAULT_HEIGHT: 0, CONF_TEMP_EXTREME_HEAT: 35.0},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=readings,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.climate_extreme_heat_active is True
+
+
+@pytest.mark.unit
+def test_build_climate_extreme_heat_active_false_when_climate_mode_disabled():
+    """Climate Mode off must never produce a spurious defer (#1272)."""
+    builder, _, _ = _make_builder(switch_mode=False)
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    readings = ClimateReadings(
+        outside_temperature=40.0,
+        inside_temperature=22.0,
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+    )
+    snapshot = builder.build(
+        {CONF_DEFAULT_HEIGHT: 0, CONF_TEMP_EXTREME_HEAT: 35.0},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=readings,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.climate_extreme_heat_active is False
+
+
+@pytest.mark.unit
+def test_build_climate_extreme_heat_active_default_false():
+    """No climate config at all → climate_extreme_heat_active stays False (#1272)."""
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    snapshot = builder.build(
+        {CONF_DEFAULT_HEIGHT: 0},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.climate_extreme_heat_active is False
+
+
+@pytest.mark.unit
 def test_build_forwards_explicit_effective_default():
     builder, _, _ = _make_builder(switch_mode=True, motion_control=True)
     cover_data = MagicMock()
@@ -1213,6 +1350,50 @@ def test_constraint_keys_default_to_none():
     assert state.tilt_max is None
 
 
+@pytest.mark.unit
+def test_outside_window_flag_read_per_slot():
+    """The per-slot opt-in lands on the state; absent reads as off (#943 B)."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    assert _constraint_builder(keys, {keys["position"]: 30}).outside_window is False
+    state = _constraint_builder(
+        keys, {keys["tilt_min"]: 50, keys["outside_window"]: True}
+    )
+    assert state.outside_window is True
+
+
+@pytest.mark.unit
+def test_outside_window_flag_survives_has_fixed_tilt_normalization():
+    """The opt-in is orthogonal to the #1215 FIXED-tilt bound wipe.
+
+    A vacuous ``tilt_only`` keeps its ``tilt_min`` AND its opt-in; a real fixed
+    slat angle still wipes the bounds, and the opt-in survives as a plain flag
+    with nothing left to apply to.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    vacuous = _constraint_builder(
+        keys,
+        {
+            keys["tilt_only"]: True,
+            keys["tilt_min"]: 50,
+            keys["outside_window"]: True,
+        },
+    )
+    assert vacuous.tilt_min == 50
+    assert vacuous.outside_window is True
+
+    fixed = _constraint_builder(
+        keys,
+        {
+            keys["tilt"]: 20,
+            keys["tilt_only"]: True,
+            keys["tilt_min"]: 50,
+            keys["outside_window"]: True,
+        },
+    )
+    assert fixed.tilt_min is None
+    assert fixed.outside_window is True
+
+
 # --- Position axis ---------------------------------------------------------
 
 
@@ -1369,6 +1550,53 @@ def test_tilt_only_wins_over_tilt_bounds():
     assert state.tilt_mode is AxisConstraintMode.FIXED
     assert state.tilt_min is None
     assert state.tilt_max is None
+
+
+@pytest.mark.unit
+def test_tilt_only_without_fixed_tilt_preserves_tilt_bounds():
+    """Issue #1215: tilt_only + tilt_min with NO fixed slat angle must NOT be
+    wiped. ``tilt_only`` alone (no ``tilt``) is a vacuous FIXED claim — it
+    must not suppress the tilt_min the slot was actually configured for.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {keys["tilt_only"]: True, keys["tilt_min"]: 50},
+    )
+    assert state.tilt_min == 50
+    assert state.tilt_mode is AxisConstraintMode.MIN
+
+
+@pytest.mark.unit
+def test_tilt_only_with_fixed_tilt_still_wipes_tilt_bounds():
+    """Issue #1215 regression guard: a REAL fixed tilt still wins and wipes
+    the stored bound — the #514 precedence is preserved unchanged.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {keys["tilt"]: 20, keys["tilt_only"]: True, keys["tilt_min"]: 50},
+    )
+    assert state.tilt_min is None
+    assert state.tilt_mode is AxisConstraintMode.FIXED
+
+
+@pytest.mark.unit
+def test_tilt_only_still_wipes_position_max_without_fixed_tilt():
+    """Issue #1215: the position-axis disclaimer stays keyed on the bare
+    ``tilt_only`` flag regardless of whether a slat angle is configured — a
+    tilt-only slot always disclaims the position axis (issue #514).
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {
+            keys["tilt_only"]: True,
+            keys["tilt_min"]: 50,
+            keys["position_max"]: 60,
+        },
+    )
+    assert state.position_max is None
 
 
 # ---------------------------------------------------------------------------

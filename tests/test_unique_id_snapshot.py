@@ -85,6 +85,7 @@ EXPECTED_UNIQUE_ID_SUFFIXES = sorted(
         "End Sun",
         "sun_position",
         "solar_calculation",
+        "solar_gain",
         "control_status",
         "decision_trace",
         "last_skipped_action",

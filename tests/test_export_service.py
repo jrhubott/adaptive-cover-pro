@@ -20,8 +20,11 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_AWNING_ANGLE,
     CONF_SENSOR_TYPE,
     CONF_SILL_HEIGHT,
+    CONF_TILT_ANGLE_0,
+    CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_WINDOW_DEPTH,
     DOMAIN,
@@ -177,6 +180,57 @@ async def test_export_tilt_values_stored_in_cm():
     # Must be 4.0 and 6.0 (cm), NOT 0.04 and 0.06 (meters)
     assert tilt[CONF_TILT_DISTANCE] == 4.0
     assert tilt[CONF_TILT_DEPTH] == 6.0
+
+
+@pytest.mark.asyncio
+async def test_export_tilt_carries_the_whole_angle_calibration():
+    """The tilt scale exports as the three points that define it (#1222 audit).
+
+    The export is what the simulation notebook rebuilds a cover from, so a
+    calibration key missing here is a notebook that silently models a different
+    scale than the integration runs. ``tilt_horizontal_percent`` is the newest
+    of the three and shipped without a test; the two endpoint angles beside it
+    had none either, so all three are asserted together rather than leaving the
+    older half of the gap open.
+    """
+    options = {
+        CONF_TILT_DISTANCE: 8.0,
+        CONF_TILT_DEPTH: 8.5,
+        CONF_TILT_MODE: "specify_angles",
+        CONF_TILT_ANGLE_0: 0.0,
+        CONF_TILT_ANGLE_100: 130.0,
+        CONF_TILT_HORIZONTAL_PERCENT: 50,
+    }
+    entry = make_entry(cover_type="cover_venetian", options=options)
+    hass = make_hass(entry)
+    call = make_call(hass=hass)
+
+    tilt = (await async_handle_export(call))["tilt"]
+
+    assert tilt[CONF_TILT_MODE] == "specify_angles"
+    assert tilt[CONF_TILT_ANGLE_0] == 0.0
+    assert tilt[CONF_TILT_ANGLE_100] == 130.0
+    assert tilt[CONF_TILT_HORIZONTAL_PERCENT] == 50
+
+
+@pytest.mark.asyncio
+async def test_export_tilt_calibration_keys_survive_an_uncalibrated_cover():
+    """A cover that never touched the calibration still exports the keys.
+
+    ``options.get`` with no default, so an absent option exports as ``None``
+    rather than vanishing. The key set has to be stable — a consumer that
+    probes for the key would otherwise read "no three-point calibration" and
+    "this export predates three-point calibration" as the same thing.
+    """
+    entry = make_entry(cover_type="cover_tilt", options={CONF_TILT_MODE: "mode1"})
+    hass = make_hass(entry)
+    call = make_call(hass=hass)
+
+    tilt = (await async_handle_export(call))["tilt"]
+
+    assert tilt[CONF_TILT_ANGLE_0] is None
+    assert tilt[CONF_TILT_ANGLE_100] is None
+    assert tilt[CONF_TILT_HORIZONTAL_PERCENT] is None
 
 
 @pytest.mark.asyncio

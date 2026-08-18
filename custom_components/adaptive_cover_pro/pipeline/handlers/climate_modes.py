@@ -105,8 +105,14 @@ class ClimateContext:
 
     @property
     def is_low_light(self) -> bool:
-        """Whether lux/irradiance/no-sun indicates there's no real sun to manage."""
-        return bool(self.data.lux or self.data.irradiance or not self.data.is_sunny)
+        """Whether lux/irradiance/no-sun indicates there's no real sun to manage.
+
+        The predicate itself lives on ``ClimateCoverData.is_low_light``, which
+        prefers the smoothed ``low_light_active`` flag (the resolved
+        cloud-suppression bool, carrying the user's hold-time) over the raw
+        single-crossing OR — issue #1238.
+        """
+        return bool(self.data.is_low_light)
 
     @property
     def is_winter_insulation(self) -> bool:
@@ -164,10 +170,17 @@ def _intent_block_sun(ctx: ClimateContext) -> int:
     return ctx.data.policy.position_for_intent(sun_through=False)
 
 
+# Every tilt rule hands the engine over as well as the mode. The engine owns
+# the angle→percentage map the solar path already uses, so passing it is what
+# stops the climate answer being computed on a different scale than the solar
+# one for any cover whose travel is calibrated rather than preset (#1222).
+
+
 def _tilt_summer(ctx: ClimateContext) -> int:
     return TiltPolicy.climate_tilt_percentage(
         angle_deg=CLIMATE_SUMMER_TILT_ANGLE,
         mode=ctx.cover.mode,
+        cover=ctx.cover,
     )
 
 
@@ -175,6 +188,7 @@ def _tilt_default(ctx: ClimateContext) -> int:
     return TiltPolicy.climate_tilt_percentage(
         angle_deg=CLIMATE_DEFAULT_TILT_ANGLE,
         mode=ctx.cover.mode,
+        cover=ctx.cover,
     )
 
 
@@ -185,6 +199,7 @@ def _tilt_winter_mode2(ctx: ClimateContext) -> int:
         angle_deg=ctx.beta_deg,
         mode=ctx.cover.mode,
         sun_through=True,
+        cover=ctx.cover,
     )
 
 

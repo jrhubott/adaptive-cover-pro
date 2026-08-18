@@ -714,6 +714,80 @@ class TestDriftResetScope:
         events = [e["event"] for e in buf.snapshot()]
         assert "tilt_reset_triggered" in events
 
+    async def test_drift_retry_inherits_ineligibility(self):
+        """Issue #1234: the bounded drift-retry re-send must inherit the
+        primary send's ineligibility instead of silently re-defaulting to
+        True one frame deeper — otherwise a scope-ineligible send that drifts
+        still fires a full reset cycle via the issue-#500 retry path.
+        """
+        buf = EventBuffer(maxlen=100)
+        _, seq = _build_sequencer(
+            get_tilt_reset_threshold=lambda: 1,
+            get_current_tilt_position=lambda _eid: 38,
+            event_buffer=buf,
+        )
+        await seq.update_tilt_only(
+            "cover.x",
+            tilt_target=30,
+            current_position=0,
+            reason="solar",
+            drift_reset_eligible=False,
+        )
+        events = [e["event"] for e in buf.snapshot()]
+        assert not any(ev.startswith("tilt_reset_") for ev in events)
+        assert seq._accumulated_tilt.get("cover.x", 0) == 0
+        # Issue #500 regression guard: the bounded retry itself must still
+        # fire — only its drift *accumulation* is gated, not the retry.
+        assert "tilt_command_drift_retry" in events
+
+    async def test_drift_retry_keeps_eligibility_when_eligible(self):
+        """Regression guard: an eligible send's retry still accumulates and
+        can trigger a reset — pins the `all_tilt_commands` default so the
+        ineligibility fix above cannot silently widen into option B
+        (hard-coding the retry to always be ineligible).
+        """
+        buf = EventBuffer(maxlen=100)
+        _, seq = _build_sequencer(
+            get_tilt_reset_threshold=lambda: 1,
+            get_current_tilt_position=lambda _eid: 38,
+            event_buffer=buf,
+        )
+        await seq.update_tilt_only(
+            "cover.x",
+            tilt_target=30,
+            current_position=0,
+            reason="solar",
+            drift_reset_eligible=True,
+        )
+        events = [e["event"] for e in buf.snapshot()]
+        assert "tilt_reset_triggered" in events
+
+    async def test_user_tilt_ineligible_under_sun_tracking_only(self):
+        """Issue #1234 (#684 leak): a user-requested tilt is not a
+        solar-tracking win, so under sun_tracking_only it must not trigger a
+        drift reset either.
+        """
+        hass, policy, buf = _attach_venetian_policy(
+            scope=VENETIAN_TILT_RESET_SCOPE_SOLAR, threshold=1
+        )
+        policy.sequencer._tilt_targets["cover.x"] = 0
+        await policy.apply_user_tilt("cover.x", tilt=60, reason="user_tilt")
+        events = [e["event"] for e in buf.snapshot()]
+        assert not any(ev.startswith("tilt_reset_") for ev in events)
+
+    async def test_user_tilt_eligible_under_all_scope(self):
+        """all_tilt_commands (default): a user-requested tilt still resets —
+        pins the default so the fix above cannot silently widen to suppress
+        resets for everyone.
+        """
+        hass, policy, buf = _attach_venetian_policy(
+            scope=VENETIAN_TILT_RESET_SCOPE_ALL, threshold=1
+        )
+        policy.sequencer._tilt_targets["cover.x"] = 0
+        await policy.apply_user_tilt("cover.x", tilt=60, reason="user_tilt")
+        events = [e["event"] for e in buf.snapshot()]
+        assert "tilt_reset_triggered" in events
+
 
 @pytest.mark.unit
 class TestPositionContextControlMethod:
@@ -775,6 +849,7 @@ class TestPositionContextControlMethod:
             control_method=ControlMethod.CUSTOM_POSITION,
             use_my_position=False,
             bypass_auto_control=False,
+            outside_window_constraint_active=False,
         )
         ctx = coord._build_position_context("cover.x", {})
         assert ctx.control_method is ControlMethod.CUSTOM_POSITION

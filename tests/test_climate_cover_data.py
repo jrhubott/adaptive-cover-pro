@@ -84,6 +84,44 @@ class TestSmoothedFlagPrecedence:
         d = _make_climate(temp_switch=True, outside_temperature="10.0")
         assert d.is_winter is True  # raw: 10 < temp_low 20
 
+    # -- light thresholds (issue #1238) -------------------------------------
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("lux", [False, True])
+    @pytest.mark.parametrize("irradiance", [False, True])
+    @pytest.mark.parametrize("is_sunny", [False, True])
+    def test_low_light_none_reproduces_the_raw_or(self, lux, irradiance, is_sunny):
+        """``low_light_active=None`` is byte-identical to the pre-#1238 predicate."""
+        d = _make_climate(
+            lux_below_threshold=lux,
+            irradiance_below_threshold=irradiance,
+            is_sunny=is_sunny,
+        )
+        assert d.low_light_active is None
+        assert d.is_low_light is (lux or irradiance or not is_sunny)
+
+    @pytest.mark.unit
+    def test_low_light_flag_false_overrides_raw_true(self):
+        """A resolved False wins over readings that would raise low light."""
+        d = _make_climate(
+            lux_below_threshold=True,
+            irradiance_below_threshold=True,
+            is_sunny=False,
+            low_light_active=False,
+        )
+        assert d.is_low_light is False
+
+    @pytest.mark.unit
+    def test_low_light_flag_true_overrides_raw_false(self):
+        """A resolved True wins over readings that would clear low light."""
+        d = _make_climate(
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            is_sunny=True,
+            low_light_active=True,
+        )
+        assert d.is_low_light is True
+
 
 class TestClimateCoverData:
     """Test ClimateCoverData properties."""

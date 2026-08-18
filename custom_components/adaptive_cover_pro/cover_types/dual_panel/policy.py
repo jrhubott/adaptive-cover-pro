@@ -19,6 +19,7 @@ coordinator already routes every per-entity command through.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import voluptuous as vol
@@ -40,7 +41,7 @@ from ...engine.covers import AdaptiveVerticalCover
 from ...engine.covers.layered import blackout_should_deploy, compute_layered
 from ...pipeline.types import DecisionStep
 from ...position_utils import flip_if, interpolate_position
-from .._helpers import window_dimensions_lines
+from .._helpers import window_dimensions_lines, window_glass_area_m2
 from .._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from ..base import (
     CAP_HAS_SET_POSITION,
@@ -249,6 +250,14 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         """Return the configured window height the front carriage travels."""
         return config_service.get_vertical_data(options).h_win
 
+    def glass_area_m2(
+        self,
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,
+    ) -> float | None:
+        """Height × width — both dimensions are on the geometry step (#1237)."""
+        return window_glass_area_m2(options)
+
     # ---- Calculation engine ------------------------------------------- #
 
     def build_calc_engine(
@@ -344,10 +353,9 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
             CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
             list(DEFAULT_DUAL_PANEL_BLACKOUT_TRIGGERS),
         )
-        self._front_entity = options.get(CONF_DUAL_PANEL_FRONT_ENTITY)
+        self._cache_runtime_options(options)
         self._deploy_back = blackout_should_deploy(active, configured)
         self._back_bypass = result.bypass_auto_control
-        self._cache_inverse_and_interp(options)
 
         # The back decision is only APPLIED on cycles where a front is designated
         # AND the safety/bypass path isn't overwriting every entity. Recording a
@@ -374,6 +382,86 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         from dataclasses import replace
 
         return replace(result, decision_trace=trace)
+
+    def _cache_runtime_options(self, options: dict) -> None:
+        """Cache every per-instance OPTION the dispatch seam reads.
+
+        The single seam for "read the raw options dict into policy state", which
+        both :meth:`sync_runtime_options` (the coordinator's per-cycle hook,
+        before the pipeline) and :meth:`post_pipeline_resolve` (self-sufficiency
+        for direct callers) go through, rather than each listing the reads
+        (CODING_GUIDELINES.md "No Code Duplication"). Mirrors the day/night
+        policy's hook of the same name.
+
+        Only options land here. ``_deploy_back`` and ``_back_bypass`` stay in
+        :meth:`post_pipeline_resolve` because they are derived from the pipeline
+        RESULT — the active triggers and the safety/bypass flag — and have no
+        honest value before a cycle has produced one.
+        """
+        self._front_entity = options.get(CONF_DUAL_PANEL_FRONT_ENTITY)
+        self._cache_inverse_and_interp(options)
+
+    def sync_runtime_options(self, options: dict) -> None:
+        """Resolve the per-instance options for this cycle (base hook, #1114).
+
+        The registry asks :meth:`entities_move_independently` — and, for a
+        coupled instance, :meth:`hold_reference_position` — before
+        :meth:`post_pipeline_resolve` has run at all, so the front designation
+        has to be current by then. The coordinator drives this from
+        ``_update_options`` ahead of the pipeline, including on its very first
+        cycle (#1179).
+        """
+        self._cache_runtime_options(options)
+
+    def entities_move_independently(self) -> bool:
+        """Coupled exactly while a front panel is designated (#1179).
+
+        The derived base predicate reads two overridden hooks, and with no front
+        entity BOTH are inert: :meth:`resolve_entity_target` returns ``position``
+        at its first statement, and :meth:`post_pipeline_resolve` records no
+        trace step and rewrites nothing. The policy has degraded to a plain
+        vertical blind, and its entities are as independent as a blind's — so
+        each held panel is judged on its own position (#1174).
+
+        With a front designated the window is ONE coverage: every other entity's
+        target is an absolute open/closed substitution that the pipeline position
+        never reaches, so a floor is a statement about the front alone and there
+        is no per-panel question to ask.
+
+        ``_front_entity`` is primed by :meth:`sync_runtime_options`, which the
+        coordinator drives before the pipeline runs.
+        """
+        return self._front_entity is None
+
+    def hold_reference_position(
+        self,
+        cover_positions: Mapping[str, int | None],
+        *,
+        inverted: bool,
+    ) -> int | None:
+        """Return the FRONT panel's read — this window's one coverage (#1179).
+
+        The back panel is an ABSOLUTE SUBSTITUTION — ``compute_layered``
+        discards ``front`` entirely — so its position is a binary privacy state,
+        not a coverage opinion. Averaging it into the summary let a blackout
+        deploy fire a coverage floor that the front panel already satisfied, and
+        hid a genuine front-panel violation behind a retracted back.
+
+        This hook only READS. The back's own wire space stays exactly where
+        #1035 put it: derived from ``options`` alone at dispatch, never from the
+        front's clamped value.
+
+        ``None`` with no front designated (the policy is then a plain blind and
+        never asked) or an unreadable front. Frames per the base contract: a RAW
+        read in, a LOGICAL position out.
+        """
+        front = self._front_entity
+        if front is None:
+            return None
+        position = cover_positions.get(front)
+        if position is None:
+            return None
+        return flip_if(position, inverted=inverted)
 
     def _cache_inverse_and_interp(self, options: dict) -> None:
         """Cache the back's wire-space transform (inverse XOR interpolation).

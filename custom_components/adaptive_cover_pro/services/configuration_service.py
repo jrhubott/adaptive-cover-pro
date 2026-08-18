@@ -15,6 +15,7 @@ from ..config_types import (
     GlareZone,
     GlareZonesConfig,
     HorizontalConfig,
+    SolarPropertiesConfig,
     TiltConfig,
     VerticalConfig,
 )
@@ -34,6 +35,7 @@ from ..const import (
     CONF_SILL_HEIGHT,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_SAFETY_MARGIN,
@@ -52,6 +54,7 @@ from ..const import (
     DEFAULT_VENETIAN_TILT_TRANSFORM,
     DEFAULT_TILT_ANGLE_0,
     DEFAULT_TILT_ANGLE_100,
+    DEFAULT_TILT_HORIZONTAL_PERCENT,
     DEFAULT_WINDOW_HEIGHT,
 )
 
@@ -88,6 +91,15 @@ class ConfigurationService:
 
         """
         return CoverConfig.from_options(options)
+
+    def get_solar_properties(self, options: dict) -> SolarPropertiesConfig:
+        """Extract the optional solar-transmittance description (issue #1236).
+
+        Returns:
+            SolarPropertiesConfig — ``enabled=False`` when the feature is unset
+
+        """
+        return SolarPropertiesConfig.from_options(options)
 
     def get_vertical_data(self, options: dict) -> VerticalConfig:
         """Extract vertical blind configuration.
@@ -161,6 +173,11 @@ class ConfigurationService:
             mode=options.get(CONF_TILT_MODE),
             angle_0=options.get(CONF_TILT_ANGLE_0, DEFAULT_TILT_ANGLE_0),
             angle_100=options.get(CONF_TILT_ANGLE_100, DEFAULT_TILT_ANGLE_100),
+            # Absent and 0 are the same disabled state (issue #1222), which is
+            # what lets this option ship with no migration block at all.
+            horizontal_percent=options.get(
+                CONF_TILT_HORIZONTAL_PERCENT, DEFAULT_TILT_HORIZONTAL_PERCENT
+            ),
             max_tilt=options.get(CONF_MAX_TILT, DEFAULT_MAX_TILT),
             min_tilt=options.get(CONF_MIN_TILT, DEFAULT_MIN_TILT),
             min_tilt_sun_only=bool(

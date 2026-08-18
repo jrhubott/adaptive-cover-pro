@@ -130,7 +130,8 @@ OPTIONS:
     --editor, -e        Open editor for release notes
     --notes FILE        Read release notes from file
     --auto-notes        Use auto-generated notes only
-    --force-branch      Skip branch validation
+    --force-branch      Skip the branch-name check (does NOT skip the
+                        up-to-date check — a stale checkout is always fatal)
     --help, -h          Show this help text
 
 EXAMPLES:
@@ -366,14 +367,68 @@ validate_environment() {
     log_success "Manifest file exists"
 }
 
+# Refuse to release from a checkout that is behind origin. The script tags
+# whatever tree is checked out and then pushes it (push_commit_and_tag pushes
+# the current branch), so a stale checkout publishes an old tree under a new
+# version — unrecoverable once HACS has seen the release.
+validate_branch_freshness() {
+    local current_branch="$1"
+    local remote_ref="origin/$current_branch"
+    local behind ahead
+
+    if [[ -z $current_branch ]]; then
+        log_error "Detached HEAD — check out a branch before releasing"
+        exit 1
+    fi
+
+    if ! git fetch origin "$current_branch" --tags --quiet 2> /dev/null; then
+        log_warning "No origin/$current_branch — treating it as a local-only branch"
+        return 0
+    fi
+
+    if ! git rev-parse --verify --quiet "$remote_ref" > /dev/null; then
+        log_warning "No $remote_ref tracking ref — skipping the up-to-date check"
+        return 0
+    fi
+
+    # Compare the named branch, not HEAD — they are the same at the only call
+    # site, but keying on HEAD would silently compare the wrong tree if this is
+    # ever called for a branch that isn't checked out.
+    behind=$(git rev-list --count "$current_branch..$remote_ref")
+    ahead=$(git rev-list --count "$remote_ref..$current_branch")
+
+    if [[ $behind -gt 0 && $ahead -gt 0 ]]; then
+        log_error "Local $current_branch has diverged from $remote_ref ($ahead ahead, $behind behind)"
+        log_info "Reconcile with origin before releasing, then re-run"
+        exit 1
+    fi
+
+    if [[ $behind -gt 0 ]]; then
+        log_error "Local $current_branch is $behind commit(s) behind $remote_ref"
+        log_info "Releasing now would tag a stale tree. Run: git pull --ff-only"
+        exit 1
+    fi
+
+    if [[ $ahead -gt 0 ]]; then
+        log_warning "Local $current_branch is $ahead commit(s) ahead of origin (they will be pushed)"
+    fi
+
+    log_success "Branch up to date with $remote_ref"
+}
+
 validate_branch() {
     local current_branch
     current_branch=$(git branch --show-current)
 
     log_info "Current branch: $current_branch"
 
+    # Freshness is checked before — and independently of — the branch-name
+    # check. Being on an unexpected branch and being out of date with origin are
+    # different failures; --force-branch waives only the first.
+    validate_branch_freshness "$current_branch"
+
     if [[ $FORCE_BRANCH == true ]]; then
-        log_warning "Branch validation skipped (--force-branch)"
+        log_warning "Branch-name validation skipped (--force-branch)"
         return 0
     fi
 

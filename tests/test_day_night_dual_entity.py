@@ -266,7 +266,7 @@ async def test_sunset_window_transition_remaps_middle_rail() -> None:
         MagicMock(),
         MagicMock(),
         event_buffer=MagicMock(),
-        effective_default_fn=lambda _opts: (60, is_sunset["value"]),
+        sunset_window_open_fn=lambda _opts: is_sunset["value"],
     )
 
     common = {
@@ -399,7 +399,7 @@ async def test_sunset_seam_inverse_uses_seam_space_not_cached_flag() -> None:
         MagicMock(),
         MagicMock(),
         event_buffer=MagicMock(),
-        effective_default_fn=lambda _o: (0, is_sunset["v"]),
+        sunset_window_open_fn=lambda _o: is_sunset["v"],
     )
 
     targets: dict[str, int] = {}
@@ -412,6 +412,15 @@ async def test_sunset_seam_inverse_uses_seam_space_not_cached_flag() -> None:
     coord._entity_target = types.MethodType(
         AdaptiveDataUpdateCoordinator._entity_target, coord
     )
+    # Real clamp-then-order seam (#943 item B), with the bound composition —
+    # which has its own tests — stubbed to identity so this stays a frame test.
+    coord._clamp_to_outside_window_bounds = lambda position, _options: position
+    for _name in ("_resolve_sunset_dispatch", "_resolve_broadcast_dispatch"):
+        setattr(
+            coord,
+            _name,
+            types.MethodType(getattr(AdaptiveDataUpdateCoordinator, _name), coord),
+        )
 
     # Seed prior state (no dispatch), then open the window.
     await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
@@ -448,6 +457,15 @@ async def test_end_time_default_seam_inverse_uses_seam_space() -> None:
     coord.async_refresh = AsyncMock()
     coord.config_entry.options = {}
     coord._compute_current_effective_default = MagicMock(return_value=(0, True))
+    # No axis constraints in this scenario, so the end-time clamp (#943 item B)
+    # is the identity. Stubbed rather than left as a bare MagicMock, which would
+    # feed the dispatch loop a mock instead of a position.
+    coord._clamp_to_outside_window_bounds = MagicMock(
+        side_effect=lambda position, _options: position
+    )
+    coord._resolve_broadcast_dispatch = types.MethodType(
+        AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
+    )
     coord._check_sunset_window_transition = AsyncMock()
 
     targets: dict[str, int] = {}

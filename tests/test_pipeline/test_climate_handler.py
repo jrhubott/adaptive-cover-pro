@@ -54,6 +54,7 @@ def _make_options(
     temp_extreme_heat=None,
     extreme_heat_position=None,
     tracking_seasons=frozenset(DEFAULT_TRACKING_SEASONS),
+    cloud_suppression_enabled=False,
 ) -> ClimateOptions:
     return ClimateOptions(
         temp_low=temp_low,
@@ -61,7 +62,7 @@ def _make_options(
         temp_switch=temp_switch,
         transparent_blind=transparent_blind,
         temp_summer_outside=temp_summer_outside,
-        cloud_suppression_enabled=False,
+        cloud_suppression_enabled=cloud_suppression_enabled,
         winter_close_insulation=winter_close_insulation,
         temp_extreme_heat=temp_extreme_heat,
         extreme_heat_position=extreme_heat_position,
@@ -190,6 +191,46 @@ class TestClimateHandlerSmoothedFlags:
         result = self.handler.evaluate(snap)
         # Not summer → transparent blind no longer force-closes; defers to glare.
         assert result is None or result.control_method != ControlMethod.SUMMER
+
+
+class TestClimateHandlerSmoothedLowLight:
+    """_build_climate_data threads snapshot.cloud_suppression_active (issue #1238).
+
+    The resolved cloud-suppression bool already carries the hysteresis latches and
+    the hold-time debounce; the climate LOW_LIGHT branch is the second consumer of
+    the same readings and now reads that answer instead of recomputing it raw.
+    ``None`` when the feature is off keeps every non-user byte-identical.
+    """
+
+    handler = ClimateHandler()
+
+    def _snap(self, *, enabled: bool, resolved: bool):
+        return make_snapshot(
+            cover=_make_blind_cover(),
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=22.0),
+            climate_options=_make_options(cloud_suppression_enabled=enabled),
+            cloud_suppression_active=resolved,
+        )
+
+    def test_threads_the_resolved_bool_when_cloud_suppression_is_on(self) -> None:
+        for resolved in (True, False):
+            data = self.handler._build_climate_data(
+                self._snap(enabled=True, resolved=resolved)
+            )
+            assert data is not None
+            assert data.low_light_active is resolved
+
+    def test_threads_none_when_cloud_suppression_is_off(self) -> None:
+        """Feature off ⇒ the raw fallback, whatever the snapshot bool happens to say."""
+        for resolved in (True, False):
+            data = self.handler._build_climate_data(
+                self._snap(enabled=False, resolved=resolved)
+            )
+            assert data is not None
+            assert data.low_light_active is None
+            # Raw fallback: readings are sunny and above both thresholds.
+            assert data.is_low_light is False
 
 
 class TestClimateHandlerSummerStrategy:
@@ -1098,6 +1139,10 @@ def _make_tilt_cover(
     cover.calculate_percentage = MagicMock(return_value=50.0)
     cover.calculate_raw_percentage = MagicMock(return_value=50.0)
     cover.calculate_position = MagicMock(return_value=90.0)
+    # This double models a MODE/geometry pair, not a tilt SCALE, so it declines
+    # the engine's angle→percentage seam (#1222) and the policy's mode-based
+    # formula answers — the path these tests have always exercised.
+    cover.climate_tilt_percentage = MagicMock(return_value=None)
     cover.gamma = gamma_deg  # SunGeometry.gamma is in degrees
     cover.beta = 0.0
     cover.mode = mode

@@ -262,6 +262,16 @@ set_position_limits:
       description: "If true, min_position applies only while sun is tracked."
       selector:
         boolean:
+    min_position_sun_tracking:
+      name: Min position during sun tracking
+      description: "Optional separate minimum floor that applies only during sun tracking (0–99%). When set, overrides min_position for sun-tracking paths only. Leave unset to use min_position for all paths."
+      selector:
+        number:
+          min: 0
+          max: 99
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
     max_position:
       name: Maximum position
       description: "Maximum position the cover may move to (0–100%; 0 = always closed)."
@@ -611,6 +621,19 @@ set_custom_position:
           step: 1
           mode: slider
           unit_of_measurement: "%"
+    outside_window:
+      name: Keep constraints active outside time window
+      description: >-
+        If true, this slot's min/max constraints (minimum position, position_max,
+        tilt_min, tilt_max) keep clamping after the start/end time window closes,
+        for as long as the trigger stays active. Only the axis you limited moves:
+        an unconstrained carriage is commanded to where the cover already is, and
+        unconstrained slats are sent no command at all. An exact position never
+        acts outside the window, whatever this is set to. A manual override that
+        is still holding the cover defeats this at any priority — the constraints
+        resume when the window reopens.
+      selector:
+        boolean:
 
 set_motion:
   name: Set occupancy settings (deprecated)
@@ -1312,6 +1335,20 @@ set_geometry:
           step: 1
           mode: box
           unit_of_measurement: "°"
+    tilt_horizontal_percent:
+      name: Tilt percentage at horizontal
+      description: >-
+        Optional third calibration point: the tilt percentage reported when the
+        slats are exactly horizontal (90°). 0 disables it and the scale runs
+        straight from tilt_angle_0 to tilt_angle_100. Requires tilt_angle_0 and
+        tilt_angle_100 to sit on opposite sides of 90°.
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: box
+          unit_of_measurement: "%"
 
 set_venetian:
   name: Set venetian options

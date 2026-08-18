@@ -38,6 +38,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ...const import POSITION_TOLERANCE_PERCENT
+from ...position_utils import flip_if
 
 
 def resolve_dispatched_secondary_expected(
@@ -80,11 +81,21 @@ def effective_manual_threshold(user_threshold: int | None) -> int:
 
     Floored at ``POSITION_TOLERANCE_PERCENT`` so motor rounding and reporting
     imprecision can't trip false positives even when the user configures
-    ``manual_threshold = 0`` or leaves it unset. Both the primary-axis check
-    in ``PositionDeltaDetector.detect`` and the secondary-axis check in
-    ``SecondaryAxisCheck.evaluate`` delegate here; keeping the two in sync
-    via a single helper prevents the formula from drifting (e.g. the day
-    ``POSITION_TOLERANCE_PERCENT`` changes).
+    ``manual_threshold = 0`` or leaves it unset. The floor reads the CONSTANT and
+    not ``CONF_POSITION_TOLERANCE``, deliberately: a user who widens the arrival
+    tolerance to 15 must not thereby have a genuine 14% nudge swallowed.
+
+    Both the primary-axis check in ``PositionDeltaDetector.detect`` and the
+    secondary-axis check in ``SecondaryAxisCheck.evaluate`` delegate here; keeping
+    the two in sync via a single helper prevents the formula from drifting (e.g.
+    the day ``POSITION_TOLERANCE_PERCENT`` changes).
+
+    Both callers compare with STRICT ``>``, and that is part of the contract
+    rather than an accident of each call site (issue #1273). Because the floor is
+    the same constant ``CoverCommandService._position_matches`` tests with ``<=``
+    to decide the cover ARRIVED, a delta equal to the threshold has to fall on
+    the not-a-touch side on every axis; the secondary axis used ``>=`` and so
+    disagreed with the primary one on exactly that value.
     """
     return max(
         user_threshold if user_threshold is not None else 0, POSITION_TOLERANCE_PERCENT
@@ -143,6 +154,27 @@ class SecondaryAxisCheck:
     # one-shot-popped): endpoint publish marks, target-return consumes
     # (issue #927/#930).
     excursion_match: Callable[[str, float], bool] | None = None
+    # AUTHORITATIVE note on the wire/logical mismatch (issue #1227) — callers
+    # (``VenetianPolicy``/``DayNightShadePolicy.secondary_axis_check``) should
+    # point back here rather than re-deriving this explanation.
+    #
+    # Whether the reported value needs a frame flip before the delta
+    # comparison. ``expected`` is the LOGICAL dispatched value
+    # (``last_tilt_target``), but the actuator publishes the WIRE value — with
+    # ``inverse_tilt`` these differ by ``100 - x``, so an un-flipped
+    # ``abs(expected - new_value)`` reads a fully-verified tilt as a
+    # ~``|2·x-100|`` manual move. ``flip_if`` (this module's import from
+    # ``position_utils``, the project's single source for this conditional —
+    # issues #1036/#1042) is its own inverse, so the same flag maps the
+    # reported wire value back to logical. Callers derive the flag from
+    # ``DualAxisSequencer.tilt_inverted``, a sibling of the config-level
+    # ``cover_types.base.axis_inverted`` predicate (#1028) — same question,
+    # answered from the sequencer's own dispatch-time inversion callable
+    # instead of re-reading options. Defaults to ``False`` (identity) for
+    # axes/covers without inversion. The excursion/suppression callbacks keep
+    # receiving the RAW value — they normalise internally (venetian's
+    # ``_publish_matches`` applies ``_to_wire``).
+    inverted: bool = False
 
     def consume_excursion(self, entity_id: str, new_state) -> None:
         """Advance the excursion trajectory state under another gate.
@@ -178,6 +210,19 @@ class SecondaryAxisCheck:
 
         effective_threshold = effective_manual_threshold(manual_threshold)
 
+        # Normalise the reported WIRE value back into ``expected``'s LOGICAL
+        # space up front (see the ``inverted`` field for why) — identity when
+        # False. Computed before the excursion branch below so EVERY
+        # ``new_position`` this method reports (both branches of
+        # ``manual_override_rejected_tilt_suppression`` and
+        # ``manual_override_set``) is consistently LOGICAL, matching every
+        # other tilt diagnostic on the ``event_timeline``
+        # (``tilt_command_sent``/``tilt_command_verified``/``tilt_command_drift``
+        # all report the logical value; issue #1227 PR-3). The
+        # excursion/suppression MATCH calls below keep using the RAW
+        # ``new_value`` — only the diagnostic payload is normalised here.
+        reported = flip_if(new_value, inverted=self.inverted)
+
         # Issue #927: consult the value-based excursion predicate FIRST, before
         # the delta-based suppression grace check. A drift-reset publish must be
         # recognised and its trajectory state advanced (endpoint marked /
@@ -195,12 +240,19 @@ class SecondaryAxisCheck:
                 event_name="manual_override_rejected_tilt_suppression",
                 event_kwargs={
                     "our_state": self.expected,
-                    "new_position": new_value,
+                    "new_position": reported,
                     "effective_threshold": effective_threshold,
                     "reason": (
-                        f"{self.label} value {new_value:.0f}% lies on an ACP "
-                        "drift-reset excursion trajectory; suppressing both tilt "
-                        "and position checks"
+                        # Two numbers for one publish (issue #1227): ``reported``
+                        # is the LOGICAL value ``new_position`` above also
+                        # carries; ``new_value`` is the RAW wire reading that
+                        # actually matched the excursion trajectory (excursion
+                        # matching is wire-space by design — see the class
+                        # docstring). Naming both avoids an unlabelled pair that
+                        # reads as two different publishes on an inverse install.
+                        f"{self.label} value {reported:.0f}% (wire {new_value:.0f}%) "
+                        "lies on an ACP drift-reset excursion trajectory; "
+                        "suppressing both tilt and position checks"
                     ),
                 },
             )
@@ -214,7 +266,7 @@ class SecondaryAxisCheck:
         if self.expected is None:
             return SecondaryAxisResult()
 
-        delta = abs(self.expected - new_value)
+        delta = abs(self.expected - reported)
 
         # Check suppression BEFORE the on-target short-circuit. When the motor
         # back-drives the position axis during tilt settling, tilt may arrive
@@ -227,7 +279,7 @@ class SecondaryAxisCheck:
                 event_name="manual_override_rejected_tilt_suppression",
                 event_kwargs={
                     "our_state": self.expected,
-                    "new_position": new_value,
+                    "new_position": reported,
                     "effective_threshold": effective_threshold,
                     "reason": (
                         f"{self.label} delta {delta:.1f}% within venetian "
@@ -236,20 +288,26 @@ class SecondaryAxisCheck:
                 },
             )
 
-        if new_value == self.expected:
+        if reported == self.expected:
             return SecondaryAxisResult()
 
-        if delta >= effective_threshold:
+        # Strictly greater, matching the primary axis (issue #1273). The
+        # threshold is floored at ``POSITION_TOLERANCE_PERCENT``, the same
+        # constant ``CoverCommandService._position_matches`` compares with
+        # ``<=`` to decide the cover ARRIVED — so a delta equal to the threshold
+        # must not simultaneously read as a user touch. This axis used ``>=``,
+        # which made the two axes return opposite verdicts on that one value.
+        if delta > effective_threshold:
             return SecondaryAxisResult(
                 consumed=True,
                 is_manual=True,
                 event_name="manual_override_set",
                 event_kwargs={
                     "our_state": self.expected,
-                    "new_position": new_value,
+                    "new_position": reported,
                     "effective_threshold": effective_threshold,
                     "reason": (
-                        f"{self.label} delta {delta:.1f}% >= threshold {effective_threshold}%"
+                        f"{self.label} delta {delta:.1f}% > threshold {effective_threshold}%"
                     ),
                 },
             )

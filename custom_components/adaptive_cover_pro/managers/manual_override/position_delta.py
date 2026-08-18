@@ -76,7 +76,7 @@ class PositionDeltaDetector(OverrideDetector):
                     "effective_threshold": effective_threshold,
                     "reason": (
                         f"context-less move {old_position}% -> {new_position}% "
-                        f">= threshold {effective_threshold}% (no recorded target)"
+                        f"> threshold {effective_threshold}% (no recorded target)"
                     ),
                 },
             )
@@ -147,7 +147,7 @@ class PositionDeltaDetector(OverrideDetector):
                     "effective_threshold": effective_threshold,
                     "reason": (
                         f"delta {abs(our_state - new_position):.1f}% "
-                        f"< threshold {effective_threshold}%"
+                        f"<= threshold {effective_threshold}%"
                     ),
                 },
             )
@@ -161,7 +161,7 @@ class PositionDeltaDetector(OverrideDetector):
                 "effective_threshold": effective_threshold,
                 "reason": (
                     f"delta {abs(our_state - new_position):.1f}% "
-                    f">= threshold {effective_threshold}%"
+                    f"> threshold {effective_threshold}%"
                 ),
             },
         )

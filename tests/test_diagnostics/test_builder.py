@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 import pytest
 
@@ -19,6 +20,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     PipelineResult,
 )
 from custom_components.adaptive_cover_pro.const import (
+    BLIND_SPOT_SLOTS,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
     FORECAST_STEP_MINUTES,
@@ -836,6 +838,28 @@ class TestClimateDiagnostics:
         diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
         assert diag["climate_conditions"]["cloud_coverage_above_threshold"] is True
 
+    def test_climate_conditions_report_resolved_low_light(
+        self, builder: DiagnosticsBuilder
+    ):
+        """The resolved low-light answer + whether it was smoothed (issue #1238).
+
+        The raw inputs alone stopped determining the branch once the LOW_LIGHT
+        rule started reading the debounced cloud-suppression bool — a trace that
+        shows only the raw values cannot distinguish a held low light from an
+        instantaneous one.
+        """
+        raw = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=raw)
+        diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
+        assert diag["climate_conditions"]["is_low_light"] is False
+        assert diag["climate_conditions"]["low_light_smoothed"] is False
+
+        smoothed = replace(self._make_climate_data(), low_light_active=True)
+        pr = _make_pr(control_method=ControlMethod.DEFAULT, climate_data=smoothed)
+        diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
+        assert diag["climate_conditions"]["is_low_light"] is True
+        assert diag["climate_conditions"]["low_light_smoothed"] is True
+
 
 # ---------------------------------------------------------------------------
 # Last action diagnostics
@@ -921,7 +945,41 @@ class TestConfigurationDiagnostics:
             "is_sunny_source",
             "templated_thresholds",
         }
+        # Signed-gamma sub-keys (issue #247's primary storage) per slot — sourced
+        # from BLIND_SPOT_SLOTS rather than hardcoded, per the no-magic-values
+        # guideline (#1291: these were missing, leaving the gamma-preferred
+        # branch in sensor.py dead on the diagnostics path).
+        expected_keys |= {
+            keys[sub]
+            for keys in BLIND_SPOT_SLOTS.values()
+            for sub in ("left_gamma", "right_gamma")
+        }
         assert expected_keys == set(config.keys())
+
+    def test_configuration_forwards_gamma_only_slot1_values(
+        self, builder: DiagnosticsBuilder
+    ):
+        """A gamma-only slot-1 options dict (today's only write shape, #1291)
+        forwards left_gamma/right_gamma into diag['configuration'].
+
+        Today's options flow (BLIND_SPOT_FORM_KEYS) writes signed-gamma keys
+        only, never the legacy left/right pair — so this is the real shape a
+        configured blind spot has in production.
+        """
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options={
+                    "blind_spot": True,
+                    "blind_spot_left_gamma": 35,
+                    "blind_spot_right_gamma": 40,
+                    "fov_left": 45,
+                    "fov_right": 45,
+                }
+            )
+        )
+        config = diag["configuration"]
+        assert config["blind_spot_left_gamma"] == 35
+        assert config["blind_spot_right_gamma"] == 40
 
     def test_configuration_reflects_context(self, builder: DiagnosticsBuilder):
         """Configuration reflects pipeline result and context state values.
@@ -1932,3 +1990,513 @@ class TestLinearPosition:
         """No pipeline result -> linear_position defaults to 0, like calculated_position."""
         diag, _ = builder.build(_base_ctx(pipeline_result=None))
         assert diag["linear_position"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Solar transmittance (issue #1236) — a top-level block, present only when the
+# feature is configured. Deliberately NOT inside ``calculation_details``: that
+# dict is #682's geometry trace and the ``solar_calculation`` sensor's attribute
+# payload, so keeping it byte-identical whether this feature is on or off is a
+# strictly stronger guarantee.
+# ---------------------------------------------------------------------------
+
+
+_SOLAR_OPTIONS_ON = {
+    "solar_properties_enabled": True,
+    "solar_cover_side": "internal",
+    "solar_cover_shade": "dark",
+}
+
+
+def _transmittance(*, shaded_fraction, side="internal", shade="dark", g_total=None):
+    from custom_components.adaptive_cover_pro.config_types import (
+        SolarPropertiesConfig,
+    )
+    from custom_components.adaptive_cover_pro.engine.solar_transmittance import (
+        solar_transmittance,
+    )
+
+    return solar_transmittance(
+        SolarPropertiesConfig(
+            enabled=True, cover_side=side, cover_shade=shade, g_total=g_total
+        ),
+        shaded_fraction=shaded_fraction,
+    )
+
+
+class TestSolarTransmittanceDiagnostics:
+    """The opt-in solar-transmittance estimate's diagnostics payload."""
+
+    def test_block_absent_when_the_feature_is_off(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(_base_ctx())
+        assert "solar_transmittance" not in diag
+
+    def test_no_solar_keys_leak_anywhere_when_off(self, builder: DiagnosticsBuilder):
+        """Inert by default: not one new key appears in the whole payload."""
+        diag, _ = builder.build(_base_ctx())
+        assert not [k for k in diag if "solar_transmittance" in k]
+        assert not [
+            k for k in diag.get("calculation_details", {}) if k.startswith("solar_")
+        ]
+
+    def test_calculation_details_is_byte_identical_on_and_off(
+        self, builder: DiagnosticsBuilder
+    ):
+        """#682's trace must not move when this feature is switched on."""
+        cover = _make_cover(
+            calc_details={"sol_elev_deg": 30.0, "gamma_deg": 10.0, "position_pct": 25}
+        )
+        off, _ = builder.build(_base_ctx(cover=cover))
+        on, _ = builder.build(
+            _base_ctx(
+                cover=cover,
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=_transmittance(shaded_fraction=0.75),
+                pipeline_result=_make_pr(position=25),
+            )
+        )
+        assert on["calculation_details"] == off["calculation_details"]
+
+    def test_block_carries_every_key(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=_transmittance(shaded_fraction=0.75),
+                pipeline_result=_make_pr(position=25),
+            )
+        )
+        block = diag["solar_transmittance"]
+        assert set(block) == {
+            "effective_g",
+            "g_unshaded",
+            "g_shaded",
+            "shaded_fraction",
+            "position_pct",
+            "cover_side",
+            "cover_shade",
+            "source",
+            "is_estimate",
+        }
+
+    def test_block_values(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=_transmittance(shaded_fraction=0.75),
+                pipeline_result=_make_pr(position=25),
+            )
+        )
+        block = diag["solar_transmittance"]
+        # internal/dark → g_shaded 0.55; 0.75·0.55 + 0.25·0.70 = 0.5875 → 0.588
+        assert block["effective_g"] == 0.588
+        assert block["g_unshaded"] == 0.7
+        assert block["g_shaded"] == 0.55
+        assert block["shaded_fraction"] == 0.75
+        assert block["position_pct"] == 25
+        assert block["cover_side"] == "internal"
+        assert block["cover_shade"] == "dark"
+        assert block["source"] == "preset"
+        assert block["is_estimate"] is True
+
+    def test_floats_are_rounded_to_three_decimals_here_and_only_here(
+        self, builder: DiagnosticsBuilder
+    ):
+        """The presentation boundary owns the rounding; the engine keeps precision."""
+        raw = _transmittance(shaded_fraction=0.3333, g_total=0.1234)
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=raw,
+                pipeline_result=_make_pr(position=67),
+            )
+        )
+        block = diag["solar_transmittance"]
+        assert block["effective_g"] == round(raw.effective_g, 3)
+        assert block["shaded_fraction"] == round(raw.shaded_fraction, 3)
+        assert raw.effective_g != block["effective_g"]  # engine kept full precision
+
+    def test_an_axis_less_cover_reports_a_null_fraction(
+        self, builder: DiagnosticsBuilder
+    ):
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=_transmittance(shaded_fraction=None),
+                pipeline_result=_make_pr(position=40),
+            )
+        )
+        block = diag["solar_transmittance"]
+        assert block["shaded_fraction"] is None
+        assert block["source"] == "preset"
+        assert block["effective_g"] == block["g_shaded"]
+
+    def test_an_axis_less_cover_keeps_the_direct_provenance(
+        self, builder: DiagnosticsBuilder
+    ):
+        """``source`` and ``shaded_fraction`` are two independent facts.
+
+        A null fraction says the cover has no coverage axis; ``source`` says
+        where ``g_shaded`` came from. Collapsing the second into the first
+        misreported a hand-entered g as preset-derived.
+        """
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options={**_SOLAR_OPTIONS_ON, "solar_g_total": 0.45},
+                solar_transmittance=_transmittance(shaded_fraction=None, g_total=0.45),
+                pipeline_result=_make_pr(position=40),
+            )
+        )
+        block = diag["solar_transmittance"]
+        assert block["shaded_fraction"] is None
+        assert block["source"] == "direct"
+        assert block["g_shaded"] == 0.45
+
+    def test_position_pct_is_none_without_a_pipeline_result(
+        self, builder: DiagnosticsBuilder
+    ):
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options=dict(_SOLAR_OPTIONS_ON),
+                solar_transmittance=_transmittance(shaded_fraction=None),
+                pipeline_result=None,
+            )
+        )
+        assert diag["solar_transmittance"]["position_pct"] is None
+
+    def test_cover_side_and_shade_default_when_unset(self, builder: DiagnosticsBuilder):
+        """A direct g_total override leaves the selects at their shipped defaults."""
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options={"solar_properties_enabled": True},
+                solar_transmittance=_transmittance(
+                    shaded_fraction=1.0, side="external", shade="medium"
+                ),
+                pipeline_result=_make_pr(position=0),
+            )
+        )
+        block = diag["solar_transmittance"]
+        assert block["cover_side"] == "external"
+        assert block["cover_shade"] == "medium"
+
+
+# ---------------------------------------------------------------------------
+# Estimated solar gain (issue #1237) — a second top-level block, present only
+# when an irradiance entity is configured. Reads the SAME per-cycle
+# ``ctx.solar_transmittance`` #1236 produced rather than re-deriving anything.
+# ---------------------------------------------------------------------------
+
+
+_GAIN_OPTIONS = {"irradiance_entity": "sensor.solar"}
+
+
+def _gain_cover(*, cos_aoi: float = 0.8, plane_tilt_deg: float = 90.0):
+    cover = _make_cover(sol_elev=45.0)
+    cover.cos_aoi = cos_aoi
+    cover.plane_tilt_deg = plane_tilt_deg
+    return cover
+
+
+def _gain_ctx(**overrides) -> DiagnosticContext:
+    defaults = {
+        "cover": _gain_cover(),
+        "config_options": dict(_GAIN_OPTIONS),
+        "irradiance_w_m2": 700.0,
+        "day_of_year": 172,
+        "glass_area_m2": 3.0,
+        "glass_area_source": "derived",
+        "pipeline_result": _make_pr(position=25),
+    }
+    defaults.update(overrides)
+    return _base_ctx(**defaults)
+
+
+class TestSolarGainDiagnostics:
+    """The estimated-solar-gain payload the new sensor reads."""
+
+    _EXPECTED_KEYS = {
+        "gain_w",
+        "poa_w_m2",
+        "dni_w_m2",
+        "dhi_w_m2",
+        "clearness_index",
+        "ghi_w_m2",
+        "area_m2",
+        "area_source",
+        "effective_g",
+        "effective_g_source",
+        "cos_aoi",
+        "plane_tilt_deg",
+        "irradiance_plane",
+        "model",
+        "model_note",
+        "unknown_reason",
+        "position_pct",
+        "position_source",
+        "shaded_fraction",
+        "irradiance_unit",
+    }
+
+    # -- presence -----------------------------------------------------------
+
+    def test_block_absent_without_an_irradiance_entity(
+        self, builder: DiagnosticsBuilder
+    ):
+        diag, _ = builder.build(_gain_ctx(config_options={}))
+        assert "solar_gain" not in diag
+
+    def test_block_absent_on_a_default_context(self, builder: DiagnosticsBuilder):
+        """Inert by default: an untouched install gains no new keys."""
+        diag, _ = builder.build(_base_ctx())
+        assert "solar_gain" not in diag
+
+    def test_block_present_with_an_irradiance_entity(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(_gain_ctx())
+        assert set(diag["solar_gain"]) == self._EXPECTED_KEYS
+
+    def test_calculation_details_is_untouched_by_this_block(
+        self, builder: DiagnosticsBuilder
+    ):
+        """#682's trace must not move when the gain estimate switches on."""
+        details = {"sol_elev_deg": 45.0, "gamma_deg": 10.0, "position_pct": 25}
+        off_cover = _make_cover(calc_details=dict(details))
+        on_cover = _gain_cover()
+        on_cover._last_calc_details = dict(details)
+        off, _ = builder.build(_base_ctx(cover=off_cover))
+        on, _ = builder.build(_gain_ctx(cover=on_cover))
+        assert on["calculation_details"] == off["calculation_details"]
+
+    # -- values -------------------------------------------------------------
+
+    def test_watts_are_area_times_poa_times_effective_g(
+        self, builder: DiagnosticsBuilder
+    ):
+        diag, _ = builder.build(_gain_ctx())
+        block = diag["solar_gain"]
+        assert block["gain_w"] == pytest.approx(
+            round(3.0 * block["poa_w_m2"] * block["effective_g"], 1), abs=0.6
+        )
+        assert block["unknown_reason"] is None
+
+    def test_inputs_are_echoed_for_audit(self, builder: DiagnosticsBuilder):
+        block = builder.build(_gain_ctx())[0]["solar_gain"]
+        assert block["ghi_w_m2"] == pytest.approx(700.0)
+        assert block["area_m2"] == pytest.approx(3.0)
+        assert block["area_source"] == "derived"
+        assert block["cos_aoi"] == pytest.approx(0.8)
+        assert block["plane_tilt_deg"] == pytest.approx(90.0)
+        assert block["model"] == "isotropic_erbs"
+
+    def test_position_is_the_logical_pipeline_target(self, builder: DiagnosticsBuilder):
+        block = builder.build(_gain_ctx())[0]["solar_gain"]
+        assert block["position_pct"] == 25
+        assert block["position_source"] == "target"
+
+    def test_position_is_none_without_a_pipeline_result(
+        self, builder: DiagnosticsBuilder
+    ):
+        block = builder.build(_gain_ctx(pipeline_result=None))[0]["solar_gain"]
+        assert block["position_pct"] is None
+
+    # -- the #1236 seam -----------------------------------------------------
+
+    def test_effective_g_defaults_when_the_transmittance_feature_is_off(
+        self, builder: DiagnosticsBuilder
+    ):
+        from custom_components.adaptive_cover_pro.const import DEFAULT_SOLAR_G_GLAZING
+
+        block = builder.build(_gain_ctx())[0]["solar_gain"]
+        assert block["effective_g"] == pytest.approx(DEFAULT_SOLAR_G_GLAZING)
+        assert block["effective_g_source"] == "default"
+        assert block["shaded_fraction"] is None
+
+    def test_effective_g_comes_from_the_shared_per_cycle_value(
+        self, builder: DiagnosticsBuilder
+    ):
+        transmittance = _transmittance(shaded_fraction=0.75)
+        diag, _ = builder.build(
+            _gain_ctx(
+                config_options={**_GAIN_OPTIONS, **_SOLAR_OPTIONS_ON},
+                solar_transmittance=transmittance,
+            )
+        )
+        block = diag["solar_gain"]
+        assert block["effective_g"] == pytest.approx(
+            transmittance.effective_g, abs=1e-3
+        )
+        assert block["effective_g_source"] == "preset"
+        assert block["shaded_fraction"] == pytest.approx(0.75)
+        # Both solar blocks agree — one computation, two presentations.
+        assert block["effective_g"] == diag["solar_transmittance"]["effective_g"]
+
+    @pytest.mark.parametrize(
+        ("g_total", "expected_source"), [(0.05, "direct"), (None, "preset")]
+    )
+    def test_effective_g_source_tracks_the_transmittance_provenance(
+        self, builder: DiagnosticsBuilder, g_total, expected_source
+    ):
+        diag, _ = builder.build(
+            _gain_ctx(
+                config_options={**_GAIN_OPTIONS, **_SOLAR_OPTIONS_ON},
+                solar_transmittance=_transmittance(
+                    shaded_fraction=0.5, g_total=g_total
+                ),
+            )
+        )
+        assert diag["solar_gain"]["effective_g_source"] == expected_source
+
+    @pytest.mark.parametrize(
+        ("g_total", "expected_source"), [(None, "preset"), (0.45, "direct")]
+    )
+    def test_an_axis_less_transmittance_reports_a_null_fraction(
+        self, builder: DiagnosticsBuilder, g_total, expected_source
+    ):
+        """The null fraction is the axis fact; ``effective_g_source`` stays provenance.
+
+        ``effective_g_source`` ranges over ``default`` / ``preset`` / ``direct``
+        only — a cover with no coverage axis is described by
+        ``shaded_fraction is None``, not by a third provenance value.
+        """
+        diag, _ = builder.build(
+            _gain_ctx(
+                config_options={**_GAIN_OPTIONS, **_SOLAR_OPTIONS_ON},
+                solar_transmittance=_transmittance(
+                    shaded_fraction=None, g_total=g_total
+                ),
+            )
+        )
+        block = diag["solar_gain"]
+        assert block["shaded_fraction"] is None
+        assert block["effective_g_source"] == expected_source
+
+    # -- missing terms ------------------------------------------------------
+
+    def test_unknown_when_the_sensor_has_no_reading(self, builder: DiagnosticsBuilder):
+        block = builder.build(_gain_ctx(irradiance_w_m2=None))[0]["solar_gain"]
+        assert block["gain_w"] is None
+        assert block["unknown_reason"] == "no_irradiance"
+
+    def test_unknown_when_the_cover_type_carries_no_glass_area(
+        self, builder: DiagnosticsBuilder
+    ):
+        block = builder.build(
+            _gain_ctx(glass_area_m2=None, glass_area_source="unknown")
+        )[0]["solar_gain"]
+        assert block["gain_w"] is None
+        assert block["unknown_reason"] == "glass_area_unknown"
+        assert block["area_source"] == "unknown"
+
+    def test_zero_watts_with_the_sun_down(self, builder: DiagnosticsBuilder):
+        block = builder.build(_gain_ctx(pos_sun=[180.0, -5.0]))[0]["solar_gain"]
+        assert block["gain_w"] == 0.0
+        assert block["model_note"] == "sun_too_low"
+        assert block["unknown_reason"] is None
+
+    # -- plane selection ----------------------------------------------------
+
+    def test_window_plane_option_selects_the_passthrough_model(
+        self, builder: DiagnosticsBuilder
+    ):
+        diag, _ = builder.build(
+            _gain_ctx(
+                config_options={**_GAIN_OPTIONS, "irradiance_plane": "window_plane"}
+            )
+        )
+        block = diag["solar_gain"]
+        assert block["model"] == "passthrough"
+        assert block["irradiance_plane"] == "window_plane"
+        assert block["poa_w_m2"] == pytest.approx(700.0)
+
+    def test_horizontal_is_the_default_plane(self, builder: DiagnosticsBuilder):
+        block = builder.build(_gain_ctx())[0]["solar_gain"]
+        assert block["irradiance_plane"] == "horizontal"
+
+    # -- rounding happens HERE and only here (#140) -------------------------
+
+    def test_floats_are_rounded_at_this_presentation_boundary(
+        self, builder: DiagnosticsBuilder
+    ):
+        block = builder.build(_gain_ctx(irradiance_w_m2=713.7))[0]["solar_gain"]
+        for key in ("gain_w", "poa_w_m2", "dni_w_m2", "dhi_w_m2", "ghi_w_m2"):
+            assert block[key] == round(block[key], 1)
+        for key in ("clearness_index", "effective_g", "cos_aoi", "area_m2"):
+            assert block[key] == round(block[key], 3)
+
+    def test_a_missing_cover_engine_does_not_break_the_block(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Before the first calc cycle there is no engine to ask for cos(AOI)."""
+        block = builder.build(_gain_ctx(cover=None))[0]["solar_gain"]
+        assert block["gain_w"] is not None
+        assert block["cos_aoi"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Unsupported irradiance unit (issue #1280) — refuse to compute, don't convert
+# ---------------------------------------------------------------------------
+
+
+class TestSolarGainIrradianceUnitGate:
+    """``ctx.irradiance_unit_ok`` decides whether ``ctx.irradiance_w_m2`` reaches
+    the estimator at all.
+
+    ``irradiance_unit_ok`` defaults to ``True`` so every context built before
+    this fix existed — including every other test in ``TestSolarGainDiagnostics``
+    above, none of which set it — keeps computing gain exactly as before.
+    """
+
+    def test_defaults_to_admitting_the_reading(self, builder: DiagnosticsBuilder):
+        block = builder.build(_gain_ctx())[0]["solar_gain"]
+        assert block["unknown_reason"] is None
+        assert block["ghi_w_m2"] == pytest.approx(700.0)
+
+    def test_an_unsupported_unit_is_refused(self, builder: DiagnosticsBuilder):
+        from custom_components.adaptive_cover_pro.engine.solar_gain import (
+            UNKNOWN_NO_IRRADIANCE,
+            UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT,
+        )
+
+        block = builder.build(
+            _gain_ctx(irradiance_unit_ok=False, irradiance_unit="BTU/(h⋅ft²)")
+        )[0]["solar_gain"]
+        assert block["gain_w"] is None
+        assert block["unknown_reason"] == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
+        assert block["unknown_reason"] != UNKNOWN_NO_IRRADIANCE
+
+    def test_an_absent_unit_takes_the_same_refusal_path(
+        self, builder: DiagnosticsBuilder
+    ):
+        from custom_components.adaptive_cover_pro.engine.solar_gain import (
+            UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT,
+        )
+
+        block = builder.build(
+            _gain_ctx(irradiance_unit_ok=False, irradiance_unit=None)
+        )[0]["solar_gain"]
+        assert block["unknown_reason"] == UNKNOWN_UNSUPPORTED_IRRADIANCE_UNIT
+
+    def test_the_raw_reading_does_not_leak_into_the_audit_trail(
+        self, builder: DiagnosticsBuilder
+    ):
+        block = builder.build(_gain_ctx(irradiance_unit_ok=False))[0]["solar_gain"]
+        assert block["ghi_w_m2"] is None
+
+    def test_the_observed_unit_is_surfaced_for_audit(self, builder: DiagnosticsBuilder):
+        block = builder.build(
+            _gain_ctx(irradiance_unit_ok=False, irradiance_unit="BTU/(h⋅ft²)")
+        )[0]["solar_gain"]
+        assert block["irradiance_unit"] == "BTU/(h⋅ft²)"
+
+    def test_the_unit_is_surfaced_even_when_supported(
+        self, builder: DiagnosticsBuilder
+    ):
+        block = builder.build(
+            _gain_ctx(irradiance_unit_ok=True, irradiance_unit="W/m²")
+        )[0]["solar_gain"]
+        assert block["irradiance_unit"] == "W/m²"
+
+    def test_the_no_entity_configured_case_is_unaffected(
+        self, builder: DiagnosticsBuilder
+    ):
+        """The gate is orthogonal to the existing entity-not-configured guard."""
+        diag, _ = builder.build(_gain_ctx(config_options={}))
+        assert "solar_gain" not in diag

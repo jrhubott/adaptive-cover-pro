@@ -54,6 +54,10 @@ def _make_coordinator(
     """Minimal coordinator mock for _async_force_send_pipeline_position tests."""
     coordinator = MagicMock()
     coordinator.clock_window_open = clock_window_open
+    # No outside-window constraint admission in these scenarios (#943 item B);
+    # pinned because a bare MagicMock attribute is truthy and would defeat the
+    # clock-window guard this file exercises.
+    coordinator._pipeline_acts_outside_clock_window = False
     coordinator.automatic_control = automatic_control
     coordinator.entities = list(entities) if entities is not None else ["cover.test"]
     coordinator.logger = MagicMock()

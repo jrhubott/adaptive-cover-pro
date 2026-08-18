@@ -69,6 +69,13 @@ def _make_coordinator(
     coordinator._pipeline_result = pipeline_result
     coordinator._pipeline_bypasses_auto_control = pipeline_result.bypass_auto_control
     coordinator._pipeline_is_safety_handler = pipeline_result.is_safety
+    # Derived from the same result the real coordinator reads (#943 item B), so
+    # the mock keeps the production ``is_safety OR constraint_admitted`` shape
+    # rather than leaving a truthy MagicMock attribute that would open every
+    # outside-the-clock-window guard in this file.
+    coordinator._pipeline_acts_outside_clock_window = (
+        pipeline_result.acts_outside_clock_window
+    )
 
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
     coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
