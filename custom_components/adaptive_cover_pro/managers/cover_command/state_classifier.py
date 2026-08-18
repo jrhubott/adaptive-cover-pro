@@ -177,22 +177,44 @@ class StateClassifier:
                 # "opening"/"closing" and has now LEFT transit for a settled
                 # state WITHOUT getting closer to the target. That is
                 # neither of the things those arms exist to protect: a
-                # step-motor pause (#186) always advances between pulses,
-                # and an unreacted command (#1139) never acks with a
-                # transit state at all. On covers that publish no
-                # intermediate positions (Velux roof window via KLF-200)
-                # this is the ONLY event a user reversal ever produces, so
-                # suppressing it destroys the evidence and the override can
-                # structurally never engage. An unreadable old position
-                # leaves the direction unknowable — fall back to the
-                # historical suppression.
+                # step-motor pause (#186) has moved away from where the
+                # command found it (position_at_send) between pulses, and an
+                # unreacted command (#1139) never acks with a transit state
+                # at all. On covers that publish no intermediate positions
+                # (Velux roof window via KLF-200) this is the ONLY event a
+                # user reversal ever produces, so suppressing it destroys the
+                # evidence and the override can structurally never engage.
+                #
+                # The discriminator is NOT progress alone: a cover that only
+                # reports a position when it changes settles a pause with
+                # old_distance == new_distance too (the position didn't
+                # change between the last transit report and the settle).
+                # That equal-distance shape is genuinely ambiguous between a
+                # pause and a reversal-to-origin UNLESS the dispatch origin
+                # is known — a pause has moved away from
+                # ``position_at_send`` since dispatch; a reversal that lands
+                # back on the origin has not. So the equal-distance case only
+                # counts as a reversal when the cover is still resting
+                # exactly where the command found it; strictly-worse
+                # distance always counts, regardless of dispatch origin. A
+                # pause that has NOT moved at all since dispatch is
+                # genuinely indistinguishable from the reported reversal —
+                # that residual ambiguity is resolved in favour of the
+                # reversal. An unreadable old position leaves the direction
+                # unknowable — fall back to the historical suppression.
                 reversal_after_ack = (
                     was_transitioning
                     and not cover_is_transitioning
                     and old_position is not None
                     and position is not None
                     and target is not None
-                    and abs(position - target) >= abs(old_position - target)
+                    and (
+                        abs(position - target) > abs(old_position - target)
+                        or (
+                            abs(position - target) == abs(old_position - target)
+                            and position == cmd_svc.get_position_at_send(entity_id)
+                        )
+                    )
                 )
                 if (
                     not cover_is_transitioning

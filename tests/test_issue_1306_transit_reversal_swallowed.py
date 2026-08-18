@@ -79,6 +79,12 @@ class TestTransitReversalDetected:
             transit_timeout_seconds=150,
         )
         coord.state_change_data.old_state.state = "opening"
+        # Production always stamps position_at_send on dispatch (see
+        # TestTransitReversalDetectedWithDispatchOrigin below); the cover
+        # acked at 0 and never moved, so that is the realistic dispatch
+        # origin here too — the equal-distance arm of the shared predicate
+        # needs it to tell this reversal apart from a same-position pause.
+        coord._cmd_svc.state(entity_id).position_at_send = 0
         _call(coord)
         assert coord._cmd_svc.is_waiting_for_target(entity_id) is False, (
             "opening→closed with zero progress toward target must clear "
@@ -104,6 +110,9 @@ class TestTransitReversalDetected:
             transit_timeout_seconds=150,
         )
         coord.state_change_data.old_state.state = "opening"
+        # See test_no_progress_reversal_clears_wait_for_target above: the
+        # realistic dispatch origin for this signature is 0.
+        coord._cmd_svc.state(entity_id).position_at_send = 0
         _call(coord)
         assert not coord._grace_mgr.is_in_command_grace_period(
             entity_id
@@ -150,6 +159,9 @@ class TestTransitReversalDetected:
             transit_timeout_seconds=150,
         )
         coord.state_change_data.old_state.state = "closing"
+        # Realistic dispatch origin for this mirror signature: acked at 100,
+        # never moved (see test_no_progress_reversal_clears_wait_for_target).
+        coord._cmd_svc.state(entity_id).position_at_send = 100
         _call(coord)
         assert coord._cmd_svc.is_waiting_for_target(entity_id) is False, (
             "closing→open with zero progress toward target must clear "
@@ -404,4 +416,46 @@ class TestStepMotorPauseStillProtected:
         _call(coord)
         assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
         assert coord._grace_mgr.is_in_command_grace_period(entity_id)
+        coord._grace_mgr.cancel_all()
+
+    @pytest.mark.asyncio
+    async def test_equal_distance_pause_away_from_dispatch_origin_restarts_grace(
+        self,
+    ) -> None:
+        """opening(45) → open(45), target 100, position_at_send=20.
+
+        The cover has moved from its dispatch origin (20) to 45 and then
+        paused. Because a cover that only publishes a position when it
+        changes reports the same number on both the last transit report and
+        the settle, old_distance == new_distance here (55 == 55) — the
+        reversal predicate's equal-distance case. But the cover has
+        demonstrably moved since dispatch (45 != 20): this is a genuine
+        #186 step-motor pause, not the zero-movement reversal the equality
+        case exists to catch, and arm 1 must fire and restart grace.
+
+        An unconditional ``>=`` treats this identically to a true reversal
+        and swallows the pause guard — the MUST-FIX regression this test
+        locks.
+        """
+        entity_id = "cover.step_motor_shade"
+        coord = _make_coordinator_with_dispatch_origin(
+            entity_id,
+            target_position=100,
+            current_position=45,
+            old_position=45,
+            position_at_send=20,
+            old_state_str="opening",
+            new_state_str="open",
+            sent_seconds_ago=10.0,
+            transit_timeout_seconds=150,
+        )
+        _call(coord)
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True, (
+            "an equal-distance pause that has moved away from its dispatch "
+            "origin is a genuine step-motor pause, not a reversal — "
+            "wait_for_target must stay True"
+        )
+        assert coord._grace_mgr.is_in_command_grace_period(
+            entity_id
+        ), "arm 1 must restart the command grace period for this pause"
         coord._grace_mgr.cancel_all()
