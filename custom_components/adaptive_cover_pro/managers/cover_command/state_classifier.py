@@ -27,6 +27,10 @@ behaviour fixes over its lifetime:
   must keep wait_for_target, bounded by the same transit-timeout backstop as
   every other arm — distinct from a genuine mid-travel stall, which must
   still clear.
+- **#1306** — a cover that acked a command with a transit state and then
+  settled without progress has been stopped or reversed — neither a #186
+  pause nor a #1139 unreacted command — so neither arm may suppress that
+  event.
 
 The classifier is composed by :class:`CoverCommandService` and accessed
 through its public :meth:`classify_state_change` wrapper.  External state
@@ -167,24 +171,28 @@ class StateClassifier:
                 was_transitioning = event.old_state is not None and is_state_in_transit(
                     event.old_state.state
                 )
-                # Issue #1235: a pause is only a pause when the event itself
-                # shows progress TOWARD the target (both canonical #186
-                # scenarios do: 46→51 toward 100, 50→40 toward 20). A cover
-                # the user physically reversed (wall switch / remote) reports
-                # the same opening/closing→settled signature but with zero or
-                # negative progress — e.g. a Velux roof window via KLF-200
-                # publishes no intermediate positions, so a reversed open
-                # command is always "opening"(0) → "closed"(0). Restarting
-                # grace there keeps wait_for_target alive forever: the
-                # override detector never runs, ACP re-sends the command, and
-                # every subsequent button press lands in a fresh window. With
-                # an unreadable old position the direction is unknowable —
-                # keep the historical restart behaviour.
-                pause_shows_progress = (
-                    old_position is None
-                    or target is None
-                    or position is None
-                    or abs(position - target) < abs(old_position - target)
+                # Issue #1306: ONE predicate, consulted by both suppression
+                # arms below (this one and the unreacted-command arm
+                # further down). The cover acked the command by entering
+                # "opening"/"closing" and has now LEFT transit for a settled
+                # state WITHOUT getting closer to the target. That is
+                # neither of the things those arms exist to protect: a
+                # step-motor pause (#186) always advances between pulses,
+                # and an unreacted command (#1139) never acks with a
+                # transit state at all. On covers that publish no
+                # intermediate positions (Velux roof window via KLF-200)
+                # this is the ONLY event a user reversal ever produces, so
+                # suppressing it destroys the evidence and the override can
+                # structurally never engage. An unreadable old position
+                # leaves the direction unknowable — fall back to the
+                # historical suppression.
+                reversal_after_ack = (
+                    was_transitioning
+                    and not cover_is_transitioning
+                    and old_position is not None
+                    and position is not None
+                    and target is not None
+                    and abs(position - target) >= abs(old_position - target)
                 )
                 if (
                     not cover_is_transitioning
@@ -192,7 +200,7 @@ class StateClassifier:
                     and target is not None
                     and position is not None
                     and position != target
-                    and pause_shows_progress
+                    and not reversal_after_ack
                 ):
                     grace_mgr.start_command_grace_period(entity_id)
                     self._debug_log(
@@ -379,11 +387,25 @@ class StateClassifier:
                         # NOT call record_progress() or
                         # start_command_grace_period(), or the suppression
                         # stops being bounded by transit_timeout.
+                        #
+                        # Issue #1306: on a cover that publishes no
+                        # intermediate positions (Velux via KLF-200), a user
+                        # reversal mid-transit produces exactly this
+                        # signature — old_position == position ==
+                        # position_at_send, because position_at_send is
+                        # stamped at dispatch and the single reported event
+                        # never moves off it. ``reversal_after_ack`` is the
+                        # discriminator: this arm exists to protect a
+                        # command the cover never acked with a transit
+                        # state at all, which a reversal is not (it acked,
+                        # then settled without progress) — so a reversal
+                        # must not be swallowed here either.
                         position_at_send = cmd_svc.get_position_at_send(entity_id)
                         if (
                             position_at_send is not None
                             and old_position == position == position_at_send
                             and elapsed is not None
+                            and not reversal_after_ack
                         ):
                             # `now` / `elapsed` are the same locals the
                             # backstop above already computed on this

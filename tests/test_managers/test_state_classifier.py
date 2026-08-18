@@ -198,6 +198,53 @@ def test_classify_restarts_grace_on_step_motor_pause(classifier_setup):
 
 
 @pytest.mark.unit
+def test_classify_does_not_restart_grace_on_reversal_after_ack(classifier_setup):
+    """Issue #1306: a reversal that acked with a transit state must not restart grace.
+
+    opening(0) → closed(0), target 100: the cover acked the command by
+    entering "opening" and has now settled without getting any closer to
+    the target — a user reversal, not a step-motor pause. The #186 arm must
+    fold to the shared ``reversal_after_ack`` predicate and fall through
+    (eventually clearing wait_for_target) rather than restarting grace.
+    """
+    svc = _make_service(target=100, new_pos=0, old_pos=0)
+    classifier, _buf, grace, _debug_log = classifier_setup(svc)
+    grace.start_command_grace_period = MagicMock()
+    event = _make_event(
+        "cover.x", new_pos=0, old_pos=0, new_state="closed", old_state="opening"
+    )
+    classifier.classify(
+        event,
+        ignore_intermediate_states=False,
+        target_just_reached=set(),
+        grace_mgr=grace,
+    )
+    grace.start_command_grace_period.assert_not_called()
+    svc.set_waiting.assert_called_once_with("cover.x", False)
+
+
+@pytest.mark.unit
+def test_classify_still_restarts_grace_when_old_position_unknown(classifier_setup):
+    """An unreadable old position leaves the direction unknowable — keep the
+    historical restart behaviour rather than assuming a reversal.
+    """
+    svc = _make_service(target=100, new_pos=51, old_pos=None)
+    classifier, _buf, grace, _debug_log = classifier_setup(svc)
+    grace.start_command_grace_period = MagicMock()
+    event = _make_event(
+        "cover.x", new_pos=51, old_pos=None, new_state="open", old_state="opening"
+    )
+    classifier.classify(
+        event,
+        ignore_intermediate_states=False,
+        target_just_reached=set(),
+        grace_mgr=grace,
+    )
+    grace.start_command_grace_period.assert_called_once_with("cover.x")
+    svc.record_progress.assert_not_called()
+
+
+@pytest.mark.unit
 def test_classify_records_startup_delay(classifier_setup):
     svc = _make_service(target=100, new_pos=0, old_pos=0)
     classifier, buf, grace, _debug_log = classifier_setup(svc)
