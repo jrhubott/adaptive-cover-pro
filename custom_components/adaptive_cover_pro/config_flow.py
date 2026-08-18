@@ -1625,7 +1625,7 @@ def _cover_type_label(
 # forbids a custom ``config_summary`` top-level category.
 #
 # Each value is a Python ``str.format`` template. Literal ``{`` / ``}`` that are
-# NOT format fields (the cloud "weather in {set}" notation) are escaped as
+# NOT format fields (the cloud "weather not in {set}" notation) are escaped as
 # ``{{`` / ``}}``. Priority badges are NOT baked in — ``_badge(N)`` is prepended
 # AFTER ``.format()`` so handler-priority integers stay imported, never
 # duplicated into translation strings.
