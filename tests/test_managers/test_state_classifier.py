@@ -49,12 +49,20 @@ def _make_service(
     sent_seconds_ago: float = 10.0,
     last_progress_seconds_ago: float | None = None,
     reached: bool = False,
+    position_at_send: int | None = None,
 ):
     """Return a MagicMock service exposing the public surface the classifier uses."""
     svc = MagicMock()
     svc._logger = MagicMock()
     svc.is_waiting_for_target = MagicMock(return_value=waiting)
     svc.get_cover_capabilities = MagicMock(return_value={"has_set_position": True})
+    # Issue #1306: the shared ``reversal_after_ack`` predicate's equal-
+    # distance case reads this to tell a pause (moved away from dispatch
+    # origin) from a reversal (hasn't moved since dispatch). An unconfigured
+    # MagicMock would return a truthy mock object here instead of ``None``,
+    # which never compares equal to an int position — explicitly default it
+    # to ``None`` (the historical "unreadable" fallback) so callers opt in.
+    svc.get_position_at_send = MagicMock(return_value=position_at_send)
 
     def _read_pos(_eid, _caps, state_obj):
         return (
@@ -194,6 +202,85 @@ def test_classify_restarts_grace_on_step_motor_pause(classifier_setup):
     )
     grace.start_command_grace_period.assert_called_once_with("cover.x")
     # Step-motor pause must short-circuit BEFORE the forward-progress block.
+    svc.record_progress.assert_not_called()
+
+
+@pytest.mark.unit
+def test_classify_does_not_restart_grace_on_reversal_after_ack(classifier_setup):
+    """Issue #1306: a reversal that acked with a transit state must not restart grace.
+
+    opening(0) → closed(0), target 100, position_at_send=0: the cover acked
+    the command by entering "opening" at its dispatch origin and has now
+    settled without getting any closer to the target, still resting exactly
+    where the command found it — a user reversal, not a step-motor pause.
+    The #186 arm must fold to the shared ``reversal_after_ack`` predicate and
+    fall through (eventually clearing wait_for_target) rather than
+    restarting grace.
+    """
+    svc = _make_service(target=100, new_pos=0, old_pos=0, position_at_send=0)
+    classifier, _buf, grace, _debug_log = classifier_setup(svc)
+    grace.start_command_grace_period = MagicMock()
+    event = _make_event(
+        "cover.x", new_pos=0, old_pos=0, new_state="closed", old_state="opening"
+    )
+    classifier.classify(
+        event,
+        ignore_intermediate_states=False,
+        target_just_reached=set(),
+        grace_mgr=grace,
+    )
+    grace.start_command_grace_period.assert_not_called()
+    svc.set_waiting.assert_called_once_with("cover.x", False)
+
+
+@pytest.mark.unit
+def test_classify_restarts_grace_on_equal_distance_pause_away_from_dispatch_origin(
+    classifier_setup,
+):
+    """MUST-FIX regression guard: an unconditional ``>=`` swallows this pause.
+
+    opening(45) → open(45), target 100, position_at_send=20: the cover has
+    moved from its dispatch origin (20) to 45 and paused — a genuine #186
+    step-motor pause that happens to report the same position on both the
+    last transit report and the settle (old_distance == new_distance == 55).
+    Because the cover has demonstrably moved since dispatch (45 != 20), the
+    equal-distance case must NOT qualify as ``reversal_after_ack`` — arm 1
+    must still fire and restart grace.
+    """
+    svc = _make_service(target=100, new_pos=45, old_pos=45, position_at_send=20)
+    classifier, _buf, grace, _debug_log = classifier_setup(svc)
+    grace.start_command_grace_period = MagicMock()
+    event = _make_event(
+        "cover.x", new_pos=45, old_pos=45, new_state="open", old_state="opening"
+    )
+    classifier.classify(
+        event,
+        ignore_intermediate_states=False,
+        target_just_reached=set(),
+        grace_mgr=grace,
+    )
+    grace.start_command_grace_period.assert_called_once_with("cover.x")
+    svc.record_progress.assert_not_called()
+
+
+@pytest.mark.unit
+def test_classify_still_restarts_grace_when_old_position_unknown(classifier_setup):
+    """An unreadable old position leaves the direction unknowable — keep the
+    historical restart behaviour rather than assuming a reversal.
+    """
+    svc = _make_service(target=100, new_pos=51, old_pos=None)
+    classifier, _buf, grace, _debug_log = classifier_setup(svc)
+    grace.start_command_grace_period = MagicMock()
+    event = _make_event(
+        "cover.x", new_pos=51, old_pos=None, new_state="open", old_state="opening"
+    )
+    classifier.classify(
+        event,
+        ignore_intermediate_states=False,
+        target_just_reached=set(),
+        grace_mgr=grace,
+    )
+    grace.start_command_grace_period.assert_called_once_with("cover.x")
     svc.record_progress.assert_not_called()
 
 
