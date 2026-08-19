@@ -3,12 +3,12 @@
 `StateClassifier` is the single piece of code that decides whether a
 post-command cover state change represents the integration's own transit
 (grace period, mid-transit pause, forward progress, settle) or genuine
-user activity (manual override).  The logic stays *byte-for-byte
-equivalent* to the body that lived inline on the coordinator before this
-extraction — every issue-fix comment is preserved verbatim.  Refactoring
-this code is not in scope; relocating it is.
+user activity (manual override).  The body that lived inline on the
+coordinator before this extraction is preserved verbatim, every issue-fix
+comment included; #1139 and #1306 are the first behaviour changes made
+directly in this module rather than relocated into it.
 
-Background — the inline implementation accumulated five issue-numbered
+Background — the inline implementation accumulated seven issue-numbered
 behaviour fixes over its lifetime:
 
 - **#147** — clearing wait_for_target on intermediate states caused
@@ -61,6 +61,64 @@ if TYPE_CHECKING:
 
 
 DebugLogFn = Callable[..., None]
+
+
+def _is_reversal_after_ack(
+    *,
+    old_position: int | None,
+    position: int | None,
+    target: int | None,
+    position_at_send: int | None,
+) -> bool:
+    """Issue #1306: does the position math show a reversal rather than progress.
+
+    Consulted (via ``transit_to_settled and _is_reversal_after_ack(...)``,
+    the combined ``reversal_after_ack`` seen in :meth:`StateClassifier.classify`)
+    by BOTH suppression arms in that method — the #186 step-motor pause arm
+    immediately after this predicate is bound, and the #1139 unreacted-
+    command arm ~200 lines further down. A genuine #186 pause always
+    *advances* between pulses, and a genuine #1139 unreacted command never
+    acks with a transit state at all (``transit_to_settled`` is already
+    False for it) — a reversal is neither: the cover acked the command by
+    entering "opening"/"closing" and then left transit without getting any
+    closer to the target. On covers that publish no intermediate positions
+    (Velux roof window via KLF-200) this is the ONLY event a user reversal
+    ever produces, so suppressing it destroys the evidence and the override
+    can structurally never engage.
+
+    The discriminator is NOT progress alone: a cover that only reports a
+    position when it changes settles a pause with old_distance ==
+    new_distance too (the position didn't change between the last transit
+    report and the settle). That equal-distance shape is genuinely
+    ambiguous between a pause and a reversal-to-origin UNLESS the dispatch
+    origin is known — a pause has moved away from ``position_at_send``
+    since dispatch; a reversal that lands back on the origin has not. So
+    the equal-distance case only counts as a reversal when the cover is
+    still resting exactly where the command found it; strictly-worse
+    distance always counts, regardless of dispatch origin.
+
+    Two ambiguities are resolved rather than eliminated, both in favour of
+    calling the event a reversal:
+    - A pause that has NOT moved at all since dispatch is genuinely
+      indistinguishable from a reversal that lands back on the origin.
+    - On a cover that DOES publish intermediate positions, a settle landing
+      equidistant from the target but on the OPPOSITE side from the last
+      transit report also satisfies the equal-distance check above — the
+      discriminator here is ``position_at_send``, not which side of the
+      target the cover ends up on, so that shape is also read as a
+      reversal rather than a pause. No report in this repo describes it;
+      it is named here rather than assumed away.
+
+    An unreadable old position leaves the direction unknowable — returns
+    False (the historical suppression stays in force).
+    """
+    return old_position is not None and (
+        abs(position - target) > abs(old_position - target)
+        or (
+            abs(position - target) == abs(old_position - target)
+            and position == position_at_send
+        )
+    )
 
 
 class StateClassifier:
@@ -171,59 +229,32 @@ class StateClassifier:
                 was_transitioning = event.old_state is not None and is_state_in_transit(
                     event.old_state.state
                 )
-                # Issue #1306: ONE predicate, consulted by both suppression
-                # arms below (this one and the unreacted-command arm
-                # further down). The cover acked the command by entering
-                # "opening"/"closing" and has now LEFT transit for a settled
-                # state WITHOUT getting closer to the target. That is
-                # neither of the things those arms exist to protect: a
-                # step-motor pause (#186) has moved away from where the
-                # command found it (position_at_send) between pulses, and an
-                # unreacted command (#1139) never acks with a transit state
-                # at all. On covers that publish no intermediate positions
-                # (Velux roof window via KLF-200) this is the ONLY event a
-                # user reversal ever produces, so suppressing it destroys the
-                # evidence and the override can structurally never engage.
-                #
-                # The discriminator is NOT progress alone: a cover that only
-                # reports a position when it changes settles a pause with
-                # old_distance == new_distance too (the position didn't
-                # change between the last transit report and the settle).
-                # That equal-distance shape is genuinely ambiguous between a
-                # pause and a reversal-to-origin UNLESS the dispatch origin
-                # is known — a pause has moved away from
-                # ``position_at_send`` since dispatch; a reversal that lands
-                # back on the origin has not. So the equal-distance case only
-                # counts as a reversal when the cover is still resting
-                # exactly where the command found it; strictly-worse
-                # distance always counts, regardless of dispatch origin. A
-                # pause that has NOT moved at all since dispatch is
-                # genuinely indistinguishable from the reported reversal —
-                # that residual ambiguity is resolved in favour of the
-                # reversal. An unreadable old position leaves the direction
-                # unknowable — fall back to the historical suppression.
-                reversal_after_ack = (
+                # Issue #1306: the shared precondition for ONE
+                # ``reversal_after_ack`` predicate consulted by both
+                # suppression arms below (this #186 pause arm and the
+                # #1139 unreacted-command arm ~200 lines further down) —
+                # named once so neither arm re-lists the same four
+                # conditions. See ``_is_reversal_after_ack`` above for the
+                # full reasoning (progress vs. reversal, the equal-distance
+                # dispatch-origin discriminator, and the documented
+                # ambiguities it resolves).
+                transit_to_settled = (
                     was_transitioning
                     and not cover_is_transitioning
-                    and old_position is not None
-                    and position is not None
                     and target is not None
-                    and (
-                        abs(position - target) > abs(old_position - target)
-                        or (
-                            abs(position - target) == abs(old_position - target)
-                            and position == cmd_svc.get_position_at_send(entity_id)
-                        )
-                    )
+                    and position is not None
                 )
-                if (
-                    not cover_is_transitioning
-                    and was_transitioning
-                    and target is not None
-                    and position is not None
-                    and position != target
-                    and not reversal_after_ack
-                ):
+                # Looked up once and shared by both arms below —
+                # get_position_at_send() is a cheap dict.get, but there is
+                # no reason to pay for it twice on the same event.
+                position_at_send = cmd_svc.get_position_at_send(entity_id)
+                reversal_after_ack = transit_to_settled and _is_reversal_after_ack(
+                    old_position=old_position,
+                    position=position,
+                    target=target,
+                    position_at_send=position_at_send,
+                )
+                if transit_to_settled and position != target and not reversal_after_ack:
                     grace_mgr.start_command_grace_period(entity_id)
                     self._debug_log(
                         "manual_override",
@@ -416,13 +447,16 @@ class StateClassifier:
                         # signature — old_position == position ==
                         # position_at_send, because position_at_send is
                         # stamped at dispatch and the single reported event
-                        # never moves off it. ``reversal_after_ack`` is the
-                        # discriminator: this arm exists to protect a
+                        # never moves off it. ``reversal_after_ack`` (bound
+                        # above, alongside ``was_transitioning`` — see
+                        # ``_is_reversal_after_ack`` for the full reasoning)
+                        # is the discriminator: this arm exists to protect a
                         # command the cover never acked with a transit
                         # state at all, which a reversal is not (it acked,
                         # then settled without progress) — so a reversal
-                        # must not be swallowed here either.
-                        position_at_send = cmd_svc.get_position_at_send(entity_id)
+                        # must not be swallowed here either. ``position_at_send``
+                        # itself is also bound above, shared with arm 1
+                        # rather than looked up a second time here.
                         if (
                             position_at_send is not None
                             and old_position == position == position_at_send

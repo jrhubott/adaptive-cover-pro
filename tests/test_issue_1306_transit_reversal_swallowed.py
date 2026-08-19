@@ -57,8 +57,7 @@ from tests.test_issue_285_open_state_cover_false_override import (
 class TestTransitReversalDetected:
     """A user-reversed cover must not be mistaken for a step-motor pause."""
 
-    @pytest.mark.asyncio
-    async def test_no_progress_reversal_clears_wait_for_target(self) -> None:
+    def test_no_progress_reversal_clears_wait_for_target(self) -> None:
         """Velux/KLF-200 signature: opening(0) → closed(0), target 100.
 
         The cover publishes no intermediate positions. ACP commands open
@@ -91,8 +90,7 @@ class TestTransitReversalDetected:
             "wait_for_target so manual-override detection can run"
         )
 
-    @pytest.mark.asyncio
-    async def test_no_progress_reversal_does_not_restart_grace(self) -> None:
+    def test_no_progress_reversal_does_not_restart_grace(self) -> None:
         """The reversal event must not restart the command grace period.
 
         A restarted grace period swallows the follow-up state report of the
@@ -119,8 +117,7 @@ class TestTransitReversalDetected:
         ), "a no-progress reversal must not restart the grace period"
         coord._grace_mgr.cancel_all()
 
-    @pytest.mark.asyncio
-    async def test_moved_away_reversal_clears_wait_for_target(self) -> None:
+    def test_moved_away_reversal_clears_wait_for_target(self) -> None:
         """opening(7) → closed(0), target 100: moved away from target.
 
         The cover had opened slightly (7 %) before the user reversed it back
@@ -143,8 +140,7 @@ class TestTransitReversalDetected:
             coord._cmd_svc.is_waiting_for_target(entity_id) is False
         ), "opening→closed moving away from target must clear wait_for_target"
 
-    @pytest.mark.asyncio
-    async def test_closing_command_reversed_to_open_clears_wait_for_target(
+    def test_closing_command_reversed_to_open_clears_wait_for_target(
         self,
     ) -> None:
         """Mirror case: ACP commands close (target 0), user reverses to open."""
@@ -216,8 +212,7 @@ def _make_coordinator_with_dispatch_origin(
 class TestTransitReversalDetectedWithDispatchOrigin:
     """The reversal must clear wait_for_target even when position_at_send is set."""
 
-    @pytest.mark.asyncio
-    async def test_no_progress_reversal_clears_wait_for_target_with_dispatch_origin(
+    def test_no_progress_reversal_clears_wait_for_target_with_dispatch_origin(
         self,
     ) -> None:
         """Velux/KLF-200 signature, with position_at_send stamped as production does.
@@ -246,8 +241,7 @@ class TestTransitReversalDetectedWithDispatchOrigin:
             "detection can run"
         )
 
-    @pytest.mark.asyncio
-    async def test_no_progress_reversal_does_not_restart_grace_with_dispatch_origin(
+    def test_no_progress_reversal_does_not_restart_grace_with_dispatch_origin(
         self,
     ) -> None:
         """The reversal event must not restart the command grace period either."""
@@ -269,8 +263,7 @@ class TestTransitReversalDetectedWithDispatchOrigin:
         ), "a no-progress reversal must not restart the grace period"
         coord._grace_mgr.cancel_all()
 
-    @pytest.mark.asyncio
-    async def test_closing_command_reversed_to_open_clears_wait_for_target_with_dispatch_origin(
+    def test_closing_command_reversed_to_open_clears_wait_for_target_with_dispatch_origin(
         self,
     ) -> None:
         """Mirror case: ACP commands close (target 0), user reverses to open."""
@@ -299,20 +292,53 @@ class TestTransitReversalDetectedWithDispatchOrigin:
 # Every reversal assertion above (and every one PR #1239 shipped) stops at
 # ``wait_for_target is False``. The user's actual report is "the binary
 # sensor stayed off" — clearing wait_for_target is necessary but not
-# sufficient if a downstream gate still rejects the same event. This drives
-# the full classify -> handle_state_change sequence (the same two calls
-# coordinator.py's ``process_entity_state_change`` and
-# ``async_handle_cover_state_change`` make on a drained event, per
-# coordinator.py:1225-1231 and :3866) and asserts the manager actually marks
-# the cover manual, mirroring
-# ``test_issue_1139_unreacted_command.py::TestEndToEndNoFalseOverride``.
+# sufficient if a downstream gate still rejects the same event. Calling
+# manager.handle_state_change() directly (as an earlier version of this test
+# did) hand-supplies our_state / manual_threshold and omits
+# is_in_command_grace / is_in_transit / has_recorded_target — all of which
+# the coordinator always passes — so it cannot catch a coordinator-level
+# gate (target_just_reached, manual_ignore_external, the #591 threshold
+# derivation) still rejecting the event. This drives the REAL
+# coordinator.py:process_entity_state_change() -> async_handle_cover_state_change()
+# sequence instead, modelled on
+# ``test_issue_1139_unreacted_command.py::TestEndToEndNoFalseOverride`` and
+# ``test_issue_1022_target_restore_after_reload.py::_make_reload_coordinator``.
 # ===========================================================================
+
+
+def _augment_for_async_handle_cover_state_change(coordinator, manager, policy):
+    """Add the coordinator-level attributes ``async_handle_cover_state_change`` reads.
+
+    ``_make_coordinator``/``_make_coordinator_with_dispatch_origin`` only build
+    what ``process_entity_state_change`` (the classifier step) needs.
+    ``async_handle_cover_state_change`` is a coordinator method with a wider
+    surface — the startup-grace check, manual_ignore_external, the #591
+    position-matching threshold derivation, and the manager/policy it hands to
+    ``manager.handle_state_change`` — so driving it for real needs these too.
+    Mirrors ``_make_reload_coordinator`` in
+    ``test_issue_1022_target_restore_after_reload.py``.
+    """
+    coordinator.manual_toggle = True
+    coordinator.manual_ignore_external = False
+    coordinator.manual_reset = False
+    coordinator.manual_threshold = 3
+    coordinator._position_tolerance = 8
+    coordinator.manager = manager
+    coordinator._policy = policy
+    coordinator._pipeline_result = None
+    coordinator.logger = MagicMock()
+    coordinator._is_in_startup_grace_period = MagicMock(return_value=False)
+    return coordinator
 
 
 class TestEndToEndOverrideEngages:
     """The reversal must actually engage manual override, not just clear the gate."""
 
-    def test_reversal_engages_manual_override_end_to_end(self) -> None:
+    @pytest.mark.asyncio
+    async def test_reversal_engages_manual_override_end_to_end(self) -> None:
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
         from custom_components.adaptive_cover_pro.cover_types import get_policy
         from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
             EventBuffer,
@@ -334,6 +360,28 @@ class TestEndToEndOverrideEngages:
             sent_seconds_ago=47.0,
             transit_timeout_seconds=150,
         )
+        # A physical KLF-200 remote press carries no HA user context — route
+        # through the numeric detection path exactly as production does.
+        # coordinator.py's user-context fast path only fires when
+        # ctx.user_id is not None (a dashboard/voice-assistant action); a
+        # wall-mounted remote button is exactly the context-less case the
+        # numeric path (and this fix) exists to cover.
+        coord.state_change_data.new_state.context.user_id = None
+
+        # Config-entry sensor_type in the reporter's diagnostics (issue
+        # #1306 evidence) is "cover_roof_window", not "Vertical blind" as
+        # the issue form states — match the report, though the fix itself
+        # is cover-type-agnostic.
+        manager = AdaptiveCoverManager(
+            hass=MagicMock(),
+            reset_duration={"hours": 2},
+            logger=MagicMock(),
+            event_buffer=buf,
+        )
+        manager.add_covers([entity_id])
+        _augment_for_async_handle_cover_state_change(
+            coord, manager, get_policy("cover_roof_window")
+        )
 
         # Step 1: classify the state change (StateClassifier), exactly as
         # coordinator.process_entity_state_change() does on the incoming event.
@@ -343,25 +391,13 @@ class TestEndToEndOverrideEngages:
             "on this event"
         )
 
-        # Step 2: the coordinator would now call manager.handle_state_change
-        # on the same drained event (coordinator.py:3866), with
-        # wait_for_target re-read at drain time.
-        manager = AdaptiveCoverManager(
-            hass=MagicMock(),
-            reset_duration={"hours": 2},
-            logger=MagicMock(),
-            event_buffer=buf,
-        )
-        manager.add_covers([entity_id])
-
-        manager.handle_state_change(
-            coord.state_change_data,
-            our_state=100,
-            policy=get_policy("cover_blind"),
-            allow_reset=False,
-            is_waiting=coord._cmd_svc.is_waiting_for_target,
-            manual_threshold=3,
-        )
+        # Step 2: drive the REAL async_handle_cover_state_change end to end —
+        # the same method the coordinator calls on the drained event queue
+        # (coordinator.py:1225-1231 appends state_change_data, :2647 awaits
+        # this) — rather than hand-calling manager.handle_state_change with a
+        # partial kwarg set.
+        coord._pending_cover_events = [coord.state_change_data]
+        await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coord, 100)
 
         assert manager.is_cover_manual(entity_id) is True, (
             "a user reversal that clears wait_for_target must engage manual "
@@ -382,7 +418,14 @@ class TestEndToEndOverrideEngages:
 
 
 class TestStepMotorPauseStillProtected:
-    """Canonical #186 scenarios (pause WITH progress) must keep restarting grace."""
+    """Canonical #186 scenarios (pause WITH progress) must keep restarting grace.
+
+    Each test below stays ``async def`` with no ``await`` in its body: arm 1
+    firing calls ``grace_mgr.start_command_grace_period()``, which schedules
+    a real ``asyncio.create_task()`` — that raises ``RuntimeError: no
+    running event loop`` outside a coroutine, so the async wrapper is load-
+    bearing here even though nothing is directly awaited.
+    """
 
     @pytest.mark.asyncio
     async def test_pause_with_progress_still_restarts_grace(self) -> None:
