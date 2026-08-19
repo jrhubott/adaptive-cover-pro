@@ -1363,6 +1363,15 @@ CONF_WEATHER_BYPASS_AUTO_CONTROL = "weather_bypass_auto_control"
 # WeatherManager.is_feature_configured chokepoint. New covers default OFF via the
 # config-flow schema; pre-existing covers are migrated to ON (v3.5 → v3.6).
 CONF_WEATHER_ENABLED = "weather_enabled"
+# Whether the weather override keeps acting after the operational time window
+# closes (issue #1308). True (the shipped behaviour) is what makes weather a
+# safety override: a storm retraction reaches hardware at any hour. False scopes
+# it to the user's start/end CLOCK window, for installs that use the override as
+# a comfort rule rather than hardware protection. Read by BOTH weather seats —
+# the priority-90 handler and the min-mode floor in `axis_constraints` — so one
+# checkbox scopes the whole feature. Name mirrors the per-slot
+# `custom_position_outside_window_N` → `AxisConstraint.outside_window` chain.
+CONF_WEATHER_OUTSIDE_WINDOW = "weather_outside_window"
 
 # Threshold unit must match the sensor (no conversion applied).
 DEFAULT_WEATHER_WIND_SPEED_THRESHOLD = 50.0
@@ -1374,6 +1383,10 @@ DEFAULT_WEATHER_TIMEOUT = 300  # seconds before resuming after clear
 # New covers start with the weather override OFF (issue #719). Pre-existing
 # covers are migrated to True so upgrades keep firing weather safety overrides.
 DEFAULT_WEATHER_ENABLED = False
+# Weather keeps its outside-the-window licence unless the user opts out, so an
+# absent key composes byte-identically to every pre-#1308 install and no
+# migration needs to seed anything.
+DEFAULT_WEATHER_OUTSIDE_WINDOW = True
 
 
 # =============================================================================

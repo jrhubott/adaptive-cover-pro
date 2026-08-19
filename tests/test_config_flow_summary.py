@@ -1722,6 +1722,56 @@ def test_weather_override_no_sensors_shows_neither_warning_nor_rule():
     assert "Weather safety" not in summary
 
 
+# --- Window scoping warning (issue #1308) ---
+
+_WX_SCOPED_PHRASE = "only acts inside the time window"
+
+
+def test_weather_window_scoped_shows_the_overnight_warning():
+    """Opting out of the outside-window licence is a footgun and says so."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OUTSIDE_WINDOW
+
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_WEATHER_ENABLED: True,
+        CONF_WEATHER_OUTSIDE_WINDOW: False,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert _WX_SCOPED_PHRASE in summary
+    # The normal rule line still renders — this is a scope, not an off switch.
+    assert "retract to" in summary
+
+
+def test_weather_window_scoped_warning_absent_at_the_default():
+    """The default keeps weather acting at any hour, so no warning fires."""
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_WEATHER_ENABLED: True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert _WX_SCOPED_PHRASE not in summary
+
+
+def test_weather_window_scoped_warning_absent_when_feature_is_off():
+    """A disabled feature reports only that; the scope is moot."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OUTSIDE_WINDOW
+
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_WEATHER_ENABLED: False,
+        CONF_WEATHER_OUTSIDE_WINDOW: False,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert _WX_DISABLED_PHRASE in summary
+    assert _WX_SCOPED_PHRASE not in summary
+
+
 # ---------------------------------------------------------------------------
 # Section 2: Force Override
 # ---------------------------------------------------------------------------

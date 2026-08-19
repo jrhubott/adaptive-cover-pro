@@ -96,9 +96,11 @@ class AxisConstraint:
         outside_window: Whether this claim keeps binding after the user's
                start/end clock window closes (issue #943 item B). For a
                custom-position slot it is the per-slot opt-in; the weather
-               floor sets it unconditionally, because it has always acted out
-               there. Read ONLY by :func:`_window_eligible`, and only for a
-               non-``FIXED`` kind.
+               floor sets it from ``snapshot.weather_outside_window``, which
+               defaults True because weather has always acted out there and
+               reads False only when the user scoped the override to their
+               operational window (issue #1308). Read ONLY by
+               :func:`_window_eligible`, and only for a non-``FIXED`` kind.
 
     """
 
@@ -310,15 +312,19 @@ def _window_eligible(constraint: AxisConstraint) -> bool:
       resolved.
     * a claim whose ``outside_window`` flag is set AND whose kind is bounded —
       an opted-in custom-position slot, and the weather floor, which sets the
-      flag by construction. Also a widening, and also deliberate: a NON-min-mode
-      weather override wins with ``is_safety`` and has always acted out here,
-      but the MIN-MODE floor this claim represents makes the handler *defer*
+      flag from ``snapshot.weather_outside_window`` (default True). Also a
+      widening, and also deliberate: a NON-min-mode weather override wins with
+      ``is_safety`` and has always acted out here, but the MIN-MODE floor this
+      claim represents makes the handler *defer*
       (``WeatherOverrideHandler.evaluate`` returns ``None`` for it), so no
       result ever carried ``is_safety`` and the old dispatch gate blocked it
       exactly like any other bound. A storm floor that stops holding at dusk is
-      not what the option promises, so it is admitted. Keying on the field
-      rather than on the source string keeps the handler's own ``name`` the
-      single definition of "weather" — nothing here compares identifiers.
+      not what the option promises, so it is admitted — unless the user asked
+      for exactly that by scoping weather to their window (#1308), which the
+      flag then carries here without this predicate learning a second rule.
+      Keying on the field rather than on the source string keeps the handler's
+      own ``name`` the single definition of "weather" — nothing here compares
+      identifiers.
 
     ``FIXED`` is excluded on purpose: a slot that DRIVES a value outside the
     window — an exact position, a real fixed slat angle — is the
@@ -490,15 +496,18 @@ def _gather_all(snapshot: PipelineSnapshot) -> list[AxisConstraint]:
                     else WeatherOverrideHandler.priority
                 ),
                 slot=0,
-                # A storm floor holds overnight. Set unconditionally so
+                # A storm floor holds overnight unless the user scoped weather
+                # to their operational window (#1308). Carried on the claim so
                 # :func:`_window_eligible` never has to recognise the weather
-                # floor by source — and note this IS a change for it: the
-                # handler defers in min mode, so this claim's cycles never
+                # floor by source — and note the default IS a change for it:
+                # the handler defers in min mode, so this claim's cycles never
                 # carried ``is_safety`` and the pre-item-B dispatch gate stopped
                 # them like any other bound. The non-min-mode retraction is the
                 # one that has always acted out here, and it is a winning
-                # result, not a claim in this list.
-                outside_window=True,
+                # result, not a claim in this list — it reads the same snapshot
+                # field from ``WeatherOverrideHandler.evaluate``, so one option
+                # scopes both seats.
+                outside_window=snapshot.weather_outside_window,
             )
         )
     return constraints

@@ -1774,6 +1774,141 @@ def test_clear_non_safety_targets(svc):
 
 
 # ------------------------------------------------------------------ #
+# Scoped weather (issue #1308) across the closing edge
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_scoped_weather_booking_is_revoked_by_the_end_of_window_send(
+    svc, mock_hass
+):
+    """Issue #1308: weather already active BEFORE end_time must not keep its
+    booking licensed once the clock closes and the handler has stood down.
+
+    The case the opt-out's own design argument does not reach on its own. With
+    ``weather_outside_window`` False the handler declines outside the clock
+    window, so weather never *starts* a move out there — but a booking made
+    while the window was still open carries ``PerEntityState.is_safety`` across
+    the edge, and that flag is exactly what licenses reconciliation step 4 to
+    resend overnight. ``clear_non_safety_targets()`` deliberately spares it
+    (storm retraction depends on that), so the sweep is NOT what clears it.
+
+    What clears it is the end-of-window send itself: ``_on_window_closed``
+    dispatches the effective default with ``force=False`` and no ``is_safety``,
+    and every exit from ``apply_position`` that a plain reposition can take
+    writes this cycle's verdict — ``_prepare_service_call`` on a real dispatch,
+    ``_record_safety_verdict`` at the three hysteresis gates. The licence dies
+    with the send that supersedes the number it protected.
+
+    That coupling is the whole reason this is safe: the end-of-window position
+    only ever reaches a cover when ``CONF_RETURN_SUNSET`` is on, which is also
+    the only condition under which ``_on_window_closed`` runs at all
+    (``managers/time_window.py``, ``check_transition``). Its complement is
+    pinned by the sibling test below.
+    """
+    # 18:00, clock still open. Rain starts; weather wins with is_safety=True
+    # and drives the blind from 0 to 100.
+    svc.in_time_window = True
+    _patch_position(svc, 0)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 100, "weather", context=_ctx(is_safety=True)
+        )
+    assert outcome == "sent"
+    assert svc.get_target("cover.test") == 100
+    assert svc.state("cover.test").is_safety is True
+
+    # The blind arrives and settles there.
+    svc.set_waiting("cover.test", False)
+    _patch_position(svc, 100)
+
+    # 18:30. ``_on_window_closed`` runs its sweep first — and the safety
+    # booking survives it, by design. Pinned explicitly: this is the half of
+    # the sequence that looks like a leak in isolation.
+    svc.clear_non_safety_targets()
+    assert svc.get_target("cover.test") == 100
+    assert svc.state("cover.test").is_safety is True
+
+    # Then the same handler sends the end-of-window position. Non-safety,
+    # unforced — the #215/#216 shape. THIS is what revokes the licence.
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 0, "end_time_default", context=_ctx(is_safety=False)
+        )
+    assert outcome == "sent"
+    assert svc.get_target("cover.test") == 0
+    assert svc.state("cover.test").is_safety is False
+
+    # Overnight, with the clock closed and the blind moved off the
+    # end-of-window position: nothing is licensed out here any more, so step 4
+    # drops it. Run twice — the state is a fixed point, so one pass could not
+    # tell "revoked" from "about to self-correct".
+    svc.set_waiting("cover.test", False)
+    svc.in_time_window = False
+    _patch_position(svc, 100)
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+    assert svc.get_target("cover.test") == 0
+
+
+@pytest.mark.asyncio
+async def test_scoped_weather_booking_outlives_a_close_with_no_end_of_window_send(
+    svc, mock_hass
+):
+    """Issue #1308, the complement: with no end-of-window send there is no
+    revoke, and the pre-close weather position stays licensed overnight.
+
+    ``_on_window_closed`` is invoked only when ``CONF_RETURN_SUNSET`` is on
+    (``TimeWindowManager.check_transition`` gates ``refresh_callback`` on
+    ``track_end_time``), and that option defaults to OFF. With it off neither
+    ``clear_non_safety_targets()`` nor the end-of-window ``apply_position``
+    ever runs, so nothing writes a fresh verdict and the booking crosses the
+    edge with its licence intact.
+
+    This is a no-op rather than a regression, and the distinction is the point.
+    ``return_sunset`` OFF *means* "do not move my covers at end_time", so the
+    blind was always going to be left at the weather position it already
+    occupied — before this option existed, weather simply stayed the live
+    winner and resent the same number. The scope opt-out cannot reach this
+    configuration, and the end-of-window position the reporter wants is not
+    dispatched in it either (``config_flow`` renders
+    ``timing.end_of_window_needs_return`` to say so).
+
+    Pinned so that a future change to the licence lifetime has to face this
+    sequence deliberately rather than discover it.
+    """
+    # Same opening move: weather wins before end_time and books 100.
+    svc.in_time_window = True
+    _patch_position(svc, 0)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 100, "weather", context=_ctx(is_safety=True)
+        )
+    assert outcome == "sent"
+    svc.set_waiting("cover.test", False)
+
+    # end_time passes with return_sunset off: no callback, no sweep, no send.
+    svc.in_time_window = False
+
+    # The licence rode across the edge untouched.
+    assert svc.state("cover.test").is_safety is True
+    assert svc.state("cover.test").acts_outside_clock_window is True
+
+    # So a blind moved off 100 overnight is still driven back to it — with
+    # position matching on, which is itself opt-in (issue #591).
+    _patch_position(svc, 0)
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_called_once()
+
+
+# ------------------------------------------------------------------ #
 # _reconcile — in-transit guard (issue #418)
 # ------------------------------------------------------------------ #
 

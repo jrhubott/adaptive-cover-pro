@@ -422,6 +422,26 @@ class PipelineSnapshot:
     # the handler returns max(configured, raw_calculated) instead of always returning configured.
     weather_override_min_mode: bool = False
 
+    # When False, the weather override is scoped to the user's operational
+    # window and stops acting once it closes (issue #1308). Weather is the one
+    # override with no window gate, and its ``is_safety`` flag is the
+    # outside-window dispatch licence — so a user running it as a comfort rule
+    # (rain → raise an interior blind) had no way to stop it firing at 03:00
+    # short of disabling the feature outright.
+    #
+    # Read by BOTH weather seats, which is why it lives here rather than in
+    # either of them: ``WeatherOverrideHandler.evaluate`` (the exact-position
+    # retraction) and ``axis_constraints._gather_all`` (the min-mode floor's
+    # ``outside_window`` claim). Gating only the first would leave min-mode
+    # users with a checkbox that does nothing.
+    #
+    # Both seats pair it with ``clock_window_open``, NEVER ``in_time_window``:
+    # the latter folds in the daytime gate, which reads dark mid-clock on a
+    # gate-configured install (#656/#632), and treating that as "outside the
+    # window" would strip storm protection from a 10:00 winter morning.
+    # Defaults True so every existing entry composes byte-identically.
+    weather_outside_window: bool = True
+
     # WeatherOverrideHandler's EFFECTIVE priority, resolved from the 🔀 Handler
     # Priorities step at snapshot build. Carried on the snapshot because the
     # weather floor is composed by the pure `axis_constraints` pass, which has no

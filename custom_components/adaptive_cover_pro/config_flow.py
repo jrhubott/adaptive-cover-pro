@@ -223,6 +223,7 @@ from .const import (
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENABLED,
+    CONF_WEATHER_OUTSIDE_WINDOW,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
     DEFAULT_DELTA_POSITION,
@@ -235,6 +236,7 @@ from .const import (
     DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_POSITION_SELECTOR_FALLBACK,
+    DEFAULT_WEATHER_OUTSIDE_WINDOW,
     GLARE_ZONE_FORM_KEYS,
     GLARE_ZONE_SLOT_NUMBERS,
     GLARE_ZONE_SLOTS,
@@ -1675,6 +1677,14 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "🌧️ Weather safety: ⚠️ sensors configured but the feature is "
         "turned OFF — weather overrides are ignored"
     ),
+    # A NEW key rather than a ``{}`` placeholder appended to ``rules.weather``:
+    # widening an existing key's placeholder set across three languages is what
+    # ``test_config_summary_placeholder_parity_de_fr`` exists to catch.
+    "warnings.weather_window_scoped": (
+        "⚠️ Weather safety only acts inside the time window — outside it the "
+        "cover follows the end-of-window / sunset position instead, and "
+        "weather will not protect it overnight."
+    ),
     # --- Manual override (80) ---
     "rules.manual": (
         "✋ Manual override: pauses automatic control when you move the cover"
@@ -2507,6 +2517,11 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 bypass=bypass_str,
             ),
         )
+        # Scoping weather to the window (issue #1308) turns a safety override
+        # into a daytime-only rule — the one thing a user who set it for storm
+        # protection must not discover at 03:00.
+        if not config.get(CONF_WEATHER_OUTSIDE_WINDOW, DEFAULT_WEATHER_OUTSIDE_WINDOW):
+            _sub(L["warnings.weather_window_scoped"])
 
     # Manual override (80). The duration mode (issue #1044) decides what the
     # hold is measured against: ``fixed`` shows the numeric duration, every
@@ -3838,6 +3853,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "weather_override_values": frozenset(
         {
             CONF_WEATHER_ENABLED,
+            CONF_WEATHER_OUTSIDE_WINDOW,
             CONF_WEATHER_BYPASS_AUTO_CONTROL,
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
             CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -3857,6 +3873,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "weather_override": frozenset(
         {
             CONF_WEATHER_ENABLED,
+            CONF_WEATHER_OUTSIDE_WINDOW,
             CONF_WEATHER_BYPASS_AUTO_CONTROL,
             CONF_WEATHER_WIND_SPEED_SENSOR,
             CONF_WEATHER_WIND_DIRECTION_SENSOR,
@@ -4703,7 +4720,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # solar_cover_shade / solar_g_total / solar_g_glazing, plus glass_area and
     # irradiance_plane) — absent reads as "feature off", so the v3.18 → v3.19
     # block seeds nothing.
-    MINOR_VERSION = 19
+    # 3.20 (issue #1308): the same shape again for the additive
+    # weather_outside_window option — absent reads as "weather keeps acting
+    # outside the time window", which is what every install already does, so
+    # the v3.19 → v3.20 block seeds nothing.
+    MINOR_VERSION = 20
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

@@ -91,6 +91,7 @@ from .const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENABLED,
+    CONF_WEATHER_OUTSIDE_WINDOW,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_RAINING_TEMPLATE,
@@ -543,6 +544,14 @@ def weather_override_schema(
         # convention, matching the other bool toggles); pre-existing covers are
         # migrated to ON via async_migrate_entry (v3.5 → v3.6).
         vol.Optional(CONF_WEATHER_ENABLED, default=False): selector.BooleanSelector(),
+        # Scope switch for the whole feature (issue #1308): ticked = weather
+        # keeps its outside-the-window licence, which is today's behaviour and
+        # what makes it a safety override. The literal default follows the
+        # selector-default convention sanctioned above; ``const`` owns the
+        # runtime default both weather seats read.
+        vol.Optional(
+            CONF_WEATHER_OUTSIDE_WINDOW, default=True
+        ): selector.BooleanSelector(),
         vol.Optional(
             CONF_WEATHER_BYPASS_AUTO_CONTROL, default=True
         ): selector.BooleanSelector(),
