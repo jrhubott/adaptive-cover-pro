@@ -2109,6 +2109,10 @@
           "description": "Capteur binaire indiquant un vent dangereux. Null = aucun.",
           "name": "Capteur de vent dangereux"
         },
+        "weather_outside_window": {
+          "description": "Si vrai (par défaut), les dérogations météo continuent d'agir après la fermeture de la plage horaire. Mettre à faux pour limiter la sécurité météo à la plage horaire début/fin configurée.",
+          "name": "Agir en dehors de la plage horaire"
+        },
         "weather_override_min_mode": {
           "description": "Si vrai, traiter weather_override_position comme un plancher minimum.",
           "name": "Mode de position minimale"

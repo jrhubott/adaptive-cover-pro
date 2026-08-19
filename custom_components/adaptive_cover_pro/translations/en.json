@@ -1984,6 +1984,10 @@
           "name": "Bypass automatic control",
           "description": "If true, weather override ignores the Automatic Control toggle."
         },
+        "weather_outside_window": {
+          "name": "Act outside the time window",
+          "description": "If true (default), weather overrides keep acting after the time window closes. Set false to scope weather safety to the configured start/end window."
+        },
         "weather_wind_speed_sensor": {
           "name": "Wind speed sensor",
           "description": "Sensor entity for wind speed. Null = none."

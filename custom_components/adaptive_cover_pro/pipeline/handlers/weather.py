@@ -94,6 +94,17 @@ class WeatherOverrideHandler(OverrideHandler):
         active check has passed, which keeps a user whose sensors are simply
         quiet reading "not active" instead of being pointed at a scope that is
         not what stopped weather (``solar.describe_skip``'s principle).
+
+        In MIN MODE the two later gates both hold, and reporting the scope is
+        still the truthful answer rather than a lost distinction: the min-mode
+        floor is the *other* seat of the same option, and out here
+        ``_window_eligible`` drops it from exactly the same
+        ``weather_outside_window`` field — so nothing weather-shaped acts, and
+        it is the window scope that stopped all of it. Min-mode deferral has
+        never had a reason code of its own (it reads
+        ``SKIP_WEATHER_NOT_ACTIVE`` with the clock open, and did before #1308),
+        so no distinction is lost here; what is gained is that an ACTIVE
+        override no longer reports itself as inactive.
         """
         if snapshot.weather_override_active and self._scoped_out_of_window(snapshot):
             return Reason(ReasonCode.SKIP_OUTSIDE_WINDOW)

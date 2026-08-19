@@ -2109,6 +2109,10 @@
           "description": "Binärsensor zeigt gefährlichen Wind an. Null = kein.",
           "name": "Es ist windig Sensor"
         },
+        "weather_outside_window": {
+          "description": "Wenn wahr (Standard), wirken Wetter-Übersteuerungen weiter, nachdem das Zeitfenster geschlossen ist. Auf falsch setzen, um die Wettersicherung auf das konfigurierte Start-/Endfenster zu begrenzen.",
+          "name": "Außerhalb des Zeitfensters wirken"
+        },
         "weather_override_min_mode": {
           "description": "Wenn wahr, wird weather_override_position als minimale Untergrenze behandelt.",
           "name": "Minimum-Position-Modus"

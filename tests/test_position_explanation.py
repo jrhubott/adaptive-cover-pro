@@ -11,7 +11,11 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import ClimateStrategy, ControlMethod
+from custom_components.adaptive_cover_pro.const import (
+    ClimateStrategy,
+    ControlMethod,
+    ReasonCode,
+)
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
@@ -22,6 +26,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverState,
 )
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+from custom_components.adaptive_cover_pro.reason_i18n import Reason
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -693,6 +698,45 @@ class TestBuildPositionExplanation:
         )
         assert "weather override active" in result.lower()
         assert "commands paused" not in result
+
+    def test_explanation_names_an_admitted_constraint_outside_the_window(self, builder):
+        """The narrowed early return also covers the OTHER outside-window licence.
+
+        ``acts_outside_clock_window`` is an OR over two flags, and the safety
+        leg above is only half of it. An admitted #943-item-B bound — an
+        opted-in slot's floor that actually clamped on a closed-clock cycle —
+        licenses a DEFAULT winner to reach the hardware with
+        ``is_safety`` deliberately False (#1226/#1165 keep the two flags from
+        ever being co-written). Its ``reason_payload`` describes the clamp
+        edge, not a dispatched override, so it exercises a different render
+        shape than the weather case; without this the widened blast radius of
+        the gate change rests on one control method.
+        """
+        pr = PipelineResult(
+            position=30,
+            control_method=ControlMethod.DEFAULT,
+            reason_payload=Reason(
+                ReasonCode.REGISTRY_CEILING_LOWERED,
+                {"from_pos": 100, "to_pos": 30, "label": "Sleep mode"},
+            ),
+            raw_calculated_position=100,
+            default_position=100,
+            is_safety=False,
+            outside_window_constraint_active=True,
+        )
+        # The two licences are separate fields but one predicate, and it is the
+        # predicate the gate reads.
+        assert pr.acts_outside_clock_window is True
+
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
+        )
+        assert "ceiling lowered" in result.lower()
+        assert "30%" in result
+        assert "commands paused" not in result
+        # The default position (100%) is what the old unconditional return
+        # would have reported instead of the clamp edge.
+        assert "default position" not in result.lower()
 
     def test_sunset_offset_with_sunset_position(self, builder):
         """In window, is_sunset_active=True → reason from default handler mentions sunset."""

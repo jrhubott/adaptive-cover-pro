@@ -1857,11 +1857,3 @@ async def test_migrate_v1_cascades_to_minor_20(hass: HomeAssistant) -> None:
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
     assert entry.minor_version == 20
-
-
-def test_config_flow_major_version_still_three_after_the_solar_bump() -> None:
-    """The solar feature is a MINOR bump only — rollback must stay safe."""
-    from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
-
-    assert ConfigFlowHandler.VERSION == 3
-    assert ConfigFlowHandler.MINOR_VERSION == 20

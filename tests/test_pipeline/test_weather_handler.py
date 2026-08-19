@@ -257,3 +257,42 @@ class TestWeatherOverrideWindowScope:
         assert (
             self.handler.describe_skip(snap).code is ReasonCode.SKIP_WEATHER_NOT_ACTIVE
         )
+
+    def test_describe_skip_reads_the_scope_in_min_mode_too(self) -> None:
+        """Min mode + scoped + clock closed reports the scope, and that is right.
+
+        Both later gates hold here, so the reason is a choice rather than a
+        deduction. The scope is the truthful one: the min-mode floor is the
+        *other* seat of this same option, and out here ``_window_eligible``
+        drops it from the same ``weather_outside_window`` field — so nothing
+        weather-shaped acts, and the window scope is what stopped all of it.
+        Nor is a distinction lost: min-mode deferral has never had a reason
+        code of its own and reads ``SKIP_WEATHER_NOT_ACTIVE`` with the clock
+        open, exactly as it did before #1308. What the order buys is that an
+        ACTIVE override stops reporting itself as inactive.
+        """
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_min_mode=True,
+            weather_override_position=60,
+            clock_window_open=False,
+            in_time_window=False,
+            weather_outside_window=False,
+        )
+        assert self.handler.evaluate(snap) is None
+        assert self.handler.describe_skip(snap).code is ReasonCode.SKIP_OUTSIDE_WINDOW
+
+    def test_describe_skip_in_min_mode_is_unchanged_with_the_clock_open(self) -> None:
+        """The pre-#1308 min-mode trace is untouched where the scope cannot apply."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_min_mode=True,
+            weather_override_position=60,
+            clock_window_open=True,
+            in_time_window=True,
+            weather_outside_window=False,
+        )
+        assert self.handler.evaluate(snap) is None
+        assert (
+            self.handler.describe_skip(snap).code is ReasonCode.SKIP_WEATHER_NOT_ACTIVE
+        )
