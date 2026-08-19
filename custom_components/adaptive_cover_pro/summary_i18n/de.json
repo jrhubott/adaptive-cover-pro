@@ -96,7 +96,7 @@
     "custom_tilt_only_no_effect": "⚠️ {label}: Nur Neigung ist aktiviert, ohne Lamellenwinkel und ohne Neigungsgrenzen — dieser Slot hat keine Auswirkung.",
     "custom_outside_window_no_bounds": "⚠️ {label}: Grenzen außerhalb des Zeitfensters aktiv halten ist aktiviert, aber dieser Slot konfiguriert kein Minimum und kein Maximum — die Einstellung hat keine Auswirkung. Nur Min-/Max-Ansprüche bleiben dort aktiv; eine exakte Position nie.",
     "custom_outside_window_redundant": "⚠️ {label}: Grenzen außerhalb des Zeitfensters aktiv halten ist aktiviert, aber Priorität 100 wirkt bereits außerhalb des Zeitfensters (und an der automatischen Steuerung sowie den Delta-Gattern vorbei) — die Einstellung ändert hier nichts.",
-    "weather_window_scoped": "⚠️ Die Wettersicherung wirkt nur innerhalb des Zeitfensters — außerhalb folgt die Abdeckung stattdessen der Fensterende-/Sonnenuntergangs-Position, und das Wetter schützt sie nachts nicht."
+    "weather_window_scoped": "⚠️ Die Wettersicherung wirkt nur innerhalb des Zeitfensters — außerhalb folgt die Beschattung stattdessen der Fensterende-/Sonnenuntergangs-Position, und das Wetter schützt sie nachts nicht."
   },
   "motion": {
     "action_hold": "Behänge halten aktuelle Position (zurück zum Standard, wenn Sonne den Sonnen-Akzeptanzwinkel verlässt)",

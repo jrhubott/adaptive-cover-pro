@@ -96,7 +96,7 @@
     "custom_tilt_only_no_effect": "⚠️ {label} : inclinaison seulement est activé sans angle de lamelle et sans limite d'inclinaison configurée — cet emplacement n'a aucun effet.",
     "custom_outside_window_no_bounds": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais cet emplacement ne configure aucun minimum ni maximum — le réglage n'a aucun effet. Seules les limites min/max restent actives là-bas ; une position exacte jamais.",
     "custom_outside_window_redundant": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais la priorité 100 agit déjà hors de la plage horaire (et passe outre le contrôle automatique et les seuils delta) — le réglage ne change rien ici.",
-    "weather_window_scoped": "⚠️ La sécurité météo n'agit qu'à l'intérieur de la plage horaire — en dehors, la protection suit la position de fin de plage / coucher du soleil, et la météo ne la protégera pas la nuit."
+    "weather_window_scoped": "⚠️ La sécurité météo n'agit qu'à l'intérieur de la plage horaire — en dehors, le store suit la position de fin de plage / coucher du soleil, et la météo ne le protégera pas la nuit."
   },
   "motion": {
     "action_hold": "les stores maintiennent la position actuelle (retournent à la position par défaut quand le soleil quitte l'angle d'ouverture solaire)",
