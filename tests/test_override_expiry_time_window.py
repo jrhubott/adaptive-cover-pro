@@ -711,6 +711,11 @@ async def test_safety_release_edge_outside_the_clock_window_keeps_its_verdict():
     )
 
     coordinator._cmd_svc.revoke_safety_verdicts.assert_not_called()
+    # Both halves of the exemption, not just the visible one. The sweep is
+    # skipped BECAUSE dispatch happens and writes each entity's verdict by the
+    # ordinary route; a future change that returned before apply_position would
+    # otherwise leave this test green while the licence leaked.
+    coordinator._cmd_svc.apply_position.assert_called_once()
 
 
 @pytest.mark.asyncio
