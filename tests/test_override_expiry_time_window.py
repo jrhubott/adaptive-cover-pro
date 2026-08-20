@@ -626,6 +626,94 @@ async def test_constraint_release_outside_window_stays_hands_off():
 
 
 @pytest.mark.asyncio
+async def test_closed_clock_cycle_with_nothing_admitted_revokes_stale_safety_verdicts():
+    """Issue #1311: a safety booking made before the clock closed must not
+    stay licensed once nothing is admitted out here.
+
+    This branch returns before apply_position, so neither is_safety writer
+    (_prepare_service_call, _record_safety_verdict) ever runs — the licence
+    would otherwise survive until an end-of-window send that CONF_RETURN_SUNSET
+    OFF never produces, and reconciliation step 4 resends it all night.
+
+    The revoke must run BEFORE clear_outside_window_targets: a row holding both
+    flags is spared by that sweeper while it still reads as safety, and its
+    outside-window licence is admitted by step 4 just as readily.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=False,
+    )
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=100, options={}
+    )
+
+    coordinator._cmd_svc.revoke_safety_verdicts.assert_called_once_with()
+    coordinator._cmd_svc.apply_position.assert_not_called()
+
+    names = [c[0] for c in coordinator._cmd_svc.mock_calls]
+    assert names.index("revoke_safety_verdicts") < names.index(
+        "clear_outside_window_targets"
+    )
+
+
+@pytest.mark.asyncio
+async def test_live_safety_result_outside_the_clock_window_keeps_its_verdict():
+    """The revoke is gated at the call site, not inside the method.
+
+    With weather_outside_window ON the handler still wins at 03:00, so
+    acts_outside_clock_window is True, this branch never runs, and the blanket
+    revoke cannot reach a licence that is still being earned. The gate is sound
+    because the pipeline result is per-instance: one live safety verdict
+    anywhere holds the branch shut for every entity.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=0, options={}
+    )
+
+    coordinator._cmd_svc.revoke_safety_verdicts.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_safety_release_edge_outside_the_clock_window_keeps_its_verdict():
+    """The safety-release edge is exempt too, for a different reason.
+
+    ``safety_release=True`` is the cycle a priority-100 slot stood down on. It
+    is deliberately let past the closed-clock guard so the release itself can
+    be dispatched, which means ``apply_position`` runs and writes this cycle's
+    verdict for every entity by the ordinary route. The blanket sweep has no
+    work to do here and must not pre-empt that per-entity write.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=False,
+    )
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=0, options={}, safety_release=True
+    )
+
+    coordinator._cmd_svc.revoke_safety_verdicts.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_force_send_admits_constraint_outside_clock_window():
     """The force-send / Apply-Calculated path honours the same admission."""
     from custom_components.adaptive_cover_pro.coordinator import (

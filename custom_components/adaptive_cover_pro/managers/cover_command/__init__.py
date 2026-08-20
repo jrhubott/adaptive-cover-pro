@@ -537,10 +537,42 @@ class CoverCommandService:
         s = self._state.get(entity_id)
         return bool(s and s.is_safety)
 
-    def clear_safety_targets(self) -> None:
-        """Clear the safety flag on every tracked entity."""
-        for s in self._state.values():
-            s.is_safety = False
+    def _revoke_safety_verdict(self, entity_id: str) -> None:
+        """Take one row's safety licence away. Unconditional, by design.
+
+        The single revoke, shared by every site that has one:
+
+        * the three ``apply_position`` hysteresis gates, via
+          ``_record_safety_verdict`` (which owns the asymmetry argument — this
+          helper owns only the write);
+        * ``revoke_safety_verdicts`` below, for the Integration-Enabled kill
+          switch / ``emergency_stop`` and for the coordinator's closed-clock
+          non-admitted cycle (#1311).
+
+        Never gated — not on the booked target, not on the flag's current
+        value. Withholding a revoke IS #1165; the failure is argued in full on
+        ``_record_safety_verdict``. ``target`` is deliberately untouched: a
+        revoke takes a licence away, it does not un-book a number (#1311
+        decision (a)).
+        """
+        self.state(entity_id).is_safety = False
+
+    def revoke_safety_verdicts(self) -> None:
+        """Revoke the safety licence on every tracked row; leave every target.
+
+        Two callers, one rule, both of which establish instance-wide that no
+        safety verdict is live before calling:
+
+        * the Integration-Enabled kill switch and ``emergency_stop``, paired
+          with ``clear_non_safety_targets()``;
+        * ``coordinator.async_handle_state_change``'s closed-clock branch, on
+          the cycle that admits nothing (#1311). The gate lives at that call
+          site — ``not _pipeline_acts_outside_clock_window`` — and works
+          because the pipeline result is per-instance, so a single live safety
+          verdict anywhere would have kept the branch from firing.
+        """
+        for entity_id in list(self._state):
+            self._revoke_safety_verdict(entity_id)
 
     # ------------------------------------------------------------------ #
     # Assumed display position (issue #888) — display-only fallback for
@@ -974,6 +1006,12 @@ class CoverCommandService:
         ``clear_non_safety_targets`` and to ``is_safety``'s own one-writer
         lifetime (#1226/#1165), which this sweeper must never reach into. That
         separation is the whole reason the two flags are separate fields.
+
+        That contract is unchanged by #1311, but the rows it now sees are: the
+        coordinator calls ``revoke_safety_verdicts()`` immediately before this,
+        so a row that crossed the closing edge holding both licences arrives
+        here already de-safetied and is swept. Sparing it is still correct —
+        it is simply no longer a safety row by the time this runs.
 
         The constraint self-heals if it starts binding again: the next cycle
         that finds the cover in violation admits afresh and books a new target.
@@ -3269,7 +3307,9 @@ class CoverCommandService:
 
         The two directions are NOT symmetrical, so this write is not either:
 
-        * REVOKING is unconditional. It only takes away a licence to act
+        * REVOKING is unconditional, and goes through ``_revoke_safety_verdict``
+          — the one write every revoke site in the class shares, kill switch
+          and #1311 nightly sweep included. It only takes away a licence to act
           outside ``clear_non_safety_targets()`` and reconciliation steps 3/4,
           which is safe on any number — booked, foreign, or absent. Withholding
           it IS issue #1165: a safety dispatch books 60, the cover comes to
@@ -3314,7 +3354,7 @@ class CoverCommandService:
 
         """
         if not context.is_safety:
-            self.state(entity_id).is_safety = False
+            self._revoke_safety_verdict(entity_id)
         elif self.get_target(entity_id) == routed_target:
             self.state(entity_id).is_safety = True
 
