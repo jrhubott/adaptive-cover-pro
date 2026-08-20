@@ -738,6 +738,64 @@ async def test_force_send_admits_constraint_outside_clock_window():
 
 
 @pytest.mark.asyncio
+async def test_force_send_outside_time_window_revokes_stale_safety_verdicts():
+    """Issue #1313: force-send's closed-clock exit must revoke stale safety
+    verdicts too, not just async_handle_state_change's (#1311/#1312).
+
+    Reachable via _dispatch_for_cycle's auto_expired branch: a manual-override
+    auto-expiry cycle outside the clock window, with no tracked-entity
+    state-change edge this cycle, takes THIS exit instead of
+    async_handle_state_change's. A safety booking made by an earlier cycle
+    would otherwise ride forward unrevoked past this exit specifically —
+    reconciliation step 4 admits it because acts_outside_clock_window is the
+    OR of is_safety and outside_window_constraint.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(check_adaptive_time=False)
+
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=0, options={}
+    )
+
+    coordinator._cmd_svc.revoke_safety_verdicts.assert_called_once_with()
+    coordinator._cmd_svc.clear_outside_window_targets.assert_called_once_with()
+    coordinator._cmd_svc.apply_position.assert_not_called()
+
+    names = [c[0] for c in coordinator._cmd_svc.mock_calls]
+    assert names.index("revoke_safety_verdicts") < names.index(
+        "clear_outside_window_targets"
+    )
+
+
+@pytest.mark.asyncio
+async def test_force_send_admitted_outside_clock_window_keeps_its_verdict():
+    """The revoke is gated at the call site, not inside the method.
+
+    With acts_outside_clock_window True the guard's admission condition is
+    satisfied, so this closed-clock exit never runs and the blanket revoke
+    cannot reach a licence that is still being earned — parity with
+    test_live_safety_result_outside_the_clock_window_keeps_its_verdict.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=40, options={}
+    )
+
+    coordinator._cmd_svc.revoke_safety_verdicts.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_first_refresh_sends_admitted_constraint_outside_window():
     """A restart at 03:00 re-establishes an admitted clamp instead of idling."""
     from custom_components.adaptive_cover_pro.coordinator import (
