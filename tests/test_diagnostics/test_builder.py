@@ -332,6 +332,68 @@ class TestControlStatus:
         assert diag["control_status"] != ControlStatus.OUTSIDE_TIME_WINDOW
         assert diag["control_status"] == ControlStatus.ACTIVE
 
+    @pytest.mark.parametrize("licensed", [True, False])
+    @pytest.mark.parametrize("clock_open", [True, False])
+    @pytest.mark.parametrize(
+        "control_method",
+        [
+            ControlMethod.DEFAULT,
+            ControlMethod.MANUAL,
+            ControlMethod.MOTION,
+            ControlMethod.CUSTOM_POSITION,
+            ControlMethod.GROUP_SCENE,
+        ],
+    )
+    def test_status_and_explanation_agree_across_the_window_matrix(
+        self,
+        builder: DiagnosticsBuilder,
+        control_method: ControlMethod,
+        clock_open: bool,
+        licensed: bool,
+    ):
+        """The two fields must describe the same cycle (#1310).
+
+        Every winner that can reach a closed clock, crossed with the clock
+        state and the outside-window licence. Three properties, none of which
+        restates the implementation:
+
+        1. "commands paused" is claimed exactly when the dispatch guard is
+           shut — closed clock AND no licence (``coordinator``'s position-update
+           guard reads that same pair).
+        2. ``control_status`` never answers OUTSIDE_TIME_WINDOW on a cycle the
+           explanation does not call paused, and never answers ACTIVE on one it
+           does.
+        3. The winner's own reason survives the closed clock. DEFAULT is the
+           one exception: the paused note already says everything its reason
+           would, so it collapses to the note alone.
+        """
+        pr = _make_pr(
+            control_method=control_method,
+            reason=f"{control_method.value} winner — position 40%",
+            position=40,
+            raw_calculated_position=40,
+            default_position=70,
+            is_safety=licensed,
+        )
+        diag, explanation = builder.build(
+            _base_ctx(
+                pipeline_result=pr,
+                check_adaptive_time=clock_open,
+                clock_window_open=clock_open,
+            )
+        )
+
+        withheld = not clock_open and not licensed
+        assert ("commands paused" in explanation) is withheld
+
+        if diag["control_status"] == ControlStatus.OUTSIDE_TIME_WINDOW:
+            assert withheld
+        if withheld:
+            assert diag["control_status"] != ControlStatus.ACTIVE
+
+        if control_method is not ControlMethod.DEFAULT:
+            assert pr.reason in explanation
+
 
 # ---------------------------------------------------------------------------
 # Control state reason

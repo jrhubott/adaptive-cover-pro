@@ -575,20 +575,43 @@ class DiagnosticsBuilder:
         # plus "commands paused" over a dispatched command is simply false
         # (issue #1308). Those fall through to the normal render below, which
         # names the real winner and its real position.
+        #
+        # The note is composed once and then either stands alone or trails the
+        # winner's chain — see the DEFAULT carve-out below.
+        window_note: str | None = None
         if not ctx.clock_window_open and not result.acts_outside_clock_window:
-            pos = result.default_position
             pos_label = Reason(
                 ReasonCode.FRAGMENT_SUNSET_POSITION
                 if result.is_sunset_active
                 else ReasonCode.FRAGMENT_DEFAULT_POSITION
             )
-            return render(
+            window_note = render(
                 Reason(
                     ReasonCode.BUILDER_OUTSIDE_WINDOW,
-                    {"pos_label": pos_label, "pos": pos},
+                    {"pos_label": pos_label, "pos": result.default_position},
                 ),
                 labels,
             )
+            # The note IS the DEFAULT winner's account — "the default/sunset
+            # position, and nothing was sent" is the whole of what
+            # ``DefaultHandler`` resolved — so out here it renders alone, as it
+            # always has (the EN/DE byte-identical locks in
+            # ``tests/test_diagnostics/test_reason_localization.py`` pin that).
+            #
+            # No other winner is redundant with it. MANUAL, MOTION,
+            # CUSTOM_POSITION (a slot below safety priority), GROUP_LOCK and
+            # GROUP_SCENE are the ones that can still win on a closed clock,
+            # and each carries a reason the note cannot express — a held
+            # position, an occupancy timeout, a slot number. Returning the note
+            # in their place discarded it, which put the explanation at odds
+            # with ``control_status``: ``_METHOD_TO_STATUS`` answers
+            # MANUAL_OVERRIDE / MOTION_TIMEOUT for the same cycle (deliberately
+            # — ``sensor._control_status_attrs`` and triage rule 23 key on that
+            # answer), so the two fields told different stories. They now
+            # compose: the winner leads, the note trails, and both truths — who
+            # decided, and that nothing reached the cover — survive.
+            if result.control_method is ControlMethod.DEFAULT:
+                return window_note
 
         # Base explanation is the pipeline reason (already human-readable). Prefer
         # the structured payload so the base localizes; fall back to the legacy
@@ -646,6 +669,11 @@ class DiagnosticsBuilder:
             parts.append(
                 render(Reason(ReasonCode.BUILDER_INVERSED, {"final": final}), labels)
             )
+
+        # Last word, after the value transforms: the winner and its post-processing
+        # describe the number, this describes what happened to it — nothing.
+        if window_note is not None:
+            parts.append(window_note)
 
         return " → ".join(parts)
 

@@ -402,7 +402,9 @@ async def test_self_referencing_gate_template_refresh_is_bounded(
     attributes``, state value aside. And HA's template ``RenderInfo`` tracks
     dependencies at the entity level, not the attribute level:
     ``is_state_attr`` collects the entity into ``RenderInfo.entities`` exactly
-    like ``is_state`` does (both go through ``TemplateStateBase.attributes``),
+    like ``is_state`` does — they read different properties
+    (``TemplateStateBase.attributes`` vs ``.state``), but each one calls
+    ``_collect_state()``, which adds the *entity_id* and nothing finer —
     so ``_event_triggers_rerender`` treats this attribute-only flip as a
     reason to re-render, same as it always did for the state-based version.
 

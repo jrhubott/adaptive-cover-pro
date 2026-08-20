@@ -773,6 +773,94 @@ class TestBuildPositionExplanation:
         assert "commands paused" not in result
         assert "default position 30% — gate dark" in result
 
+    def test_manual_winner_survives_the_closed_clock_note(self, builder):
+        """A MANUAL winner on a genuinely closed clock keeps its own account.
+
+        ``_determine_control_status`` answers MANUAL_OVERRIDE here — the
+        ``_METHOD_TO_STATUS`` early return fires before the clock check, and
+        ``sensor._control_status_attrs`` / triage rule 23 both key on that
+        answer, so it is deliberate. The explanation used to replace the
+        winner's reason with the generic default/sunset note, leaving the two
+        fields telling different stories about the same cycle.
+
+        Nothing IS dispatched out here (``coordinator`` skips the position
+        update once ``clock_window_open`` is False without a licence), so
+        "commands paused" is true and must survive too — both truths, not
+        either one.
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.MANUAL,
+            reason="manual override active — holding 45% (solar would-be 62%)",
+            position=62,
+            raw_calculated_position=62,
+            default_position=50,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                pipeline_result=pr,
+                check_adaptive_time=False,
+                clock_window_open=False,
+            )
+        )
+        # The real winner leads the chain — not a default/sunset position it
+        # never resolved.
+        assert result.split(" → ")[0] == (
+            "manual override active — holding 45% (solar would-be 62%)"
+        )
+        # …and the paused half of the truth is still stated.
+        assert "commands paused" in result
+
+    def test_motion_winner_survives_the_closed_clock_note(self, builder):
+        """Same for a MOTION winner — the other ``_METHOD_TO_STATUS`` entry.
+
+        Outside the clock window ``MotionTimeoutHandler`` always takes its
+        return-to-default branch (the hold branch gates on ``in_time_window``),
+        so the *position* the old note reported happened to be right — but the
+        "occupancy timeout" attribution was thrown away while ``control_status``
+        still said ``motion_timeout``.
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.MOTION,
+            reason="occupancy timeout active — default position 30%",
+            position=30,
+            default_position=30,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                pipeline_result=pr,
+                check_adaptive_time=False,
+                clock_window_open=False,
+            )
+        )
+        assert result.split(" → ")[0] == (
+            "occupancy timeout active — default position 30%"
+        )
+        assert "commands paused" in result
+
+    def test_default_winner_still_collapses_to_the_closed_clock_note(self, builder):
+        """The DEFAULT winner keeps the collapsed one-liner (the counterpart).
+
+        Its own reason says nothing the note does not already say — the note
+        was written for exactly this winner — so it is the one control method
+        that still renders alone. Pins the narrowing so a future widening
+        cannot quietly turn every night into a two-clause chain (the EN/DE
+        byte-identical locks in ``test_reason_localization`` depend on it).
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.DEFAULT,
+            reason="no active condition — default position 40%",
+            position=40,
+            default_position=40,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                pipeline_result=pr,
+                check_adaptive_time=False,
+                clock_window_open=False,
+            )
+        )
+        assert result == "Outside time window → default position 40% (commands paused)"
+
     def test_sunset_offset_with_sunset_position(self, builder):
         """In window, is_sunset_active=True → reason from default handler mentions sunset."""
         pr = _make_pr(
