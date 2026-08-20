@@ -342,6 +342,7 @@ class TestControlStatus:
             ControlMethod.MOTION,
             ControlMethod.CUSTOM_POSITION,
             ControlMethod.GROUP_SCENE,
+            ControlMethod.GROUP_LOCK,
         ],
     )
     def test_status_and_explanation_agree_across_the_window_matrix(
@@ -391,7 +392,15 @@ class TestControlStatus:
         if withheld:
             assert diag["control_status"] != ControlStatus.ACTIVE
 
-        if control_method is not ControlMethod.DEFAULT:
+        # DEFAULT collapses to the window note alone only in the genuinely
+        # -closed quadrant (clock_open=False, licensed=False) — the same
+        # quadrant ``withheld`` already identifies, since DEFAULT's own
+        # ``acts_outside_clock_window`` tracks ``licensed`` one-for-one here
+        # (no #943-B constraint is admitted). In the other three quadrants it
+        # falls through to the normal render and still starts with its own
+        # reason, like every other method.
+        collapsed_default = control_method is ControlMethod.DEFAULT and withheld
+        if not collapsed_default:
             assert pr.reason in explanation
 
 
