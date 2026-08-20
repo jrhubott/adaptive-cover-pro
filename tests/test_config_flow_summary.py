@@ -3222,7 +3222,10 @@ def test_weather_fallback_qualifier_stays_adjacent_to_is_sunny():
         CONF_LUX_THRESHOLD: 100,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert summary.index("falls back to") < summary.index("lux < 100 lx")
+    assert (
+        "is_sunny=binary_sensor.x (falls back to weather not in {sunny, clear}), "
+        "lux < 100 lx" in summary
+    )
 
 
 def test_outside_threshold_shown_on_climate_line():
