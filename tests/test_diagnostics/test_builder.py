@@ -19,6 +19,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     PipelineResult,
 )
 from custom_components.adaptive_cover_pro.const import (
+    BLIND_SPOT_SLOTS,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
     FORECAST_STEP_MINUTES,
@@ -921,7 +922,41 @@ class TestConfigurationDiagnostics:
             "is_sunny_source",
             "templated_thresholds",
         }
+        # Signed-gamma sub-keys (issue #247's primary storage) per slot — sourced
+        # from BLIND_SPOT_SLOTS rather than hardcoded, per the no-magic-values
+        # guideline (#1291: these were missing, leaving the gamma-preferred
+        # branch in sensor.py dead on the diagnostics path).
+        expected_keys |= {
+            keys[sub]
+            for keys in BLIND_SPOT_SLOTS.values()
+            for sub in ("left_gamma", "right_gamma")
+        }
         assert expected_keys == set(config.keys())
+
+    def test_configuration_forwards_gamma_only_slot1_values(
+        self, builder: DiagnosticsBuilder
+    ):
+        """A gamma-only slot-1 options dict (today's only write shape, #1291)
+        forwards left_gamma/right_gamma into diag['configuration'].
+
+        Today's options flow (BLIND_SPOT_FORM_KEYS) writes signed-gamma keys
+        only, never the legacy left/right pair — so this is the real shape a
+        configured blind spot has in production.
+        """
+        diag, _ = builder.build(
+            _base_ctx(
+                config_options={
+                    "blind_spot": True,
+                    "blind_spot_left_gamma": 35,
+                    "blind_spot_right_gamma": 40,
+                    "fov_left": 45,
+                    "fov_right": 45,
+                }
+            )
+        )
+        config = diag["configuration"]
+        assert config["blind_spot_left_gamma"] == 35
+        assert config["blind_spot_right_gamma"] == 40
 
     def test_configuration_reflects_context(self, builder: DiagnosticsBuilder):
         """Configuration reflects pipeline result and context state values.
