@@ -297,22 +297,25 @@ class PerEntityState:
     # is not one of them: it assigns this cycle's verdict either way, as part
     # of booking, rather than taking a licence away.)
     #
-    # FIVE other sites write ``target`` and leave the verdict exactly as they
+    # FOUR other sites write ``target`` and leave the verdict exactly as they
     # found it, so a row can pair a fresh target with an older decision's
     # verdict:
     #
     # * ``CoverCommandService.restore_target`` — rehydration after a reload.
     # * ``CoverCommandService.send_my_position`` — books the configured My
     #   percent (no production caller today).
-    # * ``coordinator.py``'s two external-stop -> My paths. Step 2 of
-    #   ``run_reconciliation_pass`` drops an entity under manual override
-    #   before it ever reads this field, but only one site gets that for free:
-    #   ``async_apply_user_stop`` (``coordinator.py:4608``) books below an
-    #   unconditional ``mark_user_command``. ``async_check_cover_service_call``
-    #   (``coordinator.py:1288``) books whether or not
-    #   ``handle_stop_service_call`` engaged the override — it RETURNS that
-    #   answer and the booking ignores it — so an untracked cover, or one the
-    #   #875 wait-for-target gate declined, books with no override behind it.
+    # * ``coordinator.py``'s ``async_apply_user_stop`` (external-stop -> My)
+    #   books below an unconditional ``mark_user_command``, so
+    #   ``run_reconciliation_pass`` step 2 drops the entity under manual
+    #   override before it ever reads this field — the inherited verdict is
+    #   inert there. Its sibling, ``async_check_cover_service_call``, used to
+    #   share this gap: it booked whether or not ``handle_stop_service_call``
+    #   engaged the override, so an untracked cover, or one the #875
+    #   wait-for-target gate declined, booked with no override behind it.
+    #   Fixed (#1225): that site now calls the public
+    #   ``revoke_safety_verdict(entity_id)`` wrapper unconditionally alongside
+    #   its ``set_target`` — an external stop is a user action, not a safety
+    #   decision, so it is a pure revoke, never a grant.
     # * ``cover_types/venetian/sequencer.py``'s carriage rebase — pushes the
     #   observed carriage position back through ``set_commanded_position``
     #   (== ``set_target``) after a tilt-only send back-drives it.
@@ -320,7 +323,7 @@ class PerEntityState:
     # Today's blast radius is small, but the inheritance is real, and it is why
     # ``_record_safety_verdict`` declines to GRANT on a row with nothing
     # booked: an unbooked True is inert against both readers, yet any of the
-    # five would hand it straight to the next target.
+    # four would hand it straight to the next target.
     #
     # A reconciliation resend RESTATES the recorded value rather than
     # re-deciding it (#1134), because a resend makes no new verdict.
