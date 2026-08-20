@@ -315,6 +315,44 @@ _INSTANCE_MEAN_POSITION_HOLDS: frozenset[ControlMethod] = frozenset(
 )
 
 
+def _revoke_stale_closed_clock_licences(cmd_svc) -> None:
+    """Retire both outside-window licences on a "nothing admitted" exit.
+
+    Shared by every closed-clock exit that returns before ``apply_position``
+    runs — currently ``async_handle_state_change`` (#1311/#1312) and
+    ``_async_force_send_pipeline_position`` (#1313). Neither ``is_safety``
+    writer runs on those exits, so a booking made before the clock closed
+    would otherwise ride forward licensed forever and reconciliation step 4
+    resends it overnight.
+
+    Two licences expire here, in this exact order:
+
+    1. The safety verdict (#1311). This call is the same unconditional
+       revoke the three hysteresis gates apply; it strips the flag and
+       leaves every target, exactly as a cycle that HAD reached
+       same_position would.
+    2. The outside-window constraint licence (#943 item B): the slot
+       released or the bound is already satisfied, and target and licence
+       die together.
+
+    Order matters. A row carrying both flags is spared by the sweeper while
+    it still reads as safety, and would keep an outside-window licence that
+    step 4 admits just as readily. Revoking first lets the sweeper see the
+    truth and retire both in one cycle instead of leaking until the next
+    one.
+
+    A module-level function rather than a coordinator method: both call
+    sites are exercised by unit tests that drive
+    ``AdaptiveDataUpdateCoordinator`` methods with a bare ``MagicMock()`` as
+    ``self`` (see ``tests/test_override_expiry_time_window.py``). A
+    ``self.<name>()`` call against that kind of double resolves to an inert
+    auto-mock, not this body — taking ``cmd_svc`` directly keeps the shared
+    logic real under that test technique.
+    """
+    cmd_svc.revoke_safety_verdicts()
+    cmd_svc.clear_outside_window_targets()
+
+
 class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     """Adaptive cover data update coordinator."""
 
@@ -3340,6 +3378,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # opted-in constraint that actually clamped this cycle (#943 B).
             and not self._pipeline_acts_outside_clock_window
         ):
+            # Nothing is admitted this cycle — the same "nothing admitted"
+            # exit async_handle_state_change's closed-clock branch handles,
+            # reached here instead via _dispatch_for_cycle's auto_expired
+            # branch (#1313). See _revoke_stale_closed_clock_licences for the
+            # ordering rationale.
+            _revoke_stale_closed_clock_licences(self._cmd_svc)
             self.logger.debug(
                 "Force-send requested for %s but outside the clock window — "
                 "skipping reposition (pipeline position was %s; will apply when "
@@ -3631,26 +3675,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._custom_position_template_trigger = False
             # Nothing is admitted this cycle — this is "the next closed-clock
             # cycle that finds nothing admitted" the reconciliation docstring
-            # names. Two licences expire here, in this order:
-            #
-            # 1. The safety verdict (#1311). apply_position is never reached
-            #    on this branch, so neither is_safety writer runs, and a
-            #    booking made before the clock closed rides forward licensed
-            #    forever — reconciliation step 4 resends it overnight. This
-            #    call is the same unconditional revoke the three hysteresis
-            #    gates apply; it strips the flag and leaves every target,
-            #    exactly as a cycle that HAD reached same_position would.
-            # 2. The outside-window constraint licence: the slot released or
-            #    the bound is already satisfied, and target and licence die
-            #    together.
-            #
-            # Order matters. A row carrying both flags is spared by the
-            # sweeper while it still reads as safety, and would keep an
-            # outside-window licence that step 4 admits just as readily.
-            # Revoking first lets the sweeper see the truth and retire both
-            # in one cycle instead of leaking until the next one.
-            self._cmd_svc.revoke_safety_verdicts()
-            self._cmd_svc.clear_outside_window_targets()
+            # names. See _revoke_stale_closed_clock_licences for the ordering
+            # rationale (#1311/#1312).
+            _revoke_stale_closed_clock_licences(self._cmd_svc)
             self.logger.debug("Outside the clock window — skipping position update")
             return
 
