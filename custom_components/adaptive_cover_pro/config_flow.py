@@ -1788,6 +1788,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "cloud.coverage": "cloud > {thresh}%",
     "cloud.coverage_no_thresh": "cloud ({entity})",
     "cloud.weather_in": "weather not in {{{states}}}",
+    "cloud.weather_fallback": " (falls back to {weather})",
     "cloud.when": " when {parts}",
     "cloud.fallback_cloudy": "cloudy position {pos}%",
     "cloud.fallback_default": "default ({default_pos}%)",
@@ -2867,8 +2868,23 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             if is_template_string(config.get(CONF_IS_SUNNY_TEMPLATE))
             else None
         )
+        # The weather-state list is not an independent OR trigger — it's the
+        # lowest rung of _read_sunny's resolution ladder, only reached when no
+        # is_sunny sensor/template is configured or it has never yet produced
+        # an opinion (issue #1302). Build it once and nest it as an in-place
+        # fallback qualifier on the is_sunny fragment when one is configured;
+        # only render it as a peer trigger when it's the sole is_sunny source.
+        wx_states = config.get(CONF_WEATHER_STATE) or []
+        wx_fragment = (
+            L["cloud.weather_in"].format(states=", ".join(wx_states))
+            if wx_states and config.get(CONF_WEATHER_ENTITY)
+            else ""
+        )
         if is_sunny_value:
-            cloud_parts.append(L["cloud.is_sunny"].format(value=is_sunny_value))
+            is_sunny_part = L["cloud.is_sunny"].format(value=is_sunny_value)
+            if wx_fragment:
+                is_sunny_part += L["cloud.weather_fallback"].format(weather=wx_fragment)
+            cloud_parts.append(is_sunny_part)
         if v := config.get(CONF_LUX_ENTITY):
             t = config.get(CONF_LUX_THRESHOLD)
             cloud_parts.append(
@@ -2890,11 +2906,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 if t is not None
                 else L["cloud.coverage_no_thresh"].format(entity=v)
             )
-        wx_states = config.get(CONF_WEATHER_STATE) or []
-        if wx_states and config.get(CONF_WEATHER_ENTITY):
-            cloud_parts.append(
-                L["cloud.weather_in"].format(states=", ".join(wx_states))
-            )
+        if wx_fragment and not is_sunny_value:
+            cloud_parts.append(wx_fragment)
         cloud_str = (
             L["cloud.when"].format(parts=", ".join(cloud_parts)) if cloud_parts else ""
         )

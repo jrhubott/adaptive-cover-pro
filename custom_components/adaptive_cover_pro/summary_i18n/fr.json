@@ -112,6 +112,7 @@
     "coverage": "nuages > {thresh}%",
     "coverage_no_thresh": "nuages ({entity})",
     "weather_in": "météo hors de {{{states}}}",
+    "weather_fallback": " (se replie sur {weather})",
     "when": " quand {parts}",
     "fallback_cloudy": "position nuageux {pos}%",
     "fallback_default": "défaut ({default_pos}%)",

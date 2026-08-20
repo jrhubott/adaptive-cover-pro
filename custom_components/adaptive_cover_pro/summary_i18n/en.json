@@ -112,6 +112,7 @@
     "coverage": "cloud > {thresh}%",
     "coverage_no_thresh": "cloud ({entity})",
     "weather_in": "weather not in {{{states}}}",
+    "weather_fallback": " (falls back to {weather})",
     "when": " when {parts}",
     "fallback_cloudy": "cloudy position {pos}%",
     "fallback_default": "default ({default_pos}%)",
