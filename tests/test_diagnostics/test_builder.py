@@ -244,8 +244,17 @@ class TestControlStatus:
         assert diag["control_status"] == ControlStatus.MANUAL_OVERRIDE
 
     def test_outside_time_window(self, builder: DiagnosticsBuilder):
-        """Returns OUTSIDE_TIME_WINDOW when not in adaptive time."""
-        diag, _ = builder.build(_base_ctx(check_adaptive_time=False))
+        """Returns OUTSIDE_TIME_WINDOW when the clock window is genuinely closed.
+
+        ``clock_window_open=False`` is required alongside ``check_adaptive_time``
+        (#1310 audit finding #1) — ``control_status`` now keys on the clock
+        window, not the gate-inclusive flag, so a merely gate-dark cycle with
+        the clock still open no longer reports OUTSIDE_TIME_WINDOW (see
+        ``test_gate_dark_clock_open_reports_active_not_outside_window`` above).
+        """
+        diag, _ = builder.build(
+            _base_ctx(check_adaptive_time=False, clock_window_open=False)
+        )
         assert diag["control_status"] == ControlStatus.OUTSIDE_TIME_WINDOW
 
     def test_sun_not_visible(self, builder: DiagnosticsBuilder):
@@ -264,6 +273,63 @@ class TestControlStatus:
         """ControlMethod.FORCE is no longer mapped to a status (deprecated, #563)."""
         pr = _make_pr(control_method=ControlMethod.FORCE)
         diag, _ = builder.build(_base_ctx(pipeline_result=pr))
+        assert diag["control_status"] == ControlStatus.ACTIVE
+
+    def test_gate_dark_clock_open_reports_active_not_outside_window(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Gate reads dark but the clock window is open — control_status must
+        agree with the explanation (issue #1310 audit finding #1).
+
+        ``_build_position_explanation`` already reads ``clock_window_open``
+        (commit 0c205bb1) and, on this exact cycle, renders the DEFAULT
+        winner's own reason rather than "commands paused" — nothing is
+        actually being withheld. ``control_status`` must not contradict that
+        by reporting OUTSIDE_TIME_WINDOW for the same cycle.
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.DEFAULT,
+            reason="default position 30% — gate dark",
+            default_position=30,
+        )
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=pr,
+                check_adaptive_time=False,
+                clock_window_open=True,
+            )
+        )
+        assert diag["control_status"] != ControlStatus.OUTSIDE_TIME_WINDOW
+        assert diag["control_status"] == ControlStatus.ACTIVE
+
+    def test_admitted_constraint_outside_closed_clock_reports_active(
+        self, builder: DiagnosticsBuilder
+    ):
+        """A licensed winner outside a genuinely closed clock is still ACTIVE.
+
+        Mirrors ``test_explanation_names_an_admitted_constraint_outside_the_window``
+        in ``tests/test_position_explanation.py``: an admitted #943-item-B
+        bound lets a DEFAULT winner reach the hardware with ``is_safety``
+        False even while the user's start/end clock is closed. The
+        explanation names the real winner in this case (it does not fall
+        into the "commands paused" branch, because
+        ``result.acts_outside_clock_window`` is True), so control_status
+        must not contradict it by reporting OUTSIDE_TIME_WINDOW.
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.DEFAULT,
+            is_safety=False,
+        )
+        pr = replace(pr, outside_window_constraint_active=True)
+        assert pr.acts_outside_clock_window is True
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=pr,
+                check_adaptive_time=False,
+                clock_window_open=False,
+            )
+        )
+        assert diag["control_status"] != ControlStatus.OUTSIDE_TIME_WINDOW
         assert diag["control_status"] == ControlStatus.ACTIVE
 
 
@@ -484,6 +550,21 @@ class TestTimeWindowDiagnostics:
         assert "before_end_time" in tw
         assert "start_time" in tw
         assert "end_time" in tw
+        assert "clock_window_open" in tw
+
+    def test_clock_window_open_reflects_context(self, builder: DiagnosticsBuilder):
+        """``clock_window_open`` is published alongside ``check_adaptive_time`` (#1310 audit finding #2).
+
+        A triager reading a diagnostics dump needs to see why the gate-inclusive
+        flag and the explanation/control_status (which both key on
+        ``clock_window_open``) can disagree on a gate-dark cycle.
+        """
+        diag, _ = builder.build(
+            _base_ctx(check_adaptive_time=False, clock_window_open=True)
+        )
+        tw = diag["time_window"]
+        assert tw["check_adaptive_time"] is False
+        assert tw["clock_window_open"] is True
 
 
 class TestEndOfWindowDiagnostics:

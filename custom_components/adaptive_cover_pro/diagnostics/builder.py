@@ -666,7 +666,15 @@ class DiagnosticsBuilder:
             if status != ControlStatus.ACTIVE:
                 return status
 
-        if not ctx.check_adaptive_time:
+        # Reads ``clock_window_open`` (start/end clock only), NOT
+        # ``check_adaptive_time`` (which also folds in the daytime gate) —
+        # same rationale as ``_build_position_explanation`` above (#1310). A
+        # winner licensed to act outside the clock (``acts_outside_clock_window``
+        # — a safety result or an admitted #943-B constraint) is also excused
+        # here, mirroring the explanation's early-return guard exactly, so the
+        # two fields cannot disagree on the licensed-winner-outside-clock case.
+        licensed_outside_clock = result is not None and result.acts_outside_clock_window
+        if not ctx.clock_window_open and not licensed_outside_clock:
             return ControlStatus.OUTSIDE_TIME_WINDOW
 
         if ctx.cover and not ctx.cover.valid:
@@ -847,6 +855,12 @@ class DiagnosticsBuilder:
                 "before_end_time": ctx.before_end_time,
                 "start_time": ctx.start_time,
                 "end_time": ctx.end_time,
+                # Whether the user's start/end CLOCK window is open, ignoring
+                # the daytime gate — the field the explanation and (#1310
+                # audit finding #1) control_status both key on. Published
+                # alongside ``check_adaptive_time`` so a triager can see why
+                # the two disagree on a gate-dark cycle (#1310 finding #2).
+                "clock_window_open": ctx.clock_window_open,
                 # Issue #943 item B — whether an opted-in slot's min/max
                 # constraint was ADMITTED to act outside the clock window this
                 # cycle. The single most useful field for triaging "my
