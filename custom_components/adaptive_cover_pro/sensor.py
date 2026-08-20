@@ -840,12 +840,11 @@ def _motion_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
         "motion_timeout_seconds": mgr._timeout_seconds
     }  # noqa: SLF001
 
+    end = mgr.timeout_end_time
+    if end is not None:
+        attrs["motion_timeout_end_time"] = end.isoformat()
+
     if mgr.last_motion_time is not None:
-        if mgr.has_pending_timeout or mgr.is_motion_timeout_active:
-            end_ts = mgr.last_motion_time + mgr._timeout_seconds  # noqa: SLF001
-            attrs["motion_timeout_end_time"] = dt_util.utc_from_timestamp(
-                end_ts
-            ).isoformat()
         attrs["last_motion_time"] = dt_util.utc_from_timestamp(
             mgr.last_motion_time
         ).isoformat()

@@ -61,6 +61,7 @@ class MotionManager:
 
         self._timer = TimeoutController(logger, label="motion timeout")
         self._last_motion_time: float | None = None
+        self._timeout_started_at: float | None = None
         self._motion_timeout_active: bool = False
 
     # --- Internal helpers ---
@@ -182,6 +183,33 @@ class MotionManager:
         return self._timer.is_running
 
     @property
+    def timeout_end_time(self) -> dt.datetime | None:
+        """Return when the running no-motion timer will expire, or None.
+
+        Computed from when the timer actually *started* (the clear edge,
+        ``start_motion_timeout``), not from ``last_motion_time`` (the
+        detection edge). Occupancy commonly outlasts the configured
+        timeout, so measuring from detection instead of timer-start
+        publishes an end time that is already in the past the instant the
+        timer starts (issue #1266). Single owner of this formula — callers
+        must not recompute it from ``last_motion_time`` and
+        ``_timeout_seconds``.
+
+        The backing stamp (``_timeout_started_at``) is live only while a
+        timer is actually counting down. All four exits from that state —
+        ``record_motion_detected``, ``cancel_motion_timeout``,
+        ``set_no_motion``, and the timer firing naturally
+        (``_on_motion_timeout_expired``) — clear it, so this property
+        returns ``None`` rather than a stale past timestamp once the timer
+        is gone, whichever way it left.
+        """
+        if self._timeout_started_at is None:
+            return None
+        return dt.datetime.fromtimestamp(
+            self._timeout_started_at + self._timeout_seconds, dt.UTC
+        )
+
+    @property
     def last_motion_time(self) -> float | None:
         """Return UNIX timestamp of the most recent motion detection, or None."""
         return self._last_motion_time
@@ -214,6 +242,7 @@ class MotionManager:
         had_active = self._motion_timeout_active
         self.cancel_motion_timeout()
         self._last_motion_time = self._now().timestamp()
+        self._timeout_started_at = None
         self._motion_timeout_active = False
         return had_active or had_pending
 
@@ -246,6 +275,7 @@ class MotionManager:
         async def _on_expire() -> None:
             await self._on_motion_timeout_expired(timeout_seconds, refresh_callback)
 
+        self._timeout_started_at = self._now().timestamp()
         self._timer.start(timeout_seconds, _on_expire)
 
     async def _on_motion_timeout_expired(
@@ -266,6 +296,11 @@ class MotionManager:
             return
 
         self._motion_timeout_active = True
+        # Timer has fired; nothing is counting down. Clear the stamp like the
+        # other three exits from "timer counting" (record_motion_detected,
+        # cancel_motion_timeout, set_no_motion) so timeout_end_time honors its
+        # own contract instead of returning a past timestamp forever (#1266).
+        self._timeout_started_at = None
         self._logger.info(
             "Motion timeout expired (%s seconds) - using default position",
             timeout_seconds,
@@ -279,3 +314,4 @@ class MotionManager:
         if self._timer.is_running:
             self._events.record("motion_timeout_canceled")
         self._timer.cancel()
+        self._timeout_started_at = None
