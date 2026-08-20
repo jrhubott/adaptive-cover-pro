@@ -1856,30 +1856,135 @@ async def test_scoped_weather_booking_is_revoked_by_the_end_of_window_send(
 
 
 @pytest.mark.asyncio
-async def test_scoped_weather_booking_outlives_a_close_with_no_end_of_window_send(
+@pytest.mark.parametrize(
+    ("skip_reason", "booked", "end_of_window_target", "extra_ctx"),
+    [
+        # Arm 1, direct equality: the end-of-window default happens to BE the
+        # number weather already booked, which is the common shape (both are
+        # endpoints). ``_target_would_mismatch_actual`` is False and
+        # ``get_target == routed_target``, so the booking is untouched.
+        ("same_position", 100, 100, {}),
+        # The carriage is parked within ``min_change`` of the end-of-window
+        # default. Booked off the endpoints on purpose: with the cover resting
+        # on 0 or 100 ``check_position_delta`` bypasses on ``special_positions``
+        # and this exit is unreachable, so the delta gate can only be the
+        # boundary's exit from a mid-travel booking.
+        ("delta_too_small", 70, 69, {"min_change": 2}),
+        # A real move, held by the rate limiter instead.
+        ("time_delta_too_small", 100, 60, {"time_threshold": 5}),
+    ],
+)
+async def test_scoped_weather_booking_is_revoked_by_an_end_of_window_skip(
+    svc, mock_hass, skip_reason, booked, end_of_window_target, extra_ctx
+):
+    """Issue #1308 boundary, the other three exits: the end-of-window send
+    revokes the weather licence even when it dispatches nothing.
+
+    The sibling above takes the ``"sent"`` exit, where ``_prepare_service_call``
+    does the revoking. But a send that lands on one of ``apply_position``'s
+    three hysteresis gates never reaches that writer, and the boundary is
+    exactly where the most likely of them fires — an end-of-window default that
+    equals the number weather already booked skips on ``same_position``. If the
+    verdict froze there, ``return_sunset`` ON would leak the same overnight
+    resend #1311 reports for ``return_sunset`` OFF.
+
+    It does not: all three gates route through ``_record_safety_verdict``,
+    whose revoke half is unconditional. That mechanism is already pinned in
+    isolation by the #1226/#1165 guards above — green on arrival is the
+    expected result here. What was missing is this specific boundary crossing,
+    which is the composition those guards do not cover: safety booked while
+    the window was open, ``clear_non_safety_targets()`` sparing the row, then
+    a non-dispatching end-of-window send, then a night of reconciliation.
+
+    Decision (a) of #1311 is visible in every case: the licence dies, the
+    booked number stays.
+    """
+    # 18:00, clock still open. Rain starts; weather books and the blind moves.
+    svc.in_time_window = True
+    _patch_position(svc, 0)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", booked, "weather", context=_ctx(is_safety=True)
+        )
+    assert outcome == "sent"
+    assert svc.get_target("cover.test") == booked
+    assert svc.state("cover.test").is_safety is True
+
+    # The blind arrives and settles there.
+    svc.set_waiting("cover.test", False)
+    _patch_position(svc, booked)
+
+    # 18:30. ``_on_window_closed`` sweeps first and the safety booking survives
+    # it, by design — the same half of the sequence the "sent" sibling pins.
+    svc.clear_non_safety_targets()
+    assert svc.get_target("cover.test") == booked
+    assert svc.state("cover.test").is_safety is True
+
+    # Then the end-of-window position. Non-safety, unforced — and this time it
+    # lands on a hysteresis gate rather than dispatching.
+    if skip_reason == "time_delta_too_small":
+        clock = patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=dt.datetime.now(dt.UTC) - dt.timedelta(seconds=10),
+        )
+    else:
+        clock = _patch_no_prior_command()
+    with _patch_caps(), clock:
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            end_of_window_target,
+            "end_time_default",
+            context=_ctx(is_safety=False, **extra_ctx),
+        )
+    assert (outcome, reason) == ("skipped", skip_reason)
+    assert svc.state("cover.test").is_safety is False
+    # Nothing dispatched, so nothing superseded the booking either: the number
+    # weather put there is still booked, now unprotected.
+    assert svc.get_target("cover.test") == booked
+
+    # Overnight, with the clock closed and the blind drifted off the booking:
+    # nothing is licensed out here any more, so step 4 drops it. Run twice —
+    # the state is a fixed point, so one pass could not tell "revoked" from
+    # "about to self-correct".
+    svc.set_waiting("cover.test", False)
+    svc.in_time_window = False
+    _patch_position(svc, 0)
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+    assert svc.get_target("cover.test") == booked
+
+
+@pytest.mark.asyncio
+async def test_scoped_weather_booking_outlives_a_close_until_the_nightly_revoke_sweep(
     svc, mock_hass
 ):
-    """Issue #1308, the complement: with no end-of-window send there is no
-    revoke, and the pre-close weather position stays licensed overnight.
+    """Issue #1308/#1311: with no end-of-window send, nothing at THIS layer
+    revokes the pre-close weather licence — the nightly sweep does.
 
     ``_on_window_closed`` is invoked only when ``CONF_RETURN_SUNSET`` is on
     (``TimeWindowManager.check_transition`` gates ``refresh_callback`` on
     ``track_end_time``), and that option defaults to OFF. With it off neither
     ``clear_non_safety_targets()`` nor the end-of-window ``apply_position``
-    ever runs, so nothing writes a fresh verdict and the booking crosses the
-    edge with its licence intact.
+    ever runs, so ``CoverCommandService`` on its own never writes a fresh
+    verdict and the booking crosses the edge with its licence intact. Act 1
+    below pins exactly that: left alone, the stale licence resends overnight.
 
-    This is a no-op rather than a regression, and the distinction is the point.
-    ``return_sunset`` OFF *means* "do not move my covers at end_time", so the
-    blind was always going to be left at the weather position it already
-    occupied — before this option existed, weather simply stayed the live
-    winner and resent the same number. The scope opt-out cannot reach this
-    configuration, and the end-of-window position the reporter wants is not
-    dispatched in it either (``config_flow`` renders
-    ``timing.end_of_window_needs_return`` to say so).
+    What closes the gap is not a send at all. It is the coordinator's
+    closed-clock cycle that admits nothing
+    (``coordinator.async_handle_state_change``'s early return), which calls
+    ``revoke_safety_verdicts()`` without ever reaching ``apply_position`` —
+    the wiring is pinned by
+    ``test_closed_clock_cycle_with_nothing_admitted_revokes_stale_safety_verdicts``
+    in ``tests/test_override_expiry_time_window.py``, and act 2 below is the
+    behavioural half: once that sweep runs, the same overnight drift is left
+    alone.
 
-    Pinned so that a future change to the licence lifetime has to face this
-    sequence deliberately rather than discover it.
+    Pinned end to end so that a future change to the licence lifetime has to
+    face both halves of the sequence deliberately rather than discover them.
     """
     # Same opening move: weather wins before end_time and books 100.
     svc.in_time_window = True
@@ -1906,6 +2011,23 @@ async def test_scoped_weather_booking_outlives_a_close_with_no_end_of_window_sen
         await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
 
     mock_hass.services.async_call.assert_called_once()
+
+    # Act 2 — the nightly sweep. The coordinator's closed-clock cycle that
+    # admits nothing calls this without ever reaching apply_position (#1311).
+    svc.set_waiting("cover.test", False)
+    svc.revoke_safety_verdicts()
+
+    assert svc.state("cover.test").is_safety is False
+    assert svc.state("cover.test").acts_outside_clock_window is False
+    # Decision (a): the booking survives — only the licence dies. Same row
+    # shape _record_safety_verdict leaves at the three hysteresis gates.
+    assert svc.get_target("cover.test") == 100
+
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+    mock_hass.services.async_call.assert_not_called()
 
 
 # ------------------------------------------------------------------ #

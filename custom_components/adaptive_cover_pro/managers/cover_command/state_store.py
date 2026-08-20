@@ -275,8 +275,27 @@ class PerEntityState:
     # unconditionally, grant only when the booked target is the number that
     # cycle routed to, never inside a booking's value-change guard. That rule
     # and the failure behind each half are argued on the helper (#1165).
-    # ``clear_safety_targets()`` is a third writer: a blanket reset that clears
-    # the verdict on every row without touching any target.
+    # ``revoke_safety_verdicts()`` adds no third writer: it is that same
+    # unconditional revoke applied to every row at once, leaving every
+    # ``target`` exactly where it was. Two callers, each of which has already
+    # established instance-wide that no safety verdict is live — the
+    # Integration-Enabled kill switch / ``emergency_stop`` (paired with
+    # ``clear_non_safety_targets()``), and the coordinator's closed-clock
+    # cycle that admits nothing (#1311), where ``apply_position`` is never
+    # reached so neither writer above can run. Leaving ``target`` alone is the
+    # deliberate choice there: the licence is what let reconciliation step 4
+    # resend overnight, and revoking it is enough to stop that — un-booking the
+    # number as well would throw away the at-target/diagnostics answer for a
+    # row nobody is allowed to resend anyway, and would differ from the row
+    # shape a cycle that HAD reached a hysteresis gate leaves behind.
+    #
+    # Every site that revokes rather than decides — ``_record_safety_verdict``'s
+    # unconditional half at the three hysteresis gates, and both callers of
+    # ``revoke_safety_verdicts`` — funnels through the one private
+    # ``_revoke_safety_verdict`` write, so the "unconditional, target
+    # untouched" rule cannot drift between them. (``_prepare_service_call``
+    # is not one of them: it assigns this cycle's verdict either way, as part
+    # of booking, rather than taking a licence away.)
     #
     # FIVE other sites write ``target`` and leave the verdict exactly as they
     # found it, so a row can pair a fresh target with an older decision's

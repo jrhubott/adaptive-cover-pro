@@ -3629,12 +3629,27 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.state_change = False
             self._last_state_change_entity = None
             self._custom_position_template_trigger = False
-            # Nothing is admitted this cycle, so no booked target may keep the
-            # outside-window licence it was granted on an earlier one: the
-            # constraint has released or is already satisfied, and either way
-            # reconciliation must stop resending overnight. Safety targets are
-            # untouched — they answer to ``clear_non_safety_targets`` and their
-            # own lifetime (#1226).
+            # Nothing is admitted this cycle — this is "the next closed-clock
+            # cycle that finds nothing admitted" the reconciliation docstring
+            # names. Two licences expire here, in this order:
+            #
+            # 1. The safety verdict (#1311). apply_position is never reached
+            #    on this branch, so neither is_safety writer runs, and a
+            #    booking made before the clock closed rides forward licensed
+            #    forever — reconciliation step 4 resends it overnight. This
+            #    call is the same unconditional revoke the three hysteresis
+            #    gates apply; it strips the flag and leaves every target,
+            #    exactly as a cycle that HAD reached same_position would.
+            # 2. The outside-window constraint licence: the slot released or
+            #    the bound is already satisfied, and target and licence die
+            #    together.
+            #
+            # Order matters. A row carrying both flags is spared by the
+            # sweeper while it still reads as safety, and would keep an
+            # outside-window licence that step 4 admits just as readily.
+            # Revoking first lets the sweeper see the truth and retire both
+            # in one cycle instead of leaking until the next one.
+            self._cmd_svc.revoke_safety_verdicts()
             self._cmd_svc.clear_outside_window_targets()
             self.logger.debug("Outside the clock window — skipping position update")
             return

@@ -215,7 +215,7 @@ async def test_safety_targets_cleared_on_disable_prevents_replay(svc, mock_hass)
 
     # Simulate what the switch OFF transition does
     svc.clear_non_safety_targets()  # clears non-safety (cover.force is safety, kept)
-    svc.clear_safety_targets()  # explicitly cleared on Integration Enabled OFF
+    svc.revoke_safety_verdicts()  # explicitly revoked on Integration Enabled OFF
     # Now clear target_call entry that was safety (no longer in _safety_targets, remove manually)
     svc._state.clear()
 
