@@ -112,6 +112,7 @@
     "coverage": "Bewölkung > {thresh}%",
     "coverage_no_thresh": "Bewölkung ({entity})",
     "weather_in": "Wetter nicht in {{{states}}}",
+    "weather_fallback": " (greift zurück auf {weather})",
     "when": " wenn {parts}",
     "fallback_cloudy": "bewölkte Position {pos}%",
     "fallback_default": "Standard ({default_pos}%)",

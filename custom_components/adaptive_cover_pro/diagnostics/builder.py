@@ -108,6 +108,16 @@ class DiagnosticContext:
     automatic_control: bool
     # True while a travel-time calibration run holds the covers.
     calibrating: bool = False
+    # Whether the user's start/end CLOCK window is open, ignoring the daytime
+    # gate — mirrors ``TimeWindowManager.clock_window_open`` /
+    # ``coordinator.clock_window_open``, NOT ``check_adaptive_time``
+    # (``is_active``, which also folds in the gate). The two deliberately
+    # diverge at night on a gate-configured install (#656): a dark gate makes
+    # ``check_adaptive_time`` False even while the clock window is still open,
+    # and the real dispatch guard reads this field, not that one (issue
+    # #1310). Defaults True so contexts built without it (tests, older
+    # callers) are unaffected.
+    clock_window_open: bool = True
     last_cover_action: dict = field(default_factory=dict)
     last_skipped_action: dict = field(default_factory=dict)
     min_change: int = 1
@@ -550,26 +560,58 @@ class DiagnosticsBuilder:
 
         # Outside time window — pipeline ran but commands are gated.
         #
+        # Reads ``clock_window_open`` (start/end clock only), NOT
+        # ``check_adaptive_time`` (which also folds in the daytime gate) — a
+        # gate-configured install can read dark while the user's clock window
+        # is still open (#656), and the real dispatch guard
+        # (``coordinator.clock_window_open``) is not blocking anything on that
+        # cycle either. Keying this off the gate-inclusive flag mis-reported
+        # the winner's own reason as a paused default/sunset position (issue
+        # #1310).
+        #
         # Only when the winner has NO licence to move a cover out here. A
         # safety result (weather, a priority-100 slot) or an admitted #943-B
         # constraint IS commanding, and reporting the default/sunset position
         # plus "commands paused" over a dispatched command is simply false
         # (issue #1308). Those fall through to the normal render below, which
         # names the real winner and its real position.
-        if not ctx.check_adaptive_time and not result.acts_outside_clock_window:
-            pos = result.default_position
+        #
+        # The note is composed once and then either stands alone or trails the
+        # winner's chain — see the DEFAULT carve-out below.
+        window_note: str | None = None
+        if not ctx.clock_window_open and not result.acts_outside_clock_window:
             pos_label = Reason(
                 ReasonCode.FRAGMENT_SUNSET_POSITION
                 if result.is_sunset_active
                 else ReasonCode.FRAGMENT_DEFAULT_POSITION
             )
-            return render(
+            window_note = render(
                 Reason(
                     ReasonCode.BUILDER_OUTSIDE_WINDOW,
-                    {"pos_label": pos_label, "pos": pos},
+                    {"pos_label": pos_label, "pos": result.default_position},
                 ),
                 labels,
             )
+            # The note IS the DEFAULT winner's account — "the default/sunset
+            # position, and nothing was sent" is the whole of what
+            # ``DefaultHandler`` resolved — so out here it renders alone, as it
+            # always has (the EN/DE byte-identical locks in
+            # ``tests/test_diagnostics/test_reason_localization.py`` pin that).
+            #
+            # No other winner is redundant with it. MANUAL, MOTION,
+            # CUSTOM_POSITION (a slot below safety priority), GROUP_LOCK and
+            # GROUP_SCENE are the ones that can still win on a closed clock,
+            # and each carries a reason the note cannot express — a held
+            # position, an occupancy timeout, a slot number. Returning the note
+            # in their place discarded it, which put the explanation at odds
+            # with ``control_status``: ``_METHOD_TO_STATUS`` answers
+            # MANUAL_OVERRIDE / MOTION_TIMEOUT for the same cycle (deliberately
+            # — ``sensor._control_status_attrs`` and triage rule 23 key on that
+            # answer), so the two fields told different stories. They now
+            # compose: the winner leads, the note trails, and both truths — who
+            # decided, and that nothing reached the cover — survive.
+            if result.control_method is ControlMethod.DEFAULT:
+                return window_note
 
         # Base explanation is the pipeline reason (already human-readable). Prefer
         # the structured payload so the base localizes; fall back to the legacy
@@ -628,6 +670,11 @@ class DiagnosticsBuilder:
                 render(Reason(ReasonCode.BUILDER_INVERSED, {"final": final}), labels)
             )
 
+        # Last word, after the value transforms: the winner and its post-processing
+        # describe the number, this describes what happened to it — nothing.
+        if window_note is not None:
+            parts.append(window_note)
+
         return " → ".join(parts)
 
     @staticmethod
@@ -647,7 +694,15 @@ class DiagnosticsBuilder:
             if status != ControlStatus.ACTIVE:
                 return status
 
-        if not ctx.check_adaptive_time:
+        # Reads ``clock_window_open`` (start/end clock only), NOT
+        # ``check_adaptive_time`` (which also folds in the daytime gate) —
+        # same rationale as ``_build_position_explanation`` above (#1310). A
+        # winner licensed to act outside the clock (``acts_outside_clock_window``
+        # — a safety result or an admitted #943-B constraint) is also excused
+        # here, mirroring the explanation's early-return guard exactly, so the
+        # two fields cannot disagree on the licensed-winner-outside-clock case.
+        licensed_outside_clock = result is not None and result.acts_outside_clock_window
+        if not ctx.clock_window_open and not licensed_outside_clock:
             return ControlStatus.OUTSIDE_TIME_WINDOW
 
         if ctx.cover and not ctx.cover.valid:
@@ -828,6 +883,12 @@ class DiagnosticsBuilder:
                 "before_end_time": ctx.before_end_time,
                 "start_time": ctx.start_time,
                 "end_time": ctx.end_time,
+                # Whether the user's start/end CLOCK window is open, ignoring
+                # the daytime gate — the field the explanation and (#1310
+                # audit finding #1) control_status both key on. Published
+                # alongside ``check_adaptive_time`` so a triager can see why
+                # the two disagree on a gate-dark cycle (#1310 finding #2).
+                "clock_window_open": ctx.clock_window_open,
                 # Issue #943 item B — whether an opted-in slot's min/max
                 # constraint was ADMITTED to act outside the clock window this
                 # cycle. The single most useful field for triaging "my

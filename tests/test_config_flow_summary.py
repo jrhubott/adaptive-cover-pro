@@ -3148,6 +3148,86 @@ def test_weather_state_list_in_cloud_line():
     assert "weather not in {cloudy, rainy}" in summary
 
 
+def test_weather_state_renders_as_is_sunny_fallback_when_sensor_configured():
+    """With an is_sunny sensor AND a weather entity configured, the weather-state
+    list is not a peer OR trigger — it's the lowest rung _read_sunny falls
+    through to only when the sensor holds no opinion (issue #1302). The summary
+    must nest it as an in-place qualifier on the is_sunny fragment, not append it
+    as a fourth independent trigger.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IS_SUNNY_SENSOR: "binary_sensor.x",
+        CONF_WEATHER_ENTITY: "weather.home",
+        CONF_WEATHER_STATE: ["sunny", "clear"],
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert (
+        "is_sunny=binary_sensor.x (falls back to weather not in {sunny, clear})"
+        in summary
+    )
+    assert "is_sunny=binary_sensor.x, weather not in" not in summary
+
+
+def test_weather_state_stays_a_peer_trigger_without_is_sunny_source():
+    """With no is_sunny sensor/template configured, the weather-state list IS
+    the sole is_sunny source, so it renders as a plain peer fragment — no
+    'falls back to' qualifier should appear.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_WEATHER_ENTITY: "weather.home",
+        CONF_WEATHER_STATE: ["sunny", "clear"],
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "weather not in {sunny, clear}" in summary
+    assert "falls back to" not in summary
+
+
+def test_is_sunny_template_gets_weather_fallback_qualifier():
+    """A template-only is_sunny source also gets the weather fragment nested
+    as a fallback qualifier, not appended as a peer.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IS_SUNNY_TEMPLATE: "{{ is_state('sun.sun', 'above_horizon') }}",
+        CONF_WEATHER_ENTITY: "weather.home",
+        CONF_WEATHER_STATE: ["sunny", "clear"],
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert (
+        "is_sunny=[template] (falls back to weather not in {sunny, clear})" in summary
+    )
+
+
+def test_weather_fallback_qualifier_stays_adjacent_to_is_sunny():
+    """When a lux sensor is also configured, the weather fallback qualifier
+    must stay adjacent to the is_sunny fragment it qualifies rather than
+    drifting to the end of the trigger list behind lux (issue #1302, state D).
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IS_SUNNY_SENSOR: "binary_sensor.x",
+        CONF_WEATHER_ENTITY: "weather.home",
+        CONF_WEATHER_STATE: ["sunny", "clear"],
+        CONF_LUX_ENTITY: "sensor.lux",
+        CONF_LUX_THRESHOLD: 100,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert (
+        "is_sunny=binary_sensor.x (falls back to weather not in {sunny, clear}), "
+        "lux < 100 lx" in summary
+    )
+
+
 def test_outside_threshold_shown_on_climate_line():
     """CONF_OUTSIDE_THRESHOLD annotates the outside temp entity on the climate line."""
     cfg = {

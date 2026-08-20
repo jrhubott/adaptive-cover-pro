@@ -5097,6 +5097,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 else "live"
             ),
             check_adaptive_time=self.check_adaptive_time,
+            clock_window_open=self.clock_window_open,
             after_start_time=self.after_start_time,
             before_end_time=self.before_end_time,
             start_time=self._time_mgr.start_time_value,

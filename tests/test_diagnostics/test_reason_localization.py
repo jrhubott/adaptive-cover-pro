@@ -119,7 +119,12 @@ def test_position_explanation_outside_window_renders_de_with_fragment() -> None:
         default_position=30,
         is_sunset_active=True,
     )
-    ctx = _ctx(pipeline_result=pr, check_adaptive_time=False, reason_labels=_FAKE_DE)
+    ctx = _ctx(
+        pipeline_result=pr,
+        check_adaptive_time=False,
+        clock_window_open=False,
+        reason_labels=_FAKE_DE,
+    )
     result = DiagnosticsBuilder._build_position_explanation(ctx)
     assert result == (
         "Außerhalb des Zeitfensters → Sonnenuntergangsposition 30% (Befehle pausiert)"
@@ -253,7 +258,7 @@ def test_position_explanation_outside_window_en_byte_identical() -> None:
         default_position=30,
         is_sunset_active=True,
     )
-    ctx = _ctx(pipeline_result=pr, check_adaptive_time=False)
+    ctx = _ctx(pipeline_result=pr, check_adaptive_time=False, clock_window_open=False)
     assert DiagnosticsBuilder._build_position_explanation(ctx) == (
         "Outside time window → sunset position 30% (commands paused)"
     )
