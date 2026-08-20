@@ -108,6 +108,16 @@ class DiagnosticContext:
     automatic_control: bool
     # True while a travel-time calibration run holds the covers.
     calibrating: bool = False
+    # Whether the user's start/end CLOCK window is open, ignoring the daytime
+    # gate — mirrors ``TimeWindowManager.clock_window_open`` /
+    # ``coordinator.clock_window_open``, NOT ``check_adaptive_time``
+    # (``is_active``, which also folds in the gate). The two deliberately
+    # diverge at night on a gate-configured install (#656): a dark gate makes
+    # ``check_adaptive_time`` False even while the clock window is still open,
+    # and the real dispatch guard reads this field, not that one (issue
+    # #1310). Defaults True so contexts built without it (tests, older
+    # callers) are unaffected.
+    clock_window_open: bool = True
     last_cover_action: dict = field(default_factory=dict)
     last_skipped_action: dict = field(default_factory=dict)
     min_change: int = 1
@@ -550,13 +560,22 @@ class DiagnosticsBuilder:
 
         # Outside time window — pipeline ran but commands are gated.
         #
+        # Reads ``clock_window_open`` (start/end clock only), NOT
+        # ``check_adaptive_time`` (which also folds in the daytime gate) — a
+        # gate-configured install can read dark while the user's clock window
+        # is still open (#656), and the real dispatch guard
+        # (``coordinator.clock_window_open``) is not blocking anything on that
+        # cycle either. Keying this off the gate-inclusive flag mis-reported
+        # the winner's own reason as a paused default/sunset position (issue
+        # #1310).
+        #
         # Only when the winner has NO licence to move a cover out here. A
         # safety result (weather, a priority-100 slot) or an admitted #943-B
         # constraint IS commanding, and reporting the default/sunset position
         # plus "commands paused" over a dispatched command is simply false
         # (issue #1308). Those fall through to the normal render below, which
         # names the real winner and its real position.
-        if not ctx.check_adaptive_time and not result.acts_outside_clock_window:
+        if not ctx.clock_window_open and not result.acts_outside_clock_window:
             pos = result.default_position
             pos_label = Reason(
                 ReasonCode.FRAGMENT_SUNSET_POSITION

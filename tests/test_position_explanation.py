@@ -660,7 +660,9 @@ class TestBuildPositionExplanation:
             default_position=30, is_sunset_active=True, configured_sunset_pos=30
         )
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
+            _base_ctx(
+                pipeline_result=pr, check_adaptive_time=False, clock_window_open=False
+            )
         )
         assert "sunset position" in result.lower()
         assert "30%" in result
@@ -670,7 +672,9 @@ class TestBuildPositionExplanation:
         """Outside time window, no sunset_pos → shows 'default position' label."""
         pr = _make_pr(default_position=100, is_sunset_active=False)
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
+            _base_ctx(
+                pipeline_result=pr, check_adaptive_time=False, clock_window_open=False
+            )
         )
         assert "default position" in result.lower()
         assert "100%" in result
@@ -694,7 +698,9 @@ class TestBuildPositionExplanation:
             is_safety=True,
         )
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
+            _base_ctx(
+                pipeline_result=pr, check_adaptive_time=False, clock_window_open=False
+            )
         )
         assert "weather override active" in result.lower()
         assert "commands paused" not in result
@@ -729,7 +735,9 @@ class TestBuildPositionExplanation:
         assert pr.acts_outside_clock_window is True
 
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
+            _base_ctx(
+                pipeline_result=pr, check_adaptive_time=False, clock_window_open=False
+            )
         )
         assert "ceiling lowered" in result.lower()
         assert "30%" in result
@@ -737,6 +745,33 @@ class TestBuildPositionExplanation:
         # The default position (100%) is what the old unconditional return
         # would have reported instead of the clamp edge.
         assert "default position" not in result.lower()
+
+    def test_gate_dark_clock_open_reports_actual_winner(self, builder):
+        """Gate reads dark but the user's clock window is still open (issue #1310).
+
+        ``check_adaptive_time``/``is_active`` folds in the daytime gate, so it
+        goes False the moment a configured gate sensor reads dark — even while
+        ``clock_window_open`` (start/end clock only) is still True and the real
+        dispatch guard (``coordinator.clock_window_open`` at
+        ``coordinator.py``) is NOT blocking anything this cycle. The old guard
+        keyed off ``check_adaptive_time`` alone and would report the default
+        position with a false "commands paused" instead of the pipeline
+        winner's real reason.
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.DEFAULT,
+            reason="default position 30% — gate dark",
+            default_position=30,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                pipeline_result=pr,
+                check_adaptive_time=False,
+                clock_window_open=True,
+            )
+        )
+        assert "commands paused" not in result
+        assert "default position 30% — gate dark" in result
 
     def test_sunset_offset_with_sunset_position(self, builder):
         """In window, is_sunset_active=True → reason from default handler mentions sunset."""
@@ -896,6 +931,7 @@ class TestPositionExplanationChangeDetection:
         coord._weather_readings = None
         coord._pipeline_result = _make_pr()
         type(coord).check_adaptive_time = PropertyMock(return_value=True)
+        type(coord).clock_window_open = PropertyMock(return_value=True)
         type(coord).after_start_time = PropertyMock(return_value=True)
         type(coord).before_end_time = PropertyMock(return_value=True)
         coord._time_mgr = MagicMock()

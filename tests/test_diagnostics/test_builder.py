@@ -345,7 +345,9 @@ class TestPositionExplanation:
             default_position=20, is_sunset_active=True, configured_sunset_pos=20
         )
         _, explanation = builder.build(
-            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
+            _base_ctx(
+                pipeline_result=pr, check_adaptive_time=False, clock_window_open=False
+            )
         )
         assert "sunset position" in explanation.lower()
         assert "20%" in explanation
@@ -355,7 +357,9 @@ class TestPositionExplanation:
         """Outside time window with no sunset_pos → shows 'default position'."""
         pr = _make_pr(default_position=10, is_sunset_active=False)
         _, explanation = builder.build(
-            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
+            _base_ctx(
+                pipeline_result=pr, check_adaptive_time=False, clock_window_open=False
+            )
         )
         assert "default position" in explanation.lower()
         assert "10%" in explanation
