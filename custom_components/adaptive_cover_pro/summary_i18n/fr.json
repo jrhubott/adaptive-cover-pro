@@ -104,7 +104,7 @@
     "irradiance_no_thresh": "rayonnement ({entity})",
     "coverage": "nuages > {thresh}%",
     "coverage_no_thresh": "nuages ({entity})",
-    "weather_in": "météo dans {{{states}}}",
+    "weather_in": "météo hors de {{{states}}}",
     "when": " quand {parts}",
     "fallback_cloudy": "position nuageux {pos}%",
     "fallback_default": "défaut ({default_pos}%)",
