@@ -1377,6 +1377,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # Update target so the next reconciliation compares against
             # My rather than the stale calculated state.
             self._cmd_svc.set_target(entity_id, int(my_position_value))
+            # Issue #1225: an external stop is a user action, not a safety
+            # decision, so revoke any safety licence the row still carries
+            # from an earlier, still-in-flight safety dispatch — unconditional
+            # on ``engaged``, since the My number now booked is a user action
+            # either way.
+            self._cmd_svc.revoke_safety_verdict(entity_id)
             # Issue #888: when the stop actually engaged the #875 override (not a
             # mid-move stop), record My as the display-only assumed position so
             # the card shows My. Confined to covers with no native position axis

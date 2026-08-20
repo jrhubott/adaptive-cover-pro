@@ -574,6 +574,25 @@ class CoverCommandService:
         for entity_id in list(self._state):
             self._revoke_safety_verdict(entity_id)
 
+    def revoke_safety_verdict(self, entity_id: str) -> None:
+        """Revoke one entity's safety licence for a booking no safety decision made.
+
+        Public sibling of :meth:`_revoke_safety_verdict`, for callers outside
+        this module — the coordinator, specifically — that need to invalidate
+        a single row's licence without reaching across the module boundary
+        into the private funnel. Same unconditional contract: not gated on
+        the booked target, not on the flag's current value.
+
+        Motivating caller: ``coordinator.async_check_cover_service_call``'s
+        external ``stop_cover`` handling (#1225). An external stop is a user
+        action, not a safety decision, so the My target it books is a pure
+        revoke — never a grant, mirroring the asymmetry
+        ``_record_safety_verdict`` already establishes for the
+        pipeline-routed dispatch path (revoke unconditionally, grant only
+        against that cycle's own ``routed_target``).
+        """
+        self._revoke_safety_verdict(entity_id)
+
     # ------------------------------------------------------------------ #
     # Assumed display position (issue #888) — display-only fallback for
     # open/close-only covers with no native position feedback.

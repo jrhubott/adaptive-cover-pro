@@ -376,6 +376,74 @@ async def test_external_stop_no_assumed_when_ignore_external() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Issue #1225: an external stop must not inherit a stale safety licence onto
+# the My booking it makes, regardless of whether the #875 override engaged.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_external_stop_revokes_stale_is_safety_when_not_engaged() -> None:
+    """A declined #875 override (mid-move stop) still revokes a stale safety licence.
+
+    Reproduces #1225: a safety dispatch (weather / force-override / safety
+    custom-position slot) still in flight when the user presses stop can leave
+    ``is_safety=True`` on the row. The #875 wait-for-target gate declines to
+    engage the override here (``engaged=False``), but the My booking still
+    happens — and until this fix, ``set_target`` alone left the stale licence
+    in place, letting a later cycle resend the safety target with automatic
+    control off or outside the time window.
+    """
+    from unittest.mock import patch
+
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = _make_coord_for_assumed(my_position=50, engaged=False)
+    entity_id = "cover.test_blind"
+    coord._cmd_svc.state(entity_id).is_safety = True
+
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value=_OPEN_CLOSE_ONLY,
+    ):
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(
+            coord, _stop_event()
+        )
+
+    assert coord._cmd_svc.is_safety_target(entity_id) is False
+
+
+@pytest.mark.asyncio
+async def test_external_stop_revokes_stale_is_safety_when_engaged() -> None:
+    """An engaged external stop also revokes a stale safety licence.
+
+    Companion to the declined case above: an external stop is a user action,
+    not a safety decision, either way — so the revoke is unconditional, not
+    gated on whether the #875 override engaged.
+    """
+    from unittest.mock import patch
+
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = _make_coord_for_assumed(my_position=50, engaged=True)
+    entity_id = "cover.test_blind"
+    coord._cmd_svc.state(entity_id).is_safety = True
+
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value=_OPEN_CLOSE_ONLY,
+    ):
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(
+            coord, _stop_event()
+        )
+
+    assert coord._cmd_svc.is_safety_target(entity_id) is False
+
+
+# ---------------------------------------------------------------------------
 # Issue #888 follow-up: the ACP `stop` service (card stop button) records My
 # for open/close-only covers, mirroring the external stop→My path above.
 # ---------------------------------------------------------------------------
