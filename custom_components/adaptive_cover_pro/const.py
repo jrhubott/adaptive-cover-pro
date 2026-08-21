@@ -1352,6 +1352,13 @@ CONF_WEATHER_SEVERE_TEMPLATE = "weather_severe_template"  # truthy = severe
 CONF_WEATHER_SEVERE_TEMPLATE_MODE = "weather_severe_template_mode"
 # Position commanded during weather override (range 0-100).
 CONF_WEATHER_OVERRIDE_POSITION = "weather_override_position"
+# Slat angle commanded alongside that position during a weather retraction
+# (range 0-100, issue #1297). Surfaced only on cover types whose policy sets
+# CoverTypePolicy.weather_override_includes_tilt — venetians today, because
+# they are the only type with a slat axis independent of the carriage. Has NO
+# default: absent means the handler names no tilt and the slats are left where
+# the previous cycle put them, which is the pre-#1297 behaviour.
+CONF_WEATHER_OVERRIDE_TILT = "weather_override_tilt"
 # If True, weather override is only enforced as a min position.
 CONF_WEATHER_OVERRIDE_MIN_MODE = "weather_override_min_mode"
 CONF_WEATHER_TIMEOUT = "weather_timeout"  # resume delay after clear, s (0-3600)

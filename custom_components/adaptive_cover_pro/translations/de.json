@@ -665,7 +665,8 @@
           "weather_enabled": "Wetter-Übersteuerung aktivieren",
           "weather_outside_window": "Außerhalb des Zeitfensters wirken",
           "weather_severe_template": "Unwetter-Vorlage (optional)",
-          "weather_severe_template_mode": "Unwetter-Vorlage-Logik"
+          "weather_severe_template_mode": "Unwetter-Vorlage-Logik",
+          "weather_override_tilt": "Übersteuerungsneigung"
         },
         "data_description": {
           "weather_bypass_auto_control": "Wenn aktiviert, wird die Wetterübersteuerung Beschattungen weiterhin zur konfigurierten Position bewegen, auch wenn der Schalter für automatische Steuerung ausgeschaltet ist. Dies stellt sicher, dass der Schutz vor Wind, Regen und schwerem Wetter unabhängig vom Automatisierungsstatus immer aktiv ist. Deaktivieren Sie dies nur, wenn die Wetterübersteuerung dem Schalter für automatische Steuerung folgen soll.",
@@ -688,7 +689,8 @@
           "weather_enabled": "Hauptschalter für Wetter-Sicherheitsübersteuerungen (Wind, Regen, extreme Bedingungen). Wenn deaktiviert, werden die konfigurierten Wettersensoren ignoriert. Bestehende Beschattungen behalten diese Einstellung nach dem Update; neue Beschattungen starten deaktiviert.",
           "weather_outside_window": "Wenn aktiviert (Standard), schützen Wetter-Übersteuerungen die Beschattungen auch nach dem Ende des Zeitfensters — ein Sturm um 03:00 Uhr fährt eine Markise weiterhin ein. Deaktivieren Sie diese Option, um die Wettersicherung auf das konfigurierte Start-/Endfenster zu begrenzen; außerhalb davon folgt die Beschattung stattdessen der Fensterende- oder Sonnenuntergangs-Position und das Wetter schützt sie nachts nicht. Lassen Sie die Option aktiviert, sofern Sie die Wetter-Übersteuerung nicht als Komfortregel statt als Geräteschutz verwenden.",
           "weather_severe_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob schwerwiegendes Unwetter vorhanden ist (Hagel, Frost, Gewitter usw.). Wenn sie wahr (on/true/1) erbracht wird, wird die Übersteuerung aktiviert. Wie sie mit den Unwetter-Sensoren oben (OR oder AND) kombiniert, wird durch die „Unwetter-Vorlage-Logik“ unten eingestellt; sie kann eigenständig ohne Sensoren funktionieren und reagiert sofort, wenn sich die Vorlage ändert. Beispiel: ‘schwerwiegend’ aus der Vorhersage-Bedingung einer Wetter-Entität ableiten. Eine Vorlage, die leer ist oder nicht erbracht werden kann, gibt keine Meinung ab (kein Rückzug). Leer lassen zum Deaktivieren.",
-          "weather_severe_template_mode": "Wie die Unwetter-Vorlage mit den Unwetter-Sensoren oben kombiniert. 'OR' (Standard) – schwerwiegend, wenn die Vorlage wahr ist ODER ein Sensor EIN ist. 'AND' – schwerwiegend nur, wenn die Vorlage wahr ist UND mindestens ein Sensor EIN ist. Ohne konfigurierte Sensoren entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Unwetter-Vorlage eingestellt ist."
+          "weather_severe_template_mode": "Wie die Unwetter-Vorlage mit den Unwetter-Sensoren oben kombiniert. 'OR' (Standard) – schwerwiegend, wenn die Vorlage wahr ist ODER ein Sensor EIN ist. 'AND' – schwerwiegend nur, wenn die Vorlage wahr ist UND mindestens ein Sensor EIN ist. Ohne konfigurierte Sensoren entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Unwetter-Vorlage eingestellt ist.",
+          "weather_override_tilt": "Lamellenneigung (0–100 %), um die Neigung einzustellen, wenn die Wetterübersteuerung aktiv ist. 0 % = Lamellen geschlossen, 100 % = Lamellen offen. Leer lassen, um die Lamellen dort zu behalten, wo sie sind (aktuelles Verhalten). Nicht angewendet, während „Minimale Positionsmodus\" eingeschaltet ist — in diesem Modus erhöht das Wetter nur eine Mindestposition."
         }
       },
       "weather": {
@@ -2152,6 +2154,10 @@
         "weather_wind_speed_threshold": {
           "description": "Windgeschwindigkeit oberhalb derer die Beschattung eingezogen wird.",
           "name": "Windgeschwindigkeits-Schwellwert"
+        },
+        "weather_override_tilt": {
+          "name": "Wetter-Übersteuerungs-Neigung",
+          "description": "Lamellenneigung zum Einstellen wenn eine Wetterbedingung ausgelöst wird (0–100%). Nur Jalousien; null = Lamellen nicht ändern."
         }
       },
       "name": "Wetter-Sicherheitseinstellungen einstellen"

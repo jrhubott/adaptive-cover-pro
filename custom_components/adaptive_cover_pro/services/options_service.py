@@ -212,6 +212,7 @@ from ..const import (
     CONF_WEATHER_OUTSIDE_WINDOW,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_WEATHER_PRIORITY,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
@@ -729,6 +730,11 @@ FIELD_VALIDATORS: dict[str, Any] = {
         *[m.value for m in TemplateCombineMode]
     ),
     CONF_WEATHER_OVERRIDE_POSITION: _range(CONF_WEATHER_OVERRIDE_POSITION),
+    # Venetian-only slat angle for the retraction (#1297) — None leaves the
+    # slats alone. Gated out of the UI by the policy, but the service seat is
+    # ungated like every other key here; the coordinator simply ignores a tilt
+    # a single-axis cover cannot act on.
+    CONF_WEATHER_OVERRIDE_TILT: _range(CONF_WEATHER_OVERRIDE_TILT),
     CONF_WEATHER_OVERRIDE_MIN_MODE: _bool_v(),
     CONF_WEATHER_TIMEOUT: _range(CONF_WEATHER_TIMEOUT),
     # Built-in handler priority overrides (1-99; clear to restore class default)
@@ -880,6 +886,9 @@ _SECTION_WEATHER_SAFETY = frozenset(
         CONF_WEATHER_SEVERE_TEMPLATE,
         CONF_WEATHER_SEVERE_TEMPLATE_MODE,
         CONF_WEATHER_OVERRIDE_POSITION,
+        # Has a FIELD_VALIDATORS entry, so it must be service-settable too —
+        # else the validator is dead code and the key silently dropped (#1297).
+        CONF_WEATHER_OVERRIDE_TILT,
         CONF_WEATHER_OVERRIDE_MIN_MODE,
         CONF_WEATHER_TIMEOUT,
     }

@@ -107,7 +107,7 @@ class BlindPolicy(CoverTypePolicy, register=True):
 
         if section == cf.SECTION_SUN_TRACKING:
             return (CONF_ENABLE_GLARE_ZONES,)
-        return ()
+        return super().extra_field_keys(section)
 
     def wiki_anchor(self) -> str:
         """Vertical-blind geometry page."""

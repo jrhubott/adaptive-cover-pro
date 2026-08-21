@@ -261,19 +261,15 @@ class VenetianPolicy(CoverTypePolicy, register=True):
     axes: ClassVar[tuple[CoverAxis, ...]] = (POSITION_AXIS, TILT_AXIS)
     exposes_dual_axis_sensor: ClassVar[bool] = True
     custom_position_includes_tilt: ClassVar[bool] = True
+    # Venetians are the one cover type with an independent slat angle, so they
+    # are the one type that can be told what angle to take during a weather
+    # retraction (#1297).
+    weather_override_includes_tilt: ClassVar[bool] = True
     # Venetians carry the same window geometry (width + reveal depth) and fov
     # sliders as vertical blinds, so they get the "Generate FOV from
     # measurements" button too (#565). The toggle is inserted by the shared
     # ``fov_compute_schema`` on the base policy.
     supports_fov_compute: ClassVar[bool] = True
-
-    def extra_field_keys(self, section: str) -> tuple[str, ...]:
-        """Venetians add per-slot + global tilt fields to custom position."""
-        from ... import config_fields as cf
-
-        if section == cf.SECTION_CUSTOM_POSITION:
-            return cf.CUSTOM_POSITION_TILT_KEYS
-        return ()
 
     def wiki_anchor(self) -> str:
         """Dual-axis venetian wiki page."""

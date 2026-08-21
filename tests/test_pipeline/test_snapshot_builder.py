@@ -35,6 +35,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_WINTER_CLOSE_INSULATION,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -1827,3 +1828,43 @@ async def test_update_cycle_threads_cover_positions_into_build(hass):
 
     assert captured["cover_positions"] == captured["live"]
     assert captured["cover_positions"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("opts", "expected"),
+    [
+        ({CONF_WEATHER_OVERRIDE_TILT: 100}, 100),
+        ({CONF_WEATHER_OVERRIDE_TILT: 0}, 0),
+        ({}, None),
+    ],
+    ids=["configured", "zero-is-not-unset", "absent"],
+)
+def test_build_reads_the_weather_override_tilt(opts, expected):
+    """The weather slat angle rides onto the snapshot beside its position (#1297).
+
+    The ``absent`` row is the one that matters: no stored key must produce
+    ``None``, not a default, because ``None`` is what tells the handler to
+    claim no tilt and leave the slats alone. The ``0`` row guards the usual
+    optional-percentage trap — a closed slat is a real value, not "unset".
+    """
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+
+    snapshot = builder.build(
+        opts,
+        cover_data=cover_data,
+        cover_type="cover_venetian",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=True,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: False,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.weather_override_tilt == expected

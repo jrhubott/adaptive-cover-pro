@@ -76,6 +76,11 @@ class WeatherOverrideHandler(OverrideHandler):
             bypass_note = Reason(ReasonCode.FRAGMENT_BYPASS_NOTE)
         return PipelineResult(
             position=pos,
+            # The winner naming its own tilt is one of exactly two sanctioned
+            # ways to drive the tilt axis (registry.py, #1153) — the same seam
+            # ``CustomPositionHandler`` uses. None here means "no claim", which
+            # leaves a dual-axis policy on its engine path (#1297).
+            tilt=snapshot.weather_override_tilt,
             control_method=ControlMethod.WEATHER,
             reason_payload=Reason(
                 ReasonCode.WEATHER_ACTIVE,

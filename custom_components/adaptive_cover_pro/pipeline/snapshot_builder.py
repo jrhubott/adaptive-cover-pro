@@ -95,6 +95,7 @@ from ..const import (
     CONF_WEATHER_OUTSIDE_WINDOW,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_WEATHER_STATE,
     CONF_TRACKING_SEASONS,
     CONF_WINTER_CLOSE_INSULATION,
@@ -867,6 +868,10 @@ class PipelineSnapshotBuilder:
             motion_timeout_active=motion_timeout_active,
             weather_override_active=weather_override_active,
             weather_override_position=options.get(CONF_WEATHER_OVERRIDE_POSITION, 0),
+            # No fallback on purpose (#1297): an absent key must arrive as None
+            # so the handler claims no tilt. A default here would start moving
+            # the slats of every venetian that upgraded without opting in.
+            weather_override_tilt=options.get(CONF_WEATHER_OVERRIDE_TILT),
             weather_override_min_mode=bool(
                 options.get(CONF_WEATHER_OVERRIDE_MIN_MODE, False)
             ),

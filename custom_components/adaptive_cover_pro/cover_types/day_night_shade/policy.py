@@ -340,14 +340,6 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
 
     # ---- Identity / labels -------------------------------------------- #
 
-    def extra_field_keys(self, section: str) -> tuple[str, ...]:
-        """Add per-slot + global fabric-blend (tilt) fields to custom position."""
-        from ... import config_fields as cf
-
-        if section == cf.SECTION_CUSTOM_POSITION:
-            return cf.CUSTOM_POSITION_TILT_KEYS
-        return ()
-
     def wiki_anchor(self) -> str:
         """Day/Night shade wiki page."""
         return "Configuration-Day-Night-Shade"

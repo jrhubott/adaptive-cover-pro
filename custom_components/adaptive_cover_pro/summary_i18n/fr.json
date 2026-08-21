@@ -28,7 +28,7 @@
     "template_value": "[template]"
   },
   "rules": {
-    "weather": "🌧️ Sécurité météo : si {wx_condition} → stores se rétractent à {weather_pos}%{weather_min}{delay}{bypass}",
+    "weather": "🌧️ Sécurité météo : si {wx_condition} → stores se rétractent à {weather_pos}%{weather_min}{weather_tilt}{delay}{bypass}",
     "manual": "✋ Dérogation manuelle : pause le contrôle automatique quand vous bougez le store{detail}",
     "custom_tilt_only": "🎯 {label} : si {trigger} est activé → inclinaison seulement (lamelle fixée à {slat}% ; position pilotée par le suivi solaire)",
     "custom": "🎯 {label} : si {trigger} est activé → {target}{cp_min}{tilt_note} — contourne les portes delta et le contrôle automatique{safety}",
@@ -96,7 +96,8 @@
     "custom_tilt_only_no_effect": "⚠️ {label} : inclinaison seulement est activé sans angle de lamelle et sans limite d'inclinaison configurée — cet emplacement n'a aucun effet.",
     "custom_outside_window_no_bounds": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais cet emplacement ne configure aucun minimum ni maximum — le réglage n'a aucun effet. Seules les limites min/max restent actives là-bas ; une position exacte jamais.",
     "custom_outside_window_redundant": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais la priorité 100 agit déjà hors de la plage horaire (et passe outre le contrôle automatique et les seuils delta) — le réglage ne change rien ici.",
-    "weather_window_scoped": "⚠️ La sécurité météo n'agit qu'à l'intérieur de la plage horaire — en dehors, le store suit la position de fin de plage / coucher du soleil, et la météo ne le protégera pas la nuit."
+    "weather_window_scoped": "⚠️ La sécurité météo n'agit qu'à l'intérieur de la plage horaire — en dehors, le store suit la position de fin de plage / coucher du soleil, et la météo ne le protégera pas la nuit.",
+    "weather_tilt_min_mode": "⚠️ Une inclinaison de dérogation météo est définie mais le mode de position minimale est activé — en mode de position minimale la météo ne relève que le plancher de position pour une autre règle à satisfaire et ne règle jamais les lamelles, donc l'inclinaison est ignorée."
   },
   "motion": {
     "action_hold": "les stores maintiennent la position actuelle (retournent à la position par défaut quand le soleil quitte l'angle d'ouverture solaire)",

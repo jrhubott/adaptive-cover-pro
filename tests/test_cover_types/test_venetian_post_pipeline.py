@@ -6,6 +6,7 @@ and the tilt-only mode position rewrite.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,6 +22,11 @@ from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 def _make_result(method: ControlMethod, position: int = 50) -> PipelineResult:
     return PipelineResult(position=position, control_method=method, reason="test")
+
+
+#: Slats fully open — a plausible storm angle, and distinct from every position
+#: literal in this file so a mixed-up axis shows in the assertion diff.
+_WEATHER_TILT = 100
 
 
 def _make_policy() -> VenetianPolicy:
@@ -1252,3 +1258,35 @@ class TestReporterNightWindowContact:
         assert result.outside_window_constraint_active is False
         assert result.hold_clamp_verdicts is None
         assert result.tilt is None
+
+
+class TestPostPipelineResolveWeatherTilt:
+    """A weather retraction may now name the slat angle it wants (issue #1297).
+
+    ``post_pipeline_resolve`` needed no edit for this: the handler-supplied
+    tilt branch already honors an explicit claim unconditionally, whatever
+    control method produced it. These tests pin that it really does apply to
+    ``WEATHER`` — and that the no-claim case still falls through to the
+    engine-suppressed branch and leaves the slats alone.
+    """
+
+    def test_weather_result_tilt_is_honored(self):
+        policy = _make_policy()
+        result = replace(
+            _make_result(ControlMethod.WEATHER, position=0), tilt=_WEATHER_TILT
+        )
+        out = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+        assert out.tilt == _WEATHER_TILT
+
+    def test_weather_result_without_a_tilt_leaves_the_slats_alone(self):
+        """Pins today's contract, which must survive #1297 untouched.
+
+        An install that never set a weather tilt gets ``tilt=None`` out of the
+        handler, so no ``set_cover_tilt_position`` is dispatched and the slats
+        hold whatever the previous cycle left them at.
+        """
+        policy = _make_policy()
+        out = policy.post_pipeline_resolve(
+            _make_result(ControlMethod.WEATHER, position=0), **_non_solar_kwargs()
+        )
+        assert out.tilt is None

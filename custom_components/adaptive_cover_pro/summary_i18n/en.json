@@ -28,7 +28,7 @@
     "template_value": "[template]"
   },
   "rules": {
-    "weather": "🌧️ Weather safety: if {wx_condition} → covers retract to {weather_pos}%{weather_min}{delay}{bypass}",
+    "weather": "🌧️ Weather safety: if {wx_condition} → covers retract to {weather_pos}%{weather_min}{weather_tilt}{delay}{bypass}",
     "manual": "✋ Manual override: pauses automatic control when you move the cover{detail}",
     "custom_tilt_only": "🎯 {label}: if {trigger} is on → tilt only (slat fixed at {slat}%; position driven by sun tracking)",
     "custom": "🎯 {label}: if {trigger} is on → {target}{cp_min}{tilt_note} — bypasses delta gates and auto-control{safety}",
@@ -96,7 +96,8 @@
     "group_empty": "⚠️ This group has no members — it will not command anything.",
     "forecast_source_no_weather_entity": "⚠️ Outdoor-temperature source is forecast-based but no weather entity is configured — the forecast will silently fall back to the live reading. Configure a weather entity in Weather, Light & Cloud.",
     "travel_time_unmeasurable": "⚠️ {entities} report an assumed state, so their travel time cannot be measured and none has been entered — dashboards will not show them moving. Enter a time under Calibration → Travel Time.",
-    "weather_window_scoped": "⚠️ Weather safety only acts inside the time window — outside it the cover follows the end-of-window / sunset position instead, and weather will not protect it overnight."
+    "weather_window_scoped": "⚠️ Weather safety only acts inside the time window — outside it the cover follows the end-of-window / sunset position instead, and weather will not protect it overnight.",
+    "weather_tilt_min_mode": "⚠️ A weather safety tilt is set but minimum position mode is on — in minimum mode weather only raises a position floor for another rule to satisfy and never sets the slats, so the tilt is ignored."
   },
   "motion": {
     "template_source": "occupancy template",
