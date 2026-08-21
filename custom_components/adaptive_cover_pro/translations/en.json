@@ -764,6 +764,7 @@
           "weather_severe_template_mode": "Severe weather template logic",
           "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
           "weather_override_position": "Override position",
+          "weather_override_tilt": "Override tilt",
           "weather_override_min_mode": "Minimum position mode",
           "weather_timeout": "Clear delay"
         },
@@ -787,6 +788,7 @@
           "weather_severe_template_mode": "How the severe weather template combines with the severe weather sensors above. 'OR' (default) — severe when the template is truthy OR any sensor is ON. 'AND' — severe only when the template is truthy AND at least one sensor is ON. With no sensors configured, the template alone decides in either mode. Only has an effect when a severe weather template is set above.",
           "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
           "weather_override_position": "Position (0-100%) to move covers to when weather override is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "weather_override_tilt": "Slat tilt (0-100%) to set when the weather override is active. 0% = slats closed, 100% = slats open. Leave empty to keep the slats where they are (today's behaviour). Not applied while 'Minimum position mode' is on — in that mode weather only raises a position floor.",
           "weather_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position.",
           "weather_timeout": "Seconds to wait after ALL conditions clear before resuming normal control. Prevents rapid toggling during gusty or intermittent conditions. Set to 0 for instant resume."
         }
@@ -2027,6 +2029,10 @@
         "weather_override_position": {
           "name": "Weather override position",
           "description": "Position to move to when weather override is triggered (0–100%)."
+        },
+        "weather_override_tilt": {
+          "name": "Weather override tilt",
+          "description": "Slat tilt to set when a weather condition is triggered (0–100%). Venetian blinds only; null = leave the slats alone."
         },
         "weather_override_min_mode": {
           "name": "Minimum position mode",

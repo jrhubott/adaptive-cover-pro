@@ -252,6 +252,25 @@ def test_weather_outside_window_is_service_settable() -> None:
 
 
 @pytest.mark.unit
+def test_weather_override_tilt_is_service_settable() -> None:
+    """The #1297 slat angle must be reachable from ``set_weather_safety``.
+
+    Same convention as every other weather key: a FIELD_VALIDATORS entry with
+    no service seat is dead code. The range is the shared tilt range — a second
+    ``(0, 100)`` constant for the same axis would be exactly the duplicate the
+    no-magic-numbers rule bans.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OVERRIDE_TILT
+    from custom_components.adaptive_cover_pro.services.options_service import (
+        ALL_SETTABLE_KEYS,
+    )
+
+    assert CONF_WEATHER_OVERRIDE_TILT in FIELD_VALIDATORS
+    assert CONF_WEATHER_OVERRIDE_TILT in ALL_SETTABLE_KEYS
+    assert OPTION_RANGES[CONF_WEATHER_OVERRIDE_TILT] == (0, 100)
+
+
+@pytest.mark.unit
 def test_weather_outside_window_selector_defaults_to_acting_outside() -> None:
     """The weather step offers the opt-out, pre-ticked to today's behaviour."""
     from custom_components.adaptive_cover_pro.config_dynamic import (

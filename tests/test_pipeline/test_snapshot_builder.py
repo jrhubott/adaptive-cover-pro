@@ -35,6 +35,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_WINTER_CLOSE_INSULATION,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -42,6 +43,7 @@ from custom_components.adaptive_cover_pro.const import (
     AxisConstraintMode,
     TrackingSeason,
 )
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.pipeline.handlers.weather import (
     WeatherOverrideHandler,
 )
@@ -80,6 +82,7 @@ def _make_builder(
     motion_control: bool = False,
     states: dict | None = None,
     time_mgr=None,
+    policy=None,
 ):
     hass = MagicMock()
     states_map = states or {}
@@ -99,8 +102,9 @@ def _make_builder(
     toggles.switch_mode = switch_mode
     toggles.motion_control = motion_control
 
-    policy = MagicMock()
-    policy.glare_zones_config.return_value = None
+    if policy is None:
+        policy = MagicMock()
+        policy.glare_zones_config.return_value = None
 
     builder = PipelineSnapshotBuilder(
         hass=hass,
@@ -1827,3 +1831,93 @@ async def test_update_cycle_threads_cover_positions_into_build(hass):
 
     assert captured["cover_positions"] == captured["live"]
     assert captured["cover_positions"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("opts", "expected"),
+    [
+        ({CONF_WEATHER_OVERRIDE_TILT: 100}, 100),
+        ({CONF_WEATHER_OVERRIDE_TILT: 0}, 0),
+        ({}, None),
+    ],
+    ids=["configured", "zero-is-not-unset", "absent"],
+)
+def test_build_reads_the_weather_override_tilt(opts, expected):
+    """The weather slat angle rides onto the snapshot beside its position (#1297).
+
+    The ``absent`` row is the one that matters: no stored key must produce
+    ``None``, not a default, because ``None`` is what tells the handler to
+    claim no tilt and leave the slats alone. The ``0`` row guards the usual
+    optional-percentage trap — a closed slat is a real value, not "unset".
+    """
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+
+    snapshot = builder.build(
+        opts,
+        cover_data=cover_data,
+        cover_type="cover_venetian",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=True,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: False,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.weather_override_tilt == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("cover_type", "expected"),
+    [
+        ("cover_venetian", 100),
+        ("cover_day_night_shade", None),
+    ],
+    ids=["venetian-claims-the-slat-angle", "day-night-shade-drops-it"],
+)
+def test_build_gates_the_weather_override_tilt_on_the_policy(cover_type, expected):
+    """A stored slat angle only reaches the pipeline on a type that has slats.
+
+    ``weather_override_includes_tilt`` gates the config-flow field, but the key
+    can still be *stored* on a type that never shows it: ``acp.set_weather_safety``
+    writes it without a cover-type gate, and a venetian → day/night cover-type
+    switch deliberately deletes nothing (#1132). Read ungated, a day/night shade
+    holding ``weather_override_tilt: 100`` would be driven to a 100 % blackout
+    fabric on every weather retraction — an axis its policy says the weather
+    override must never touch, with no UI field to see or clear it.
+
+    Gating the read here rather than in the handler closes all three routes at
+    once (service, type switch, hand-edited options) on the one seam that builds
+    every ``PipelineSnapshot``.
+
+    The venetian row is the no-change guard: ``weather_override_includes_tilt``
+    is True there, so ``options.get()`` is reached exactly as it was before.
+    """
+    policy = get_policy(cover_type)
+    builder, _, _ = _make_builder(policy=policy)
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+
+    snapshot = builder.build(
+        {CONF_WEATHER_OVERRIDE_TILT: 100},
+        cover_data=cover_data,
+        cover_type=cover_type,
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=True,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: False,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.weather_override_tilt == expected

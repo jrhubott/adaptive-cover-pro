@@ -422,6 +422,17 @@ class PipelineSnapshot:
     # the handler returns max(configured, raw_calculated) instead of always returning configured.
     weather_override_min_mode: bool = False
 
+    # Slat angle to command while the weather override holds the full-override
+    # seat (issue #1297). None = name no tilt, so a dual-axis policy falls back
+    # to its engine path and the slats are left alone — the pre-#1297
+    # behaviour, and what makes the option shippable with no migration.
+    #
+    # Deliberately NOT read by the min-mode floor: in min mode the handler
+    # defers and a lower-priority handler wins the seat, and a handler the
+    # pipeline explicitly outprioritized must never drive the tilt axis
+    # (#1153, registry.py:891-897). The config summary warns instead.
+    weather_override_tilt: int | None = None
+
     # When False, the weather override is scoped to the user's operational
     # window and stops acting once it closes (issue #1308). Weather is the one
     # override with no window gate, and its ``is_safety`` flag is the

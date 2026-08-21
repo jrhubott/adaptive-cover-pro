@@ -893,6 +893,32 @@ def test_custom_position_includes_tilt(cover_type: str, expected: bool) -> None:
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
+    ("cover_type", "expected"),
+    [
+        ("cover_blind", False),
+        ("cover_awning", False),
+        ("cover_tilt", False),
+        ("cover_venetian", True),
+        ("cover_louvered_roof", False),
+        ("cover_day_night_shade", False),
+        ("cover_dual_panel", False),
+    ],
+)
+def test_weather_override_includes_tilt(cover_type: str, expected: bool) -> None:
+    """The weather-override step surfaces a tilt slider only for venetian (#1297).
+
+    Deliberately NOT the same row set as ``custom_position_includes_tilt``:
+    ``cover_day_night_shade`` is True there and False here. Its second axis is
+    a *fabric blend* (sheer ↔ blackout), not a slat angle, so "what angle do
+    the slats take during a storm" has no meaning for it. Two ClassVars, not
+    one, is what lets the two questions diverge — a single shared flag would
+    force a fabric-blend field onto the day/night weather step.
+    """
+    assert get_policy(cover_type).weather_override_includes_tilt is expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
     ("cover_type", "anchor"),
     [
         ("cover_blind", "Configuration-Vertical"),

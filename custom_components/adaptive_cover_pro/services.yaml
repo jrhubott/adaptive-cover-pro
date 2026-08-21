@@ -1000,6 +1000,16 @@ set_weather_safety:
           step: 1
           mode: slider
           unit_of_measurement: "%"
+    weather_override_tilt:
+      name: Weather override tilt
+      description: "Slat tilt to set when a weather condition is triggered (0–100%). Venetian blinds only; null = leave the slats alone."
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
     weather_override_min_mode:
       name: Minimum position mode
       description: "If true, treat weather_override_position as a minimum floor."

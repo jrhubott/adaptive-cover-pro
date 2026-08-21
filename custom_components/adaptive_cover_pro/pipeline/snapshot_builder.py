@@ -95,6 +95,7 @@ from ..const import (
     CONF_WEATHER_OUTSIDE_WINDOW,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_WEATHER_STATE,
     CONF_TRACKING_SEASONS,
     CONF_WINTER_CLOSE_INSULATION,
@@ -867,6 +868,26 @@ class PipelineSnapshotBuilder:
             motion_timeout_active=motion_timeout_active,
             weather_override_active=weather_override_active,
             weather_override_position=options.get(CONF_WEATHER_OVERRIDE_POSITION, 0),
+            # No fallback on purpose (#1297): an absent key must arrive as None
+            # so the handler claims no tilt. A default here would start moving
+            # the slats of every venetian that upgraded without opting in.
+            #
+            # Gated on the same policy ClassVar the config flow and the config
+            # summary already use, because a *stored* key outlives the UI that
+            # offered it: ``acp.set_weather_safety`` writes it with no
+            # cover-type gate, and a venetian → day/night switch deliberately
+            # deletes nothing (#1132). Read ungated, a day/night shade holding
+            # a stray value would be driven to that fabric blend on every
+            # weather retraction — the axis its policy says the weather
+            # override must never touch — with no field left to clear it.
+            # This is the single seam that builds every PipelineSnapshot, so
+            # gating here closes the service, type-switch, and hand-edited
+            # routes at once and leaves the handler unchanged.
+            weather_override_tilt=(
+                options.get(CONF_WEATHER_OVERRIDE_TILT)
+                if self._policy.weather_override_includes_tilt
+                else None
+            ),
             weather_override_min_mode=bool(
                 options.get(CONF_WEATHER_OVERRIDE_MIN_MODE, False)
             ),

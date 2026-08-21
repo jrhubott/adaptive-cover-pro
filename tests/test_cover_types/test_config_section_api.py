@@ -14,7 +14,11 @@ import pytest
 
 from custom_components.adaptive_cover_pro import config_fields as cf
 from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
-from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+from custom_components.adaptive_cover_pro.const import (
+    CONF_DEFAULT_HEIGHT,
+    CONF_ENABLE_GLARE_ZONES,
+    CONF_WEATHER_OVERRIDE_TILT,
+)
 from custom_components.adaptive_cover_pro.cover_types import POLICY_REGISTRY, get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import (
     POSITION_AXIS,
@@ -84,3 +88,37 @@ def test_disabled_value_round_trips_unchanged():
         CONF_DEFAULT_HEIGHT
         not in policy.build_section_schema(cf.SECTION_POSITION, None, stored).schema
     )
+
+
+# ``extra_field_keys`` answers three independent questions, one per section, and
+# the answers used to be spread across three policy overrides. These
+# parametrised assertions pin the full per-section answer for every registered
+# cover type, so hoisting the branches onto the base is provably
+# behaviour-preserving rather than merely plausible.
+_CUSTOM_POSITION_TILT_TYPES = {"cover_venetian", "cover_day_night_shade"}
+_GLARE_ZONE_TYPES = {"cover_blind"}
+_WEATHER_OVERRIDE_TILT_TYPES = {"cover_venetian"}
+
+
+@pytest.mark.parametrize("cover_type", sorted(POLICY_REGISTRY, key=str))
+def test_extra_field_keys_per_section_per_cover_type(cover_type):
+    """Every registered policy's per-section extras, stated once, in one place.
+
+    ``cover_day_night_shade`` is in the custom-position set but NOT the weather
+    set: its second axis is a fabric blend, not a slat angle (#1297).
+    """
+    policy = get_policy(cover_type)
+    name = str(cover_type)
+
+    expected_custom = (
+        cf.CUSTOM_POSITION_TILT_KEYS if name in _CUSTOM_POSITION_TILT_TYPES else ()
+    )
+    assert policy.extra_field_keys(cf.SECTION_CUSTOM_POSITION) == expected_custom
+
+    expected_sun = (CONF_ENABLE_GLARE_ZONES,) if name in _GLARE_ZONE_TYPES else ()
+    assert policy.extra_field_keys(cf.SECTION_SUN_TRACKING) == expected_sun
+
+    expected_weather = (
+        (CONF_WEATHER_OVERRIDE_TILT,) if name in _WEATHER_OVERRIDE_TILT_TYPES else ()
+    )
+    assert policy.extra_field_keys(cf.SECTION_WEATHER_OVERRIDE) == expected_weather

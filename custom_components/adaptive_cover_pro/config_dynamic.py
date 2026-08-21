@@ -529,7 +529,10 @@ def blind_spot_slot_schema(slot_n: int, options: dict | None = None) -> vol.Sche
 
 
 def weather_override_schema(
-    hass: HomeAssistant | None = None, options: dict | None = None
+    hass: HomeAssistant | None = None,
+    options: dict | None = None,
+    *,
+    include_tilt: bool = False,
 ) -> vol.Schema:
     """Weather-override schema. Wind/rain thresholds accept number or template.
 
@@ -537,6 +540,11 @@ def weather_override_schema(
     every cover type, alongside the thresholds/position/timeout fields. Linked
     covers also show the profile-owned pickers (pre-filled with the inherited
     value) under the inherit/override model — changing one records a local override.
+
+    ``include_tilt`` adds the retraction slat angle (#1297). Off by default so
+    the module-level ``WEATHER_OVERRIDE_SCHEMA`` and every single-axis cover
+    type render exactly as before; callers pass the value of the policy's
+    ``weather_override_includes_tilt``, never a cover-type comparison.
     """
     schema: dict = {
         # Master on/off toggle for the whole feature (issue #719). New covers
@@ -611,6 +619,21 @@ def weather_override_schema(
                     unit_of_measurement="%",
                 )
             ),
+        }
+    )
+    if include_tilt:
+        # Straight from the registry so the marker's clearable/no-default shape
+        # and the slider config are stated once, in the FieldSpec — the same
+        # single-source idiom ``light_cloud_schema`` uses for the irradiance
+        # plane. Rendered here, between the position it accompanies and the
+        # min-mode switch that decides how both are applied.
+        from .config_fields import FIELD_SPECS
+        from .const import CONF_WEATHER_OVERRIDE_TILT
+
+        marker, sel = FIELD_SPECS[CONF_WEATHER_OVERRIDE_TILT].to_marker(hass, options)
+        schema[marker] = sel
+    schema.update(
+        {
             vol.Optional(
                 CONF_WEATHER_OVERRIDE_MIN_MODE, default=False
             ): selector.BooleanSelector(),

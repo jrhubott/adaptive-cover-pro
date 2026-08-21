@@ -37,6 +37,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_SCOPE,
     CONF_VENETIAN_TILT_SKIP_MODE,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_ENABLE_PROXY_COVER,
     CONF_ENTITIES,
     CONF_OUTSIDE_TEMP_SOURCE,
@@ -767,3 +768,93 @@ def test_irradiance_plane_is_not_on_the_geometry_step() -> None:
     assert "irradiance_plane" not in _schema_keys(
         cf._get_geometry_schema("cover_blind")
     )
+
+
+# ---------------------------------------------------------------------------
+# Weather-override slat angle (#1297): a second axis only exists on venetians,
+# so the slider is opt-in per cover type. ``cover_tilt`` deliberately does NOT
+# get it — its primary axis IS the slat, so weather_override_position already
+# sets the angle and a second field would contradict the first.
+# ---------------------------------------------------------------------------
+
+
+def test_weather_override_tilt_slider_only_with_include_tilt() -> None:
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+
+    assert CONF_WEATHER_OVERRIDE_TILT not in _schema_keys(weather_override_schema())
+    assert CONF_WEATHER_OVERRIDE_TILT in _schema_keys(
+        weather_override_schema(include_tilt=True)
+    )
+
+
+def test_weather_override_tilt_has_no_default_so_unset_round_trips() -> None:
+    """Blank means "leave the slats alone", so it must stay absent (#1267).
+
+    A bare ``vol.Optional`` with no default is what makes voluptuous omit the
+    key from ``user_input`` when the user clears the slider, which in turn is
+    what lets ``optional_entities`` null it. Give this marker a default and the
+    field becomes uncleanable. The end-to-end round trip through the real
+    options flow is pinned by ``test_weather_override_tilt_saves_and_clears``
+    in ``tests/test_config_flow_integration.py`` — this schema cannot be
+    ``__call__``-ed here, because a sibling threshold field validates against
+    the event loop.
+    """
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+
+    schema = weather_override_schema(include_tilt=True)
+    marker = next(k for k in schema.schema if str(k) == CONF_WEATHER_OVERRIDE_TILT)
+    assert isinstance(marker, vol.Optional)
+    assert marker.default is vol.UNDEFINED
+
+
+def test_weather_override_tilt_is_a_percentage_slider() -> None:
+    from homeassistant.helpers import selector as ha_selector
+
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+
+    schema = weather_override_schema(include_tilt=True)
+    sel = next(
+        v for k, v in schema.schema.items() if str(k) == CONF_WEATHER_OVERRIDE_TILT
+    )
+    assert isinstance(sel, ha_selector.NumberSelector)
+    assert sel.config["min"] == 0
+    assert sel.config["max"] == 100
+    assert sel.config["unit_of_measurement"] == "%"
+
+
+def test_weather_override_tilt_renders_between_position_and_min_mode() -> None:
+    """Form order follows meaning: what to set, then how to apply it."""
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+
+    keys = [str(k) for k in weather_override_schema(include_tilt=True).schema]
+    assert (
+        keys.index("weather_override_position")
+        < keys.index(CONF_WEATHER_OVERRIDE_TILT)
+        < keys.index("weather_override_min_mode")
+    )
+
+
+@pytest.mark.parametrize(
+    ("cover_type", "expected"),
+    [
+        (CoverType.VENETIAN, True),
+        (CoverType.BLIND, False),
+        (CoverType.TILT, False),
+        ("cover_day_night_shade", False),
+    ],
+)
+def test_weather_override_tilt_is_live_option_key_for_venetian_only(
+    cover_type, expected
+) -> None:
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    live = get_policy(cover_type).live_option_keys()
+    assert (CONF_WEATHER_OVERRIDE_TILT in live) is expected

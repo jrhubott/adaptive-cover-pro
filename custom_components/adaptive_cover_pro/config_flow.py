@@ -210,6 +210,7 @@ from .const import (
     CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
     CONF_WEATHER_SEVERE_SENSORS,
@@ -1659,9 +1660,16 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "fragments.safety": " 🔒 safety: acts outside the time window too",
     "fragments.template_value": "[template]",
     # --- Weather safety (90) ---
+    # ``{weather_tilt}`` (#1297) is filled with ``custom.tilt_note`` — the same
+    # ", tilt {tilt}%" fragment the custom-position line uses, because it says
+    # exactly the same thing about the same axis. Reused rather than duplicated
+    # so the two lines cannot drift, and so DE/FR gain nothing new to translate
+    # for the fragment itself. Widening this key's placeholder set is the one
+    # thing ``test_config_summary_placeholder_parity_de_fr`` guards, so the DE
+    # and FR bundles must carry ``{weather_tilt}`` too.
     "rules.weather": (
         "🌧️ Weather safety: if {wx_condition} → covers retract to "
-        "{weather_pos}%{weather_min}{delay}{bypass}"
+        "{weather_pos}%{weather_min}{weather_tilt}{delay}{bypass}"
     ),
     "weather.wind": "wind > {thresh}",
     "weather.wind_dir": " from window ±{tol}°",
@@ -1684,6 +1692,17 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "⚠️ Weather safety only acts inside the time window — outside it the "
         "cover follows the end-of-window / sunset position instead, and "
         "weather will not protect it overnight."
+    ),
+    # The #1297 footgun: in minimum mode the weather handler defers entirely
+    # and a lower-priority handler wins the seat, so there is no weather result
+    # to carry a tilt on. Letting the tilt through anyway would hand the tilt
+    # axis to a handler the pipeline outprioritized — the hole #1153 closed —
+    # so the option genuinely no-ops here and the user is told rather than left
+    # to wonder why the slats never move.
+    "warnings.weather_tilt_min_mode": (
+        "⚠️ A weather safety tilt is set but minimum position mode is on — in "
+        "minimum mode weather only raises a position floor for another rule to "
+        "satisfy and never sets the slats, so the tilt is ignored."
     ),
     # --- Manual override (80) ---
     "rules.manual": (
@@ -2507,6 +2526,19 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         bypass_str = (
             L["weather.bypass"] if config.get(CONF_WEATHER_BYPASS_AUTO_CONTROL) else ""
         )
+        # Gated on the policy ClassVar, never on the cover-type string: a stored
+        # tilt left behind by a cover-type switch must not promise slat movement
+        # to a cover that has no slat axis (#1297).
+        weather_tilt = config.get(CONF_WEATHER_OVERRIDE_TILT)
+        weather_tilt_supported = (
+            sensor_type is not None
+            and get_policy(sensor_type).weather_override_includes_tilt
+        )
+        weather_tilt_str = (
+            L["custom.tilt_note"].format(tilt=weather_tilt)
+            if weather_tilt is not None and weather_tilt_supported
+            else ""
+        )
         _open(
             _prio["weather"],
             _HID_ORDER_INDEX["weather"],
@@ -2514,6 +2546,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 wx_condition=wx_condition,
                 weather_pos=weather_pos,
                 weather_min=weather_min_str,
+                weather_tilt=weather_tilt_str,
                 delay=delay_str,
                 bypass=bypass_str,
             ),
@@ -2523,6 +2556,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         # protection must not discover at 03:00.
         if not config.get(CONF_WEATHER_OUTSIDE_WINDOW, DEFAULT_WEATHER_OUTSIDE_WINDOW):
             _sub(L["warnings.weather_window_scoped"])
+        # A tilt paired with min mode is a setting that silently does nothing —
+        # the min-mode seat is position-only by design (#1153).
+        if weather_tilt_str and config.get(CONF_WEATHER_OVERRIDE_MIN_MODE):
+            _sub(L["warnings.weather_tilt_min_mode"])
 
     # Manual override (80). The duration mode (issue #1044) decides what the
     # hold is measured against: ``fixed`` shows the numeric duration, every
@@ -6534,14 +6571,31 @@ class OptionsFlowHandler(OptionsFlow):
             },
         )
 
+    def _weather_override_include_tilt(self) -> bool:
+        """Whether this cover type carries a weather-override tilt slider."""
+        sensor_type = self.sensor_type
+        return (
+            sensor_type in POLICY_REGISTRY
+            and get_policy(sensor_type).weather_override_includes_tilt
+        )
+
     async def async_step_weather_override(
         self, user_input: dict[str, Any] | None = None
     ):
         """Manage weather-based safety overrides."""
+        include_tilt = self._weather_override_include_tilt()
         if user_input is not None:
             # Profile-owned pickers are shown (inherit/override model), so they
-            # are present in user_input; null any cleared field as usual.
-            self.optional_entities(_WEATHER_OVERRIDE_OPTIONAL_KEYS, user_input)
+            # are present in user_input; null any cleared field as usual. The
+            # tilt joins that list only when it was rendered — otherwise a
+            # single-axis cover would collect a stray null for a field its
+            # form never showed.
+            optional_keys = (
+                [*_WEATHER_OVERRIDE_OPTIONAL_KEYS, CONF_WEATHER_OVERRIDE_TILT]
+                if include_tilt
+                else _WEATHER_OVERRIDE_OPTIONAL_KEYS
+            )
+            self.optional_entities(optional_keys, user_input)
             self.options.update(user_input)
             return await self.async_step_init()
         suggested = _stringify_templatable(self.options)
@@ -6552,7 +6606,10 @@ class OptionsFlowHandler(OptionsFlow):
         return self.async_show_form(
             step_id="weather_override",
             data_schema=self.add_suggested_values_to_schema(
-                weather_override_schema(self.hass, suggested), suggested
+                weather_override_schema(
+                    self.hass, suggested, include_tilt=include_tilt
+                ),
+                suggested,
             ),
             description_placeholders=placeholders,
         )

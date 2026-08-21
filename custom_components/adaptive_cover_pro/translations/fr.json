@@ -665,7 +665,8 @@
           "weather_enabled": "Activer la dérogation météo",
           "weather_outside_window": "Agir en dehors de la plage horaire",
           "weather_severe_template": "Modèle d'intempéries (optionnel)",
-          "weather_severe_template_mode": "Logique du modèle d'intempéries"
+          "weather_severe_template_mode": "Logique du modèle d'intempéries",
+          "weather_override_tilt": "Inclinaison de dérogation"
         },
         "data_description": {
           "weather_bypass_auto_control": "Quand activé, la dérogation météo déplacera toujours les stores à la position configurée même quand le commutateur de contrôle automatique est désactivé. Cela garantit que la protection contre le vent, la pluie et les conditions météorologiques graves reste toujours active indépendamment de l'état de l'automatisation. Désactivez ceci uniquement si vous voulez que la dérogation météo suive le commutateur de contrôle automatique.",
@@ -688,7 +689,8 @@
           "weather_enabled": "Interrupteur principal pour les dérogations de sécurité météo (vent, pluie, conditions sévères). Lorsqu'il est désactivé, les capteurs météo configurés sont ignorés. Les protections existantes gardent cette option activée après la mise à jour ; les nouvelles protections commencent désactivées.",
           "weather_outside_window": "Lorsque cette option est activée (par défaut), les dérogations météo continuent de protéger les stores après la fermeture de la plage horaire — une tempête à 03h00 rétracte toujours un store banne. Désactivez-la pour limiter la sécurité météo à la plage début/fin configurée ; en dehors, le store suit la position de fin de plage ou de coucher du soleil et la météo ne le protégera pas la nuit. Laissez-la activée sauf si vous utilisez la dérogation météo comme règle de confort plutôt que comme protection matérielle.",
           "weather_severe_template": "Modèle Jinja2 facultatif de Home Assistant qui détermine si des intempéries sont présentes (grêle, gel, orage, etc.). Quand il se rend vrai (on/true/1), la dérogation s'active. La manière dont il se combine avec les capteurs d'intempéries ci-dessus (OR ou AND) est définie par « Logique du modèle d'intempéries » ci-dessous. Il peut fonctionner seul sans capteurs et réagit à l'instant où le modèle bascule. Exemple : dériver « grave » de la condition de prévision d'une entité météorologique. Un modèle vide ou qui échoue à se rendre n'exprime aucun avis (pas de rétractation). Laissez vide pour désactiver.",
-          "weather_severe_template_mode": "Comment le modèle d'intempéries se combine avec les capteurs d'intempéries ci-dessus. « OR » (par défaut) — grave quand le modèle est vrai OU quand n'importe quel capteur est ON. « AND » — grave uniquement quand le modèle est vrai ET qu'au moins un capteur est ON. Sans capteurs configurés, le modèle seul décide dans les deux modes. N'a d'effet que quand un modèle d'intempéries est défini ci-dessus."
+          "weather_severe_template_mode": "Comment le modèle d'intempéries se combine avec les capteurs d'intempéries ci-dessus. « OR » (par défaut) — grave quand le modèle est vrai OU quand n'importe quel capteur est ON. « AND » — grave uniquement quand le modèle est vrai ET qu'au moins un capteur est ON. Sans capteurs configurés, le modèle seul décide dans les deux modes. N'a d'effet que quand un modèle d'intempéries est défini ci-dessus.",
+          "weather_override_tilt": "Inclinaison de lamelle (0-100%) à régler quand la dérogation météo est active. 0% = lamelles fermées, 100% = lamelles ouvertes. Laisser vide pour maintenir les lamelles où elles sont (comportement d'aujourd'hui). Ne s'applique pas quand le mode de position minimale est activé — en ce mode la météo ne relève que le plancher de position."
         }
       },
       "weather": {
@@ -2152,6 +2154,10 @@
         "weather_wind_speed_threshold": {
           "description": "Vitesse du vent au-dessus de laquelle la protection est rétractée.",
           "name": "Seuil de vitesse du vent"
+        },
+        "weather_override_tilt": {
+          "name": "Inclinaison de dérogation météorologique",
+          "description": "Inclinaison des lamelles à définir quand une condition météo est déclenchée (0–100%). Stores vénitiens uniquement ; null = ignorer les lamelles."
         }
       },
       "name": "Définir les paramètres de sécurité météorologique"

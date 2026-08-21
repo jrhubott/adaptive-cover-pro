@@ -483,6 +483,18 @@ class CoverTypePolicy(ABC):
     # in ``config_flow._build_custom_position_schema_dict``.
     custom_position_includes_tilt: ClassVar[bool] = False
 
+    # Whether the weather-override config step surfaces a slat-angle slider to
+    # command while a weather retraction holds the full-override seat (#1297).
+    # Deliberately a SECOND ClassVar rather than a reuse of
+    # ``custom_position_includes_tilt``: ``DayNightShadePolicy`` sets that one
+    # True but stays False here, because its second axis is a fabric blend
+    # (sheer ↔ blackout), not a slat angle — "what angle do the slats take in a
+    # storm" simply has no day/night meaning. Cover types whose *primary* axis
+    # is the tilt (``cover_tilt``, ``cover_louvered_roof``) also stay False:
+    # ``weather_override_position`` already sets their slat angle, so a second
+    # field there would be a contradictory duplicate.
+    weather_override_includes_tilt: ClassVar[bool] = False
+
     # Whether the sun-tracking step exposes the "Generate FOV from measurements"
     # button (#565) — a toggle that fills fov_left/right from the window width +
     # reveal depth. Set on the cover types that carry window geometry (vertical
@@ -1603,13 +1615,30 @@ class CoverTypePolicy(ABC):
 
         return (config_fields.SECTION_GEOMETRY, *config_fields.COMMON_SECTION_ORDER)
 
-    def extra_field_keys(self, section: str) -> tuple[str, ...]:  # noqa: ARG002
+    def extra_field_keys(self, section: str) -> tuple[str, ...]:
         """Type-specific CONF_* keys this policy adds to *section*.
 
         Beyond the common fields — e.g. the glare-zones enable toggle that
-        ``BlindPolicy`` adds to sun tracking, or venetian's per-slot tilt
-        fields. Default: none.
+        ``BlindPolicy`` adds to sun tracking, or the tilt fields a dual-axis
+        type adds to custom position and weather override.
+
+        The two tilt branches live here rather than on each dual-axis subclass
+        so "which cover types carry a second axis in the UI" is stated exactly
+        once — as the ``*_includes_tilt`` ClassVars — instead of being
+        re-derived by every policy that happens to have one. Subclasses with
+        extras of their own (``BlindPolicy``) add their branch and then
+        ``super()`` through to these.
         """
+        from .. import config_fields as cf
+        from ..const import CONF_WEATHER_OVERRIDE_TILT
+
+        if section == cf.SECTION_CUSTOM_POSITION and self.custom_position_includes_tilt:
+            return cf.CUSTOM_POSITION_TILT_KEYS
+        if (
+            section == cf.SECTION_WEATHER_OVERRIDE
+            and self.weather_override_includes_tilt
+        ):
+            return (CONF_WEATHER_OVERRIDE_TILT,)
         return ()
 
     def build_section_schema(

@@ -200,6 +200,7 @@ from .const import (
     CONF_WEATHER_OUTSIDE_WINDOW,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
     CONF_WEATHER_SEVERE_SENSORS,
@@ -1542,6 +1543,21 @@ _WEATHER_OVERRIDE_SPECS = _spec(
         rng=const._RANGE_WEATHER_OVERRIDE_POSITION,
         default=0,
     ),
+    # Slat angle during a weather retraction (#1297). Venetian-only — surfaced
+    # via CoverTypePolicy.weather_override_includes_tilt. Clearable with NO
+    # default: absent => None => the handler names no tilt and the slats are
+    # left alone, which is the pre-#1297 behaviour (so no config migration).
+    # Carries make_selector (unlike its dynamic siblings in this section)
+    # because the generic extra_field_keys loop in cover_types/base.py skips
+    # specs without one.
+    FieldSpec(
+        CONF_WEATHER_OVERRIDE_TILT,
+        SECTION_WEATHER_OVERRIDE,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TILT,
+        clearable=True,
+        make_selector=_const(position_slider),
+    ),
     FieldSpec(
         CONF_WEATHER_OVERRIDE_MIN_MODE,
         SECTION_WEATHER_OVERRIDE,
@@ -2489,6 +2505,7 @@ _POSITION_ROLES: dict[str, PositionRole] = {
     CONF_SUNSET_TILT: PositionRole.TILT,
     CONF_MIN_TILT: PositionRole.TILT,
     CONF_MAX_TILT: PositionRole.TILT,
+    CONF_WEATHER_OVERRIDE_TILT: PositionRole.TILT,
     # ---- percentages that are not travel positions -----------------------
     # Magnitudes and hardware-frame thresholds. A type switch changes which end
     # of the axis shades the window; it does not renumber the axis, so a delta,

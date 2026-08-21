@@ -2843,3 +2843,76 @@ async def test_create_flow_geometry_rerender_keeps_typed_azimuth() -> None:
         f"got {suggested_azimuth!r}. "
         "Defect B: _show_geometry_form discards typed input."
     )
+
+
+@pytest.mark.integration
+async def test_weather_override_tilt_saves_and_clears(hass: HomeAssistant) -> None:
+    """The venetian weather tilt round-trips, and clearing it really clears (#1297).
+
+    The clear half is the load-bearing one. The slider is a bare
+    ``vol.Optional`` with no default, so voluptuous omits it from
+    ``user_input`` when the user empties it — and unless
+    ``async_step_weather_override`` names it in its optional-keys list, the
+    previous value silently survives a clear. That is the #323/#1267 defect
+    class, and a user who cannot clear this field cannot get back to "leave my
+    slats alone during storms".
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OVERRIDE_TILT
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {
+            "current_position": 100,
+            "current_tilt_position": 50,
+            "supported_features": 143,
+        },
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Weather Tilt", CONF_SENSOR_TYPE: CoverType.VENETIAN},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="weather_tilt_01",
+        title="Weather Tilt",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    async def _submit_weather_override(user_input: dict) -> None:
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        assert result["type"] == "menu"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "weather_override"}
+        )
+        assert result["step_id"] == "weather_override"
+        assert CONF_WEATHER_OVERRIDE_TILT in {
+            str(k) for k in result["data_schema"].schema
+        }
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "done"}
+        )
+        assert result["type"] == "create_entry"
+        await hass.async_block_till_done()
+
+    await _submit_weather_override(
+        {
+            "weather_rain_threshold": "1",
+            "weather_override_position": 0,
+            CONF_WEATHER_OVERRIDE_TILT: 100,
+        }
+    )
+    assert entry.options[CONF_WEATHER_OVERRIDE_TILT] == 100
+
+    # Re-enter and submit WITHOUT the key — the shape voluptuous produces when
+    # the user empties the slider.
+    await _submit_weather_override(
+        {"weather_rain_threshold": "1", "weather_override_position": 0}
+    )
+    assert entry.options[CONF_WEATHER_OVERRIDE_TILT] is None

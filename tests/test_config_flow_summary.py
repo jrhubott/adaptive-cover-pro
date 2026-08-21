@@ -4841,3 +4841,86 @@ def test_custom_position_outside_window_with_bounds_no_warning():
         "⚠️" in ln and "outside the time window" in ln for ln in summary.splitlines()
     )
     assert "constraints stay active outside the time window" in summary
+
+
+# --- Weather-override slat angle (issue #1297) ---
+
+_WX_TILT_MIN_MODE_PHRASE = "minimum position mode is on"
+
+
+def _weather_tilt_cfg(**extra):
+    """Build an enabled weather override with a wind trigger and a tilt."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OVERRIDE_TILT
+
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_WEATHER_ENABLED: True,
+        CONF_WEATHER_OVERRIDE_TILT: 100,
+    }
+    cfg.update(extra)
+    return cfg
+
+
+def _weather_line(summary: str) -> str:
+    return next(ln for ln in summary.splitlines() if "Weather safety" in ln)
+
+
+def test_weather_tilt_shown_on_the_weather_line():
+    """A configured slat angle joins the position it accompanies."""
+    summary = _build_config_summary(_weather_tilt_cfg(), CoverType.VENETIAN)
+    assert ", tilt 100%" in _weather_line(summary)
+
+
+def test_weather_tilt_absent_when_not_configured():
+    """No tilt configured → the line reads exactly as it did before #1297."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OVERRIDE_TILT
+
+    cfg = _weather_tilt_cfg()
+    del cfg[CONF_WEATHER_OVERRIDE_TILT]
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert ", tilt" not in _weather_line(summary)
+
+
+def test_weather_tilt_absent_for_a_cover_type_without_a_tilt_axis():
+    """Identical config, single-axis type → no tilt fragment.
+
+    Proves the fragment is gated on the policy ClassVar and not on the mere
+    presence of the stored key — a blind that carries a leftover value from a
+    cover-type switch must not be told its slats will move.
+    """
+    summary = _build_config_summary(_weather_tilt_cfg(), CoverType.BLIND)
+    assert ", tilt" not in _weather_line(summary)
+
+
+def test_weather_tilt_min_mode_warning_shown():
+    """Min mode silently ignores the tilt, so the summary has to say so."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_OVERRIDE_MIN_MODE,
+    )
+
+    summary = _build_config_summary(
+        _weather_tilt_cfg(**{CONF_WEATHER_OVERRIDE_MIN_MODE: True}),
+        CoverType.VENETIAN,
+    )
+    assert _WX_TILT_MIN_MODE_PHRASE in summary
+
+
+def test_weather_tilt_min_mode_warning_absent_without_min_mode():
+    """A tilt in the full-override seat works, so nothing to warn about."""
+    summary = _build_config_summary(_weather_tilt_cfg(), CoverType.VENETIAN)
+    assert _WX_TILT_MIN_MODE_PHRASE not in summary
+
+
+def test_weather_tilt_min_mode_warning_absent_without_a_tilt():
+    """Min mode alone is a normal setting — the warning is about the pairing."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_OVERRIDE_MIN_MODE,
+        CONF_WEATHER_OVERRIDE_TILT,
+    )
+
+    cfg = _weather_tilt_cfg(**{CONF_WEATHER_OVERRIDE_MIN_MODE: True})
+    del cfg[CONF_WEATHER_OVERRIDE_TILT]
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert _WX_TILT_MIN_MODE_PHRASE not in summary
