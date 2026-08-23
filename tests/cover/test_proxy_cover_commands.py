@@ -373,6 +373,17 @@ async def test_proxy_slider_interpolation_dispatches_motor_value(hass) -> None:
     assert sent, f"no position command reached the source: {calls}"
     assert all(c["position"] == 45 for c in sent), sent
 
+    # The proxy accepts logical values and reports them in the same frame. The
+    # source publishes the motor value it actually received, so the read side
+    # must inverse-interpolate it back to 25 (#925).
+    hass.states.async_set(
+        "cover.living_room",
+        "open",
+        {"current_position": 45, "supported_features": 143},
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(proxy_eid).attributes.get("current_position") == 25
+
 
 async def test_proxy_open_close_with_inverse_and_endpoint_open_close(hass) -> None:
     """Proxy Open/Close route through the endpoint services in the cover frame.
@@ -519,6 +530,84 @@ async def test_proxy_tilt_round_trip_inverse_state_on_tilt_only_cover(hass) -> N
         },
     )
     await hass.async_block_till_done()
+
+    assert hass.states.get(proxy_eid).attributes.get("current_tilt_position") == 30
+
+
+async def test_proxy_tilt_round_trip_interpolation_on_tilt_only_cover(hass) -> None:
+    """A calibrated ``cover_tilt`` reports and accepts linear values end to end.
+
+    The tilt-PRIMARY axis runs through ``_to_cover_frame`` (#1027), so the
+    calibration curve applies to the write — and before the #925 read-side
+    inverse covered tilt too, the slider settled on the motor value 45 after
+    the user dragged it to 25.
+    """
+    options = dict(TILT_OPTIONS)
+    options[CONF_INTERP] = True
+    options[CONF_INTERP_LIST] = [0, 25, 58, 100]
+    options[CONF_INTERP_LIST_NEW] = [0, 45, 58, 100]
+    _entry, _coord, proxy_eid = await _setup_proxy(
+        hass,
+        cover_type=CoverType.TILT,
+        entry_id="proxy_cmd_tilt_interp_round_trip",
+        options=options,
+        attrs={
+            "current_tilt_position": 50,
+            "supported_features": _POSITION_AND_TILT_FEATURES,
+        },
+    )
+    calls = _capture_cover_calls(hass, "cover.living_room")
+
+    await hass.services.async_call(
+        "cover",
+        "set_cover_tilt_position",
+        {"entity_id": proxy_eid, "tilt_position": 25},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    sent = calls.get("set_cover_tilt_position", [])
+    assert sent, f"no tilt command reached the source: {calls}"
+    commanded = sent[0]["tilt_position"]
+    assert commanded == 45
+
+    # The source now reports the motor value it was actually driven to; the
+    # proxy owes the reader the logical value again (#925).
+    hass.states.async_set(
+        "cover.living_room",
+        "open",
+        {
+            "current_tilt_position": commanded,
+            "supported_features": _POSITION_AND_TILT_FEATURES,
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(proxy_eid).attributes.get("current_tilt_position") == 25
+
+
+async def test_proxy_tilt_verbatim_when_second_axis_curve_configured(hass) -> None:
+    """A venetian's slat read ignores the POSITION axis's calibration curve.
+
+    The curve is configured for the carriage, and the sequencer's ``_to_wire``
+    never consults it when writing the slats — so the tilt read keeps its
+    flip-only path even while interpolation is active on the entry.
+    """
+    options = dict(TILT_OPTIONS)
+    options[CONF_INTERP] = True
+    options[CONF_INTERP_LIST] = [0, 25, 58, 100]
+    options[CONF_INTERP_LIST_NEW] = [0, 45, 58, 100]
+    _entry, _coord, proxy_eid = await _setup_proxy(
+        hass,
+        cover_type=CoverType.VENETIAN,
+        entry_id="proxy_cmd_venetian_tilt_interp_verbatim",
+        options=options,
+        attrs={
+            "current_position": 60,
+            "current_tilt_position": 30,
+            "supported_features": _POSITION_AND_TILT_FEATURES,
+        },
+    )
 
     assert hass.states.get(proxy_eid).attributes.get("current_tilt_position") == 30
 

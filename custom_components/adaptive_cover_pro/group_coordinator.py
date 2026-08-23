@@ -46,6 +46,11 @@ from .const import (
     CONF_GROUP_AREA,
     CONF_GROUP_MEMBER_OPT_OUT,
     CONF_GROUP_STAGGER_DELAY,
+    CONF_INTERP,
+    CONF_INTERP_END,
+    CONF_INTERP_LIST,
+    CONF_INTERP_LIST_NEW,
+    CONF_INTERP_START,
     CONF_MEMBER_COVERS,
     CONF_MEMBER_ENTRIES,
     CONF_SENSOR_TYPE,
@@ -76,7 +81,11 @@ from .managers.cover_command import CoverCommandService
 from .managers.cover_command.state_store import PositionContext
 from .managers.grace_period import GracePeriodManager
 from .pipeline.types import GroupIntent
-from .position_utils import flip_if
+from .position_utils import (
+    flip_if,
+    interpolation_is_invertible,
+    inverse_interpolate_position,
+)
 from .state.area_resolver import device_area_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -128,6 +137,7 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         self._unsub_entry_state: CALLBACK_TYPE | None = None
         self._member_subs: dict[str, _MemberSubscription] = {}
         self._roster_snapshot: tuple[tuple[str, ...], tuple[str, ...]] | None = None
+        self._inverse_interpolation_warning_signatures: dict[str, tuple] = {}
         self._adopt_policy = get_policy(_ADOPT_COVER_TYPE)
         self._grace_mgr = GracePeriodManager(_LOGGER)
         self._cmd_svc = CoverCommandService(
@@ -697,6 +707,10 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             if live.get(entry_id) is not sub.coordinator:
                 sub.unsub()
                 del self._member_subs[entry_id]
+                # A departed member can no longer warn, so its dedup record
+                # goes with it — otherwise the dict only ever grows across
+                # membership churn.
+                self._inverse_interpolation_warning_signatures.pop(entry_id, None)
                 changed = True
         for entry_id, coordinator in live.items():
             if entry_id in self._member_subs:
@@ -779,8 +793,9 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         it publishes and the number its slider accepts are logical, and
         ``async_set_position`` hands that logical value to each ACP member,
         which re-frames it for its own hardware. Members can be configured
-        differently — one on ``inverse_state``, one not — so the raw aggregate
-        genuinely mixes frames and cannot be un-inverted after the fact.
+        differently — one on ``inverse_state``, one on a calibration curve, one
+        not — so the raw aggregate genuinely mixes frames and cannot be
+        normalised after the fact. Each member is converted independently.
         Normalising per member is the only thing that composes.
         """
         member_positions: dict[str, int | None] = {}
@@ -795,8 +810,8 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             inverted = axis_inverted(policy.axes[0], entry.options)
             for entity_id in entry.options.get(CONF_ENTITIES, []):
                 raw = policy.read_axis_value(self.hass, entity_id, caps=None)
-                member_positions[entity_id] = (
-                    flip_if(raw, inverted=inverted) if raw is not None else raw
+                member_positions[entity_id] = self._member_position_in_logical_frame(
+                    entry, raw, inverted=inverted
                 )
         # Generic (non-ACP) covers are adopted as-is — ACP holds no inversion
         # config for them, so their reading is already the logical one.
@@ -823,3 +838,52 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             state=state,
             member_positions=member_positions,
         )
+
+    def _member_position_in_logical_frame(
+        self, entry: ConfigEntry, raw: int | None, *, inverted: bool
+    ) -> int | None:
+        """Convert one ACP member's source position to the group's logical frame."""
+        if raw is None:
+            return None
+
+        value = raw
+        if inverted:
+            value = flip_if(value, inverted=True)
+
+        options = entry.options
+        if options.get(CONF_INTERP):
+            start_value = options.get(CONF_INTERP_START)
+            end_value = options.get(CONF_INTERP_END)
+            normal_list = options.get(CONF_INTERP_LIST)
+            new_list = options.get(CONF_INTERP_LIST_NEW)
+            if interpolation_is_invertible(
+                start_value, end_value, normal_list, new_list
+            ):
+                self._inverse_interpolation_warning_signatures.pop(
+                    entry.entry_id, None
+                )
+                value = inverse_interpolate_position(
+                    value, start_value, end_value, normal_list, new_list
+                )
+            else:
+                signature = (
+                    start_value,
+                    end_value,
+                    tuple(normal_list or ()),
+                    tuple(new_list or ()),
+                )
+                if (
+                    self._inverse_interpolation_warning_signatures.get(entry.entry_id)
+                    != signature
+                ):
+                    _LOGGER.warning(
+                        "Position interpolation for group member %s cannot be "
+                        "inverted because the motor range is not strictly "
+                        "increasing; group reads will mirror the source position",
+                        entry.entry_id,
+                    )
+                    self._inverse_interpolation_warning_signatures[
+                        entry.entry_id
+                    ] = signature
+
+        return int(round(value))

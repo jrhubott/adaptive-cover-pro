@@ -178,17 +178,18 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         state = self._source_state()
         return state is not None and state.state == CoverState.CLOSING
 
-    def _logical_axis_value(self, attr: str, *, inverted: bool) -> int | None:
+    def _logical_axis_value(
+        self, attr: str, *, inverted: bool, from_cover_frame: bool = False
+    ) -> int | None:
         """Read *attr* off the source and express it in the logical frame.
 
         One read path for both axes so the un-inversion is written once and
         only the *predicate* differs — each axis asks the coordinator whether
         the value it is about to publish was re-framed on the way out.
 
-        Only inversion is undone. Interpolation is NOT unwound: mapping a motor
-        reading back onto the linear scale is #925's opt-in
-        ``CONF_PROXY_LINEAR_SCALE``, and the coordinator's inversion predicates
-        already report False whenever interpolation is active on that axis.
+        Position reads use the coordinator's complete cover-frame inverse,
+        including interpolation. Tilt reads remain on the existing inversion-
+        only path because interpolation belongs to the position axis.
         """
         state = self._source_state()
         if state is None:
@@ -196,6 +197,8 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         value = state.attributes.get(attr)
         if value is None:
             return None
+        if from_cover_frame:
+            return self.coordinator._from_cover_frame(int(value))  # noqa: SLF001
         return flip_if(int(value), inverted=inverted)
 
     @property
@@ -226,10 +229,12 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         if estimated is not None:
             # The plan's endpoints were captured in the SOURCE's frame — the same
             # cover-frame numbers the raw attribute carries — so the estimate
-            # owes the reader exactly the same un-inversion a live reading does.
-            return flip_if(estimated, inverted=self.coordinator.position_axis_inverted)
+            # owes the reader exactly the same inverse as a live reading does.
+            return self.coordinator._from_cover_frame(estimated)  # noqa: SLF001
         return self._logical_axis_value(
-            STATE_ATTR_POSITION, inverted=self.coordinator.position_axis_inverted
+            STATE_ATTR_POSITION,
+            inverted=self.coordinator.position_axis_inverted,
+            from_cover_frame=True,
         )
 
     @property
@@ -244,10 +249,18 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         on ``inverse_state`` (#1027 / #1034). ``tilt_read_inverted`` resolves
         which one ran; the source's capabilities are passed because the last
         case is a routing decision, not a config one.
+
+        When the writer was ``_to_cover_frame`` — a tilt-PRIMARY axis or the
+        capability fallback — the calibration curve rode along on the write,
+        so the read owes the complete inverse including un-interpolation
+        (#925), not just the flip. A second-axis read keeps the flip-only
+        path: the sequencer never interpolates.
         """
+        caps = self._source_caps()
         return self._logical_axis_value(
             STATE_ATTR_TILT_POSITION,
-            inverted=self.coordinator.tilt_read_inverted(self._source_caps()),
+            inverted=self.coordinator.tilt_read_inverted(caps),
+            from_cover_frame=self.coordinator.tilt_read_through_cover_frame(caps),
         )
 
     @property

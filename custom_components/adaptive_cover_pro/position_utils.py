@@ -120,6 +120,65 @@ def interpolate_position(
         interpolation configured
 
     """
+    normal_range, new_range = _interpolation_ranges(
+        start_value, end_value, normal_list, new_list
+    )
+    if new_range:
+        state = float(np.interp(state, normal_range, new_range))
+    return state
+
+
+def inverse_interpolate_position(
+    state: float,
+    start_value: float | None,
+    end_value: float | None,
+    normal_list: list | None,
+    new_list: list | None,
+) -> float:
+    """Map a calibrated motor position back onto the logical scale.
+
+    This is the inverse of :func:`interpolate_position` for calibration curves
+    whose motor range is strictly increasing. ``numpy.interp`` requires its
+    ``xp`` values to be increasing, so a descending or flat motor range cannot
+    be inverted safely; those curves return the original value unchanged.
+
+    The forward interpolation remains intentionally permissive for backwards
+    compatibility. Callers that need to explain an inverse fallback can use
+    :func:`interpolation_is_invertible` alongside this helper.
+    """
+    normal_range, new_range = _interpolation_ranges(
+        start_value, end_value, normal_list, new_list
+    )
+    if new_range and _strictly_increasing(new_range):
+        return float(np.interp(state, new_range, normal_range))
+    return state
+
+
+def interpolation_is_invertible(
+    start_value: float | None,
+    end_value: float | None,
+    normal_list: list | None,
+    new_list: list | None,
+) -> bool:
+    """Return whether the configured motor range can be inverse-interpolated."""
+    _normal_range, new_range = _interpolation_ranges(
+        start_value, end_value, normal_list, new_list
+    )
+    return not new_range or _strictly_increasing(new_range)
+
+
+def _strictly_increasing(values: list) -> bool:
+    """Return whether every adjacent pair in ``values`` increases."""
+    return all(left < right for left, right in zip(values, values[1:]))
+
+
+def _interpolation_ranges(
+    start_value: float | None,
+    end_value: float | None,
+    normal_list: list | None,
+    new_list: list | None,
+) -> tuple[list, list]:
+    """Resolve the persisted interpolation options into paired ranges."""
     normal_range = [0, 100]
     new_range: list = []
     if start_value is not None and end_value is not None:
@@ -127,9 +186,7 @@ def interpolate_position(
     if normal_list and new_list:
         normal_range = list(map(int, normal_list))
         new_range = list(map(int, new_list))
-    if new_range:
-        state = float(np.interp(state, normal_range, new_range))
-    return state
+    return normal_range, new_range
 
 
 class PositionConverter:

@@ -246,6 +246,10 @@ def wire_dispatch_frame(
         AdaptiveDataUpdateCoordinator.position_axis_inverted.fget(coord)
     )
     coord._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(coord)
+    coord._from_cover_frame = AdaptiveDataUpdateCoordinator._from_cover_frame.__get__(
+        coord
+    )
+    coord._inverse_interpolation_warning_signature = None
     coord._entity_target = AdaptiveDataUpdateCoordinator._entity_target.__get__(coord)
     for name in (
         "_build_user_command_snapshot",
