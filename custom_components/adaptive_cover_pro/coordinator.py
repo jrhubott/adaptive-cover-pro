@@ -3747,7 +3747,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             reason = (
                 self._pipeline_result.control_method.value
                 if self._pipeline_bypasses_auto_control
-                else "solar"
+                else (self.pipeline_winner_name or "solar")
             )
         # Name the number and frame this loop fans out so the ordering view can
         # tell a raise from a lower (issue #1118). A per-cover hold verdict can
