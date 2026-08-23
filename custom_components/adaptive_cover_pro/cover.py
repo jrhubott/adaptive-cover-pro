@@ -249,10 +249,18 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         on ``inverse_state`` (#1027 / #1034). ``tilt_read_inverted`` resolves
         which one ran; the source's capabilities are passed because the last
         case is a routing decision, not a config one.
+
+        When the writer was ``_to_cover_frame`` — a tilt-PRIMARY axis or the
+        capability fallback — the calibration curve rode along on the write,
+        so the read owes the complete inverse including un-interpolation
+        (#925), not just the flip. A second-axis read keeps the flip-only
+        path: the sequencer never interpolates.
         """
+        caps = self._source_caps()
         return self._logical_axis_value(
             STATE_ATTR_TILT_POSITION,
-            inverted=self.coordinator.tilt_read_inverted(self._source_caps()),
+            inverted=self.coordinator.tilt_read_inverted(caps),
+            from_cover_frame=self.coordinator.tilt_read_through_cover_frame(caps),
         )
 
     @property

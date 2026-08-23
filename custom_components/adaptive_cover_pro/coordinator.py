@@ -5329,6 +5329,42 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return self.position_axis_inverted
         return False
 
+    def tilt_read_through_cover_frame(self, caps: Any) -> bool:
+        """Whether ``current_tilt_position`` holds a :meth:`_to_cover_frame` value.
+
+        Companion to :meth:`tilt_read_inverted` (#1034): the same three
+        producers land on the tilt attribute, and only some ran the full
+        position-frame transform. The others owe just the un-inversion that
+        method names, so a read may not blindly apply the complete inverse:
+
+        * **A declared tilt-PRIMARY axis** (``cover_tilt``, louvered roof): its
+          single axis runs through :meth:`_to_cover_frame` like any position
+          axis — ``async_apply_user_tilt`` falls through to
+          ``async_apply_user_position`` (#1027) — so the calibration curve
+          applies and the read owes the full inverse.
+        * **A declared SECOND axis** (venetian / day-night shade): the
+          dual-axis sequencer's ``_to_wire`` wrote it and never consults the
+          curve — flip-only.
+        * **No declared axis, but the capability fallback dispatched there**: a
+          position-only type bound to tilt-only hardware had its value
+          re-framed by :meth:`_to_cover_frame`, so the full inverse applies.
+
+        ``interpolatable`` is the discriminator on the declared-axis branch:
+        it states exactly "this axis runs through the calibration curve" (see
+        ``TILT_AXIS`` vs ``TILT_AXIS_PRIMARY``), so no identity comparison
+        against axis singletons is needed.
+        """
+        axis = next(
+            (a for a in self._policy.axes if a.state_attr == STATE_ATTR_TILT_POSITION),
+            None,
+        )
+        if axis is not None:
+            return axis.interpolatable
+        return (
+            self._policy.select_default_axis(caps).state_attr
+            == STATE_ATTR_TILT_POSITION
+        )
+
     def _to_cover_frame(self, value: float) -> int:
         """Map a logical (HA-convention) position into this cover's dispatch frame.
 
