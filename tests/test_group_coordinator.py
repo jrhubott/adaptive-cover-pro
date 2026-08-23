@@ -781,6 +781,43 @@ async def test_member_reload_swaps_the_subscription(hass) -> None:
         await member.async_shutdown()
 
 
+async def test_member_departure_drops_the_warning_signature(hass) -> None:
+    """A departed member's non-invertible-interpolation record goes with it.
+
+    The warning-dedup dict is keyed by entry id, so a slot left behind by a
+    removed member can never match a live read again — pruning it at the same
+    place the subscription dies keeps the dict bounded by the live roster.
+    """
+    member_entry = _member_entry(hass, "member_a", CoverType.BLIND, [BLIND_ENTITY])
+    first = RealMemberCoordinator(hass, member_entry)
+    member_entry.runtime_data = first
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={CONF_MEMBER_ENTRIES: ["member_a"], CONF_MEMBER_COVERS: []},
+        entry_id="group_warn_prune",
+        title="G",
+    )
+    group_entry.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, group_entry)
+
+    await coordinator._async_setup()
+    coordinator._inverse_interpolation_warning_signatures["member_a"] = (
+        None,
+        None,
+        (0, 25, 58, 100),
+        (0, 45, 45, 100),
+    )
+    assert "member_a" in coordinator._inverse_interpolation_warning_signatures
+
+    member_entry.mock_state(hass, ConfigEntryState.NOT_LOADED)
+    await hass.async_block_till_done()
+
+    assert "member_a" not in coordinator._inverse_interpolation_warning_signatures
+
+    await coordinator.async_shutdown()
+
+
 async def test_shutdown_unsubscribes_member_listeners(hass) -> None:
     """Teardown releases the member and config-entry subscriptions."""
     coordinator, blind_coord, awning_coord = _group_with_real_members(

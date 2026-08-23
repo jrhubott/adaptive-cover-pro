@@ -707,6 +707,10 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             if live.get(entry_id) is not sub.coordinator:
                 sub.unsub()
                 del self._member_subs[entry_id]
+                # A departed member can no longer warn, so its dedup record
+                # goes with it — otherwise the dict only ever grows across
+                # membership churn.
+                self._inverse_interpolation_warning_signatures.pop(entry_id, None)
                 changed = True
         for entry_id, coordinator in live.items():
             if entry_id in self._member_subs:
