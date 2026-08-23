@@ -1779,6 +1779,10 @@
         "use_my": {
           "name": "Utiliser Somfy My",
           "description": "Si vrai, utiliser my_position_value au lieu de position."
+        },
+        "scope_to_window": {
+          "name": "Appliquer uniquement dans la plage horaire",
+          "description": "Si activé, la position exacte de cet emplacement (ou Ma position) cesse de s'appliquer une fois que la fenêtre horaire de début/fin se ferme, pour que la position de fin de fenêtre puisse prendre le relais. Désactivé par défaut. La priorité 100 (sécurité) l'ignore. Le repositionnement à l'heure de fin lui-même nécessite toujours que « Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte » soit activé."
         }
       }
     },

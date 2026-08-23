@@ -1792,6 +1792,12 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "100 is safety — acting outside the window is what that priority "
         "means, so the setting is ignored here."
     ),
+    "warnings.custom_scope_to_window_needs_return": (
+        '⚠️ {label}: "Move covers to current default position when end time is '
+        'reached" is OFF — the slot stands down at end time but nothing '
+        "repositions the cover, so it stays where the slot left it. Turn that "
+        "toggle on."
+    ),
     "warnings.custom_and_no_sensors": (
         "⚠️ {label}: combine mode AND is set but no trigger sensors are "
         "configured — the template alone activates the slot."
@@ -2892,6 +2898,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     )
                 else:
                     _sub(L["custom.scope_to_window"].format(label=_slot_label))
+                    if not config.get(CONF_RETURN_SUNSET):
+                        # Footgun: the line just rendered promises the
+                        # end-of-window position takes over, but that reposition
+                        # is the ``return_sunset`` force-send. With it off the
+                        # slot stands down and nothing moves the cover — the
+                        # outside-window dispatch guard blocks any other send —
+                        # so it simply stays where the slot left it. Only warned
+                        # on this branch: the two above already say the option
+                        # does nothing at all for the slot.
+                        _sub(
+                            L["warnings.custom_scope_to_window_needs_return"].format(
+                                label=_slot_label
+                            )
+                        )
             # Footgun (issue #711): a safety-priority slot with a live trigger
             # bypasses the auto-control toggle, manual override, and the time
             # window — it can move the cover at any hour with automation off.
@@ -3911,6 +3931,11 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             "position_max",
             "tilt_min",
             "tilt_max",
+            # Issue #1318. The legacy ``custom_position`` alias below is built
+            # from ``keys.values()`` and so picks this up automatically; listing
+            # it here keeps the granular category from disagreeing with the
+            # alias about whether the flag travels with a slot's values.
+            "scope_to_window",
         )
     )
     | {CONF_DEFAULT_TILT, CONF_SUNSET_TILT},

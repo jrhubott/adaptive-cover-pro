@@ -1779,6 +1779,10 @@
         "use_my": {
           "name": "Somfy My verwenden",
           "description": "Wenn wahr, my_position_value statt Position verwenden."
+        },
+        "scope_to_window": {
+          "name": "Nur innerhalb des Zeitfensters anwenden",
+          "description": "Wenn aktiviert, wird die genaue Position dieses Slots (oder Meine Position verwenden) nicht mehr angewendet, wenn das Start-/Endzeitfenster schließt, damit die Position am Ende des Fensters übernehmen kann. Standardmäßig deaktiviert. Priorität 100 (Sicherheit) ignoriert dies. Die Umpositionierung zur Endzeit selbst erfordert weiterhin, dass „Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird“ aktiviert ist."
         }
       }
     },

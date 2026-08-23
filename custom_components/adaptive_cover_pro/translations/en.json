@@ -1853,6 +1853,10 @@
         "use_my": {
           "name": "Use Somfy My",
           "description": "If true, use my_position_value instead of position."
+        },
+        "scope_to_window": {
+          "name": "Only apply within time window",
+          "description": "If true, this slot's exact position (or Use My) stops applying once the start/end time window closes, so the end-of-window position can take over. Off by default. Priority 100 (safety) ignores it. The end-time reposition itself still requires 'Move covers to current default position when end time is reached' to be on."
         }
       }
     },

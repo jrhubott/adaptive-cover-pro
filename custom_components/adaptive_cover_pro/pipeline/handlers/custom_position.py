@@ -90,13 +90,26 @@ class CustomPositionHandler(OverrideHandler):
         return None
 
     def _scoped_out_of_window(
-        self, state: CustomPositionSensorState, snapshot: PipelineSnapshot
+        self,
+        state: CustomPositionSensorState,
+        snapshot: PipelineSnapshot,
+        *,
+        has_fixed_claim: bool,
     ) -> bool:
         """Whether the user scoped this slot to a window that is currently shut.
 
         **The one statement of the #1318 gate.** ``evaluate`` and
         ``describe_skip`` both consume it, so the guard and the reason it
         produces cannot drift apart.
+
+        ``has_fixed_claim`` is passed in rather than re-read off ``state``
+        because :attr:`CustomPositionSensorState.has_fixed_claim` is a derived
+        property — every read runs ``derive_axis_mode`` — and ``evaluate`` has
+        already asked the question one line earlier to decide the
+        constraint-mode deferral. The state is frozen with ``slots=True``, so
+        it cannot memoize the answer itself; the caller hands over the value it
+        already holds. ``describe_skip``, which has no such value, reads it
+        once at the call site. Either way the gate stays one expression.
 
         Absent the opt-in this is always False, which is #895's behaviour
         verbatim: that issue is the exact inverse request — a sleep-mode custom
@@ -127,9 +140,7 @@ class CustomPositionHandler(OverrideHandler):
         if self._is_safety:
             return False
         return (
-            state.has_fixed_claim
-            and state.scope_to_window
-            and not snapshot.clock_window_open
+            has_fixed_claim and state.scope_to_window and not snapshot.clock_window_open
         )
 
     @staticmethod
@@ -189,14 +200,15 @@ class CustomPositionHandler(OverrideHandler):
         # pipeline/axis_constraints.py. Covers today's tilt-only (#514) and
         # floor (#463) deferrals plus the ceiling / range / no-claim modes,
         # with identical outcomes for every pre-#943 configuration.
-        if not state.has_fixed_claim:
+        has_fixed_claim = state.has_fixed_claim
+        if not has_fixed_claim:
             return None
         # Issue #1318: the user scoped this slot's exact-position claim to the
         # clock window and the window is shut. Standing down here is the whole
         # fix — DefaultHandler then wins, so
         # ``coordinator._pipeline_has_active_override`` reads False on its own
         # and the end-of-window position is sent.
-        if self._scoped_out_of_window(state, snapshot):
+        if self._scoped_out_of_window(state, snapshot, has_fixed_claim=has_fixed_claim):
             return None
         raw = compute_raw_calculated_position(snapshot)
         reason_head = self._reason_head(state)
@@ -276,7 +288,9 @@ class CustomPositionHandler(OverrideHandler):
         if (
             state is not None
             and state.is_on
-            and self._scoped_out_of_window(state, snapshot)
+            and self._scoped_out_of_window(
+                state, snapshot, has_fixed_claim=state.has_fixed_claim
+            )
         ):
             return Reason(ReasonCode.SKIP_OUTSIDE_WINDOW)
         return Reason(ReasonCode.SKIP_CUSTOM_NOT_ACTIVE, {"slot": self._slot})

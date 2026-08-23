@@ -4982,6 +4982,87 @@ def test_custom_position_both_window_options_render_independently():
     assert any("⚠️" in ln and "no exact position" in ln for ln in summary.splitlines())
 
 
+_SCOPE_NEEDS_RETURN_PHRASE = "nothing repositions the cover"
+
+
+def _scoped_slot_cfg(**extra):
+    """Build an opted-in, non-safety slot with a FIXED position claim."""
+    return {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 100,
+        "custom_position_priority_1": 70,
+        "custom_position_scope_to_window_1": True,
+        **extra,
+    }
+
+
+def test_custom_position_scope_to_window_without_return_sunset_warns():
+    """Standing down is not the same as moving — the reposition needs its toggle.
+
+    The line above promises the end-of-window position takes over, but that
+    reposition IS the ``return_sunset`` force-send. With it off the slot stands
+    down, the outside-window dispatch guard blocks every other send, and the
+    cover simply stays where the slot left it — the exact non-outcome #1318 was
+    filed about. ``services.yaml`` and the option's ``data_description`` both
+    name the dependency; the summary has to as well.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_RETURN_SUNSET
+
+    summary = _build_config_summary(
+        _scoped_slot_cfg(**{CONF_RETURN_SUNSET: False}), CoverType.BLIND
+    )
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and _SCOPE_NEEDS_RETURN_PHRASE in ln
+    )
+    assert "end time is reached" in warn_line
+
+
+def test_custom_position_scope_to_window_absent_key_also_warns():
+    """``return_sunset`` defaults to off, so an unset key is the same footgun."""
+    summary = _build_config_summary(_scoped_slot_cfg(), CoverType.BLIND)
+    assert _SCOPE_NEEDS_RETURN_PHRASE in summary
+
+
+def test_custom_position_scope_to_window_with_return_sunset_is_quiet():
+    """With the reposition armed the option does exactly what its line says."""
+    from custom_components.adaptive_cover_pro.const import CONF_RETURN_SUNSET
+
+    summary = _build_config_summary(
+        _scoped_slot_cfg(**{CONF_RETURN_SUNSET: True}), CoverType.BLIND
+    )
+    assert "only applies within the time window" in summary
+    assert _SCOPE_NEEDS_RETURN_PHRASE not in summary
+
+
+def test_custom_position_scope_to_window_needs_return_silent_when_inert():
+    """The dependency only matters once the gate can actually bite.
+
+    A safety slot ignores the option outright and a bounded-claim slot never
+    reaches the gate; both already render a "this does nothing" warning. Adding
+    a second warning about a reposition that was never going to happen would
+    point those users at the wrong toggle.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_RETURN_SUNSET
+
+    safety = _build_config_summary(
+        _scoped_slot_cfg(
+            **{"custom_position_priority_1": 100, CONF_RETURN_SUNSET: False}
+        ),
+        CoverType.BLIND,
+    )
+    assert _SCOPE_NEEDS_RETURN_PHRASE not in safety
+
+    floor = _build_config_summary(
+        _scoped_slot_cfg(
+            **{"custom_position_min_mode_1": True, CONF_RETURN_SUNSET: False}
+        ),
+        CoverType.BLIND,
+    )
+    assert _SCOPE_NEEDS_RETURN_PHRASE not in floor
+
+
 # --- Weather-override slat angle (issue #1297) ---
 
 _WX_TILT_MIN_MODE_PHRASE = "minimum position mode is on"

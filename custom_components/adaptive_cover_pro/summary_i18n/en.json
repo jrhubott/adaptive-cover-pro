@@ -89,6 +89,7 @@
     "custom_outside_window_redundant": "⚠️ {label}: keep constraints active outside the time window is on, but priority 100 already acts outside the window (and past automatic control and the delta gates) — the setting changes nothing here.",
     "custom_scope_to_window_no_fixed_claim": "⚠️ {label}: only apply within the time window is on, but this slot names no exact position and does not use My position — the setting has no effect. It scopes the exact-position claim only; whether a min/max bound survives the window is decided by keep constraints active outside time window instead.",
     "custom_scope_to_window_safety_ignored": "⚠️ {label}: only apply within the time window is on, but priority 100 is safety — acting outside the window is what that priority means, so the setting is ignored here.",
+    "custom_scope_to_window_needs_return": "⚠️ {label}: \"Move covers to current default position when end time is reached\" is OFF — the slot stands down at end time but nothing repositions the cover, so it stays where the slot left it. Turn that toggle on.",
     "motion_hold_no_sensors": "⚠️ hold_position mode is set but no occupancy sources are configured — the setting has no effect until an occupancy source is added",
     "cloudy_pos_ignored": "⚠️ Cloudy position ({pos}%) configured but cloud suppression is disabled — value will be ignored.",
     "sun_track_min_below_floor": "⚠️ Sun-tracking min {sun_min}% < min position {min_pos}% — always-on floor dominates; sun-tracking floor will be raised to {min_pos}%.",
