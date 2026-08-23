@@ -127,6 +127,7 @@ from .const import (
     DEFAULT_OUTSIDE_TEMP_SOURCE,
     DEFAULT_TRACKING_SEASONS,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
+    DEFAULT_WEATHER_STATE,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
@@ -699,7 +700,7 @@ def light_cloud_schema(
             CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
         ): numeric_selector(),
         vol.Optional(
-            CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "cloudy", "clear"]
+            CONF_WEATHER_STATE, default=DEFAULT_WEATHER_STATE
         ): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 multiple=True,

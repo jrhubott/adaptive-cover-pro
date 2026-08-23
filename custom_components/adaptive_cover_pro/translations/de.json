@@ -698,7 +698,7 @@
           "weather_state": "Wetterbedingungen"
         },
         "data_description": {
-          "weather_state": "Wählen Sie Wetterzustände aus, die im Klimamodus 'Sonne ist draußen' bedeuten. Empfohlene Auswahl (vorausgefüllt): ☑ sunny (direktes Sonnenlicht), ☑ partlycloudy (etwas Sonne), ☐ cloudy (kein direktes Sonnenlicht), ☐ clear (normalerweise Nacht). Wenn das aktuelle Wetter der Auswahl entspricht: Wenden Sie Klimastrategien an. Wenn keine Übereinstimmung: Verwenden Sie die Standardposition (keine Sonne angenommen). Die meisten Benutzer sollten die Standardeinstellungen beibehalten."
+          "weather_state": "Wetterzustände, die 'Sonne ist draußen' bedeuten. Dies ist ein Fallback für die Sonnenerkennung, der nur greift, wenn kein Sensor oder keine Vorlage für 'Sonne scheint' konfiguriert ist, oder wenn einer konfiguriert ist, aber noch keine Einschätzung geliefert hat. Wenn der aktuelle Wetterzustand mit einem dieser Werte übereinstimmt, wird die Sonne als vorhanden angenommen; andernfalls kann die Standardposition oder die Bewölkungsposition der Wolkenunterdrückung greifen (falls aktiviert), und die Abweichung zählt für die Einschätzung wenig Licht im Klimamodus. Standardwerte: sunny, partlycloudy, clear."
         },
         "title": "Wetterbedingungen",
         "description": "Wählen Sie die Wetterzustände aus, die im Klimamodus als „Sonne ist draußen\" zählen. Die Integration vergleicht den Live-Wetterzustand mit dieser Liste — übereinstimmende Zustände aktivieren die solarbasierte Beschattungselemente-Steuerung. Zustände, die nicht in der Liste stehen, werden als bewölkt behandelt, daher gelten Sommer-Schließen- und Winter-Öffnen-Regeln nur, wenn das Wetter passt.\n\nTypische Auswahlen sind „sonnig\" und „teilweise bewölkt\". Die verfügbaren Zustände hängen von Ihrer Wetterintegrationen ab.\n\n[Weitere Informationen]({learn_more})"
@@ -1924,7 +1924,7 @@
           "name": "Wetter-Entity"
         },
         "weather_state": {
-          "description": "Wetterbedingungszustände als sonnig für Sonnenverfolgung betrachtet.",
+          "description": "Wetterzustände, die 'Sonne ist draußen' bedeuten. Dient als Fallback, wenn kein Sensor/keine Vorlage für 'Sonne scheint' konfiguriert ist.",
           "name": "Sonnige Wetterzustände"
         },
         "is_sunny_sensor": {

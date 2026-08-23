@@ -798,7 +798,7 @@
           "weather_state": "Weather Conditions"
         },
         "data_description": {
-          "weather_state": "Select weather states that mean 'sun is out' for climate mode. Recommended selection (pre-filled): ☑ sunny (direct sun), ☑ partlycloudy (some sun), ☐ cloudy (no direct sun), ☐ clear (usually night). When current weather matches selection: Apply climate strategies. When no match: Use default position (no sun assumed). Most users should keep the defaults."
+          "weather_state": "Weather states that mean 'sun is out'. This is a fallback for the sun-detection check, consulted only when no Is Sunny sensor or template is configured, or when one is configured but has not yet produced an opinion. When the live weather state matches one of these, the sun is treated as present; when it does not, cloud suppression's default or cloudy position may apply (if enabled), and it counts toward climate mode's low-light check. Defaults: sunny, partlycloudy, clear."
         },
         "title": "Weather Conditions",
         "description": "Select the weather states that count as \"sun is out\" for climate mode. The integration compares the live weather entity state to this list — matching states enable solar-based cover control. States not in the list are treated as cloudy, so summer-close and winter-open rules only apply when the weather matches.\n\nTypical choices are \"sunny\" and \"partlycloudy\". The available states depend on your weather integration.\n\n[Learn more]({learn_more})"
@@ -1902,7 +1902,7 @@
         },
         "weather_state": {
           "name": "Sunny weather states",
-          "description": "Weather condition states considered sunny for sun tracking."
+          "description": "Weather states that mean 'sun is out'. Used as a fallback when no Is Sunny sensor/template applies."
         },
         "lux_entity": {
           "name": "Lux sensor",

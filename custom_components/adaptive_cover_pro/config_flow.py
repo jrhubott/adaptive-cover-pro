@@ -238,6 +238,7 @@ from .const import (
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_POSITION_SELECTOR_FALLBACK,
     DEFAULT_WEATHER_OUTSIDE_WINDOW,
+    DEFAULT_WEATHER_STATE,
     GLARE_ZONE_FORM_KEYS,
     GLARE_ZONE_SLOT_NUMBERS,
     GLARE_ZONE_SLOTS,
@@ -1288,7 +1289,7 @@ _TEMPERATURE_CLIMATE_OPTIONAL_KEYS: list[str] = [
 WEATHER_OPTIONS = vol.Schema(
     {
         vol.Optional(
-            CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "cloudy", "clear"]
+            CONF_WEATHER_STATE, default=DEFAULT_WEATHER_STATE
         ): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 multiple=True,
