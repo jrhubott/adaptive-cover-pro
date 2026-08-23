@@ -1745,6 +1745,10 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "🕗 {label}: min/max constraints stay active outside the time window "
         "(the slot still never drives a position out there)."
     ),
+    "custom.scope_to_window": (
+        "🕗 {label}: only applies within the time window — once the window "
+        "closes the slot stands down and the end-of-window position applies."
+    ),
     # Fallback slot label when no custom_position_name_N is configured
     # (issue #1190) — the exact "Custom #{slot}" fragment extracted verbatim
     # from the five templates below, so the no-name path stays byte-identical.
@@ -1775,6 +1779,24 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "⚠️ {label}: keep constraints active outside the time window is on, "
         "but priority 100 already acts outside the window (and past automatic "
         "control and the delta gates) — the setting changes nothing here."
+    ),
+    "warnings.custom_scope_to_window_no_fixed_claim": (
+        "⚠️ {label}: only apply within the time window is on, but this slot "
+        "names no exact position and does not use My position — the setting "
+        "has no effect. It scopes the exact-position claim only; whether a "
+        "min/max bound survives the window is decided by keep constraints "
+        "active outside time window instead."
+    ),
+    "warnings.custom_scope_to_window_safety_ignored": (
+        "⚠️ {label}: only apply within the time window is on, but priority "
+        "100 is safety — acting outside the window is what that priority "
+        "means, so the setting is ignored here."
+    ),
+    "warnings.custom_scope_to_window_needs_return": (
+        '⚠️ {label}: "Move covers to current default position when end time is '
+        'reached" is OFF — the slot stands down at end time but nothing '
+        "repositions the cover, so it stays where the slot left it. Turn that "
+        "toggle on."
     ),
     "warnings.custom_and_no_sensors": (
         "⚠️ {label}: combine mode AND is set but no trigger sensors are "
@@ -2812,21 +2834,26 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             # the position axis, and that use_my is hardware-pinned (#514 /
             # #1215). Re-deriving it from the raw wire format here is what let
             # this warning drift out of step with the gather.
+            #
+            # Built once and shared with the #1318 block below: both window
+            # options ask "which claims does this slot EFFECTIVELY make?", and
+            # a second hand-rolled answer is exactly the drift this derivation
+            # was extracted to stop.
+            _claims = CustomPositionSensorState(
+                entity_ids=(),
+                is_on=True,
+                position=config.get(_keys["position"]),
+                priority=_pri,
+                min_mode=bool(config.get(_keys["min_mode"])),
+                use_my=_use_my,
+                tilt=_slot_tilt,
+                tilt_only=_tilt_only,
+                slot=_slot,
+                position_max=config.get(_keys["position_max"]),
+                tilt_min=_t_min,
+                tilt_max=_t_max,
+            )
             if config.get(_keys["outside_window"]):
-                _claims = CustomPositionSensorState(
-                    entity_ids=(),
-                    is_on=True,
-                    position=config.get(_keys["position"]),
-                    priority=_pri,
-                    min_mode=bool(config.get(_keys["min_mode"])),
-                    use_my=_use_my,
-                    tilt=_slot_tilt,
-                    tilt_only=_tilt_only,
-                    slot=_slot,
-                    position_max=config.get(_keys["position_max"]),
-                    tilt_min=_t_min,
-                    tilt_max=_t_max,
-                )
                 _has_bounds = _claims.has_bounded_claim
                 if _pri >= CUSTOM_POSITION_SAFETY_PRIORITY:
                     # Priority 100 already commands outside the window (#563),
@@ -2844,6 +2871,47 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     )
                 else:
                     _sub(L["custom.outside_window"].format(label=_slot_label))
+            # Scope the FIXED claim to the time window (issue #1318) — the
+            # inverse-polarity sibling of the block above, and disjoint from it:
+            # that key extends BOUNDED claims past the clock, this one withdraws
+            # an exact-position / Use-My claim at it. A slot may set both, so
+            # neither branch suppresses the other.
+            if config.get(_keys["scope_to_window"]):
+                if _pri >= CUSTOM_POSITION_SAFETY_PRIORITY:
+                    # The #563 exemption is unconditional in the handler —
+                    # acting outside the window IS what priority 100 means, so
+                    # say so rather than let a user believe they just scheduled
+                    # their storm protection off.
+                    _sub(
+                        L["warnings.custom_scope_to_window_safety_ignored"].format(
+                            label=_slot_label
+                        )
+                    )
+                elif not _claims.has_fixed_claim:
+                    # A bounded-claim slot defers before the gate is reached and
+                    # answers to ``outside_window`` instead — point the user at
+                    # the key that actually governs them.
+                    _sub(
+                        L["warnings.custom_scope_to_window_no_fixed_claim"].format(
+                            label=_slot_label
+                        )
+                    )
+                else:
+                    _sub(L["custom.scope_to_window"].format(label=_slot_label))
+                    if not config.get(CONF_RETURN_SUNSET):
+                        # Footgun: the line just rendered promises the
+                        # end-of-window position takes over, but that reposition
+                        # is the ``return_sunset`` force-send. With it off the
+                        # slot stands down and nothing moves the cover — the
+                        # outside-window dispatch guard blocks any other send —
+                        # so it simply stays where the slot left it. Only warned
+                        # on this branch: the two above already say the option
+                        # does nothing at all for the slot.
+                        _sub(
+                            L["warnings.custom_scope_to_window_needs_return"].format(
+                                label=_slot_label
+                            )
+                        )
             # Footgun (issue #711): a safety-priority slot with a live trigger
             # bypasses the auto-control toggle, manual override, and the time
             # window — it can move the cover at any hour with automation off.
@@ -3863,6 +3931,11 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             "position_max",
             "tilt_min",
             "tilt_max",
+            # Issue #1318. The legacy ``custom_position`` alias below is built
+            # from ``keys.values()`` and so picks this up automatically; listing
+            # it here keeps the granular category from disagreeing with the
+            # alias about whether the flag travels with a slot's values.
+            "scope_to_window",
         )
     )
     | {CONF_DEFAULT_TILT, CONF_SUNSET_TILT},
@@ -4774,7 +4847,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # weather_outside_window option — absent reads as "weather keeps acting
     # outside the time window", which is what every install already does, so
     # the v3.19 → v3.20 block seeds nothing.
-    MINOR_VERSION = 20
+    # 3.21 (issue #1318): the same shape once more for the additive per-slot
+    # custom_position_scope_to_window_N flag — absent reads as "the slot keeps
+    # its exact position after the window closes", which is both today's
+    # behaviour and what #895 asked for, so the v3.20 → v3.21 block seeds
+    # nothing.
+    MINOR_VERSION = 21
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

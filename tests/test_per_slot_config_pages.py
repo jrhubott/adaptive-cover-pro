@@ -75,6 +75,23 @@ def test_custom_position_slot_schema_uses_generic_keys():
     assert "custom_position_priority_2" not in keys
 
 
+def test_custom_position_slot_schema_renders_both_window_options_ungated():
+    """Neither window option is venetian-only (#943 item B, #1318).
+
+    ``outside_window`` governs the position floor and ceiling as well as the
+    tilt bounds; ``scope_to_window`` governs the exact position and Use My.
+    Both are as relevant to a plain blind as to a venetian, so both must render
+    outside the ``include_tilt`` gate.
+    """
+    from custom_components.adaptive_cover_pro.config_fields import (
+        custom_position_slot_schema,
+    )
+
+    no_tilt = _schema_keys(custom_position_slot_schema(include_tilt=False))
+    assert CUSTOM_POSITION_FORM_KEYS["outside_window"] in no_tilt
+    assert CUSTOM_POSITION_FORM_KEYS["scope_to_window"] in no_tilt
+
+
 def test_custom_position_slot_schema_tilt_gated():
     from custom_components.adaptive_cover_pro.config_fields import (
         custom_position_slot_schema,
@@ -340,6 +357,7 @@ _CUSTOM_POSITION_SAMPLE: dict[str, object] = {
     "tilt_min": 10,
     "tilt_max": 90,
     "outside_window": True,
+    "scope_to_window": True,
     "enabled": False,
 }
 

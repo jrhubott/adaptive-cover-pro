@@ -1366,6 +1366,44 @@ def test_outside_window_flag_read_per_slot():
 
 
 @pytest.mark.unit
+def test_scope_to_window_flag_read_per_slot():
+    """The per-slot #1318 opt-in lands on the state; absent reads as off.
+
+    Absent MUST read False: that is #895's shipped behaviour (a custom position
+    survives the end-of-window transition) and seeding it any other way would
+    silently reverse it for every install at once.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    assert _constraint_builder(keys, {keys["position"]: 30}).scope_to_window is False
+    state = _constraint_builder(
+        keys, {keys["position"]: 30, keys["scope_to_window"]: True}
+    )
+    assert state.scope_to_window is True
+
+
+@pytest.mark.unit
+def test_scope_to_window_is_independent_of_the_outside_window_opt_in():
+    """The two window keys are inverse-polarity and disjoint — never coupled.
+
+    ``outside_window`` extends a slot's min/max BOUNDS past the clock;
+    ``scope_to_window`` withdraws its FIXED claim at the clock. A slot with a
+    floor and an exact position can legitimately want both, so neither read
+    may normalize the other away.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {
+            keys["position"]: 30,
+            keys["outside_window"]: True,
+            keys["scope_to_window"]: True,
+        },
+    )
+    assert state.outside_window is True
+    assert state.scope_to_window is True
+
+
+@pytest.mark.unit
 def test_outside_window_flag_survives_has_fixed_tilt_normalization():
     """The opt-in is orthogonal to the #1215 FIXED-tilt bound wipe.
 

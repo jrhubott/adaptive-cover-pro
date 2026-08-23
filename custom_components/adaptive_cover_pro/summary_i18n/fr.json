@@ -77,6 +77,7 @@
     "tilt_bound_range": ", inclinaison {min}–{max}%",
     "no_position_claim": "la position calculée",
     "outside_window": "🕗 {label} : les limites min/max restent actives hors de la plage horaire (l'emplacement ne pilote jamais une position là-bas pour autant).",
+    "scope_to_window": "🕗 {label} : s'applique uniquement dans la plage horaire — une fois la fenêtre fermée, l'emplacement se désactive et la position fin-de-fenêtre s'applique.",
     "slot_label_default": "Personnalisé #{slot}"
   },
   "warnings": {
@@ -96,6 +97,9 @@
     "custom_tilt_only_no_effect": "⚠️ {label} : inclinaison seulement est activé sans angle de lamelle et sans limite d'inclinaison configurée — cet emplacement n'a aucun effet.",
     "custom_outside_window_no_bounds": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais cet emplacement ne configure aucun minimum ni maximum — le réglage n'a aucun effet. Seules les limites min/max restent actives là-bas ; une position exacte jamais.",
     "custom_outside_window_redundant": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais la priorité 100 agit déjà hors de la plage horaire (et passe outre le contrôle automatique et les seuils delta) — le réglage ne change rien ici.",
+    "custom_scope_to_window_no_fixed_claim": "⚠️ {label} : appliquer uniquement dans la plage horaire est activé, mais cet emplacement ne nomme aucune position exacte et n'utilise pas Ma position — le réglage n'a aucun effet. Il limite la revendication de position exacte uniquement ; le fait qu'une limite min/max survive à la fenêtre est décidé par garder les limites actives hors de la plage horaire à la place.",
+    "custom_scope_to_window_safety_ignored": "⚠️ {label} : appliquer uniquement dans la plage horaire est activé, mais la priorité 100 est sécurité — agir hors de la fenêtre est ce que signifie cette priorité, donc le réglage est ignoré ici.",
+    "custom_scope_to_window_needs_return": "⚠️ {label} : « Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte » est désactivé — l'emplacement se désactive à l'heure de fin et rien ne repositionne le store, donc il reste là où l'emplacement l'a laissé. Activez cette bascule.",
     "weather_window_scoped": "⚠️ La sécurité météo n'agit qu'à l'intérieur de la plage horaire — en dehors, le store suit la position de fin de plage / coucher du soleil, et la météo ne le protégera pas la nuit.",
     "weather_tilt_min_mode": "⚠️ Une inclinaison de dérogation météo est définie mais le mode de position minimale est activé — en mode de position minimale la météo ne relève que le plancher de position pour une autre règle à satisfaire et ne règle jamais les lamelles, donc l'inclinaison est ignorée."
   },

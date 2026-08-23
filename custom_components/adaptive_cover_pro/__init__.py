@@ -1156,6 +1156,18 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # night shift again.
     new_minor = _advance_noop_minor(new_version, new_minor, 20)
 
+    # v3.20 → v3.21: added the additive per-slot scope-to-window flag
+    # custom_position_scope_to_window_N (issue #1318). An absent key already
+    # reads as "this slot keeps driving its exact position after the clock
+    # window closes", which is what every existing install does today — and
+    # what issue #895 asked for explicitly — so nothing needs seeding; this is a
+    # no-op minor bump kept only to advance entries sitting at minor 20 to 21 so
+    # they stop re-triggering migration every restart (the v3.19 → v3.20
+    # precedent). Rollback-safe: an older build finds every key exactly as it
+    # left it and ignores the ten it does not know, so those slots simply keep
+    # their night shift again.
+    new_minor = _advance_noop_minor(new_version, new_minor, 21)
+
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
     )

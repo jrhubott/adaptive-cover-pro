@@ -1224,3 +1224,185 @@ class TestUseMyWithoutAPosition:
         assert result is not None
         assert result.position == 42
         assert result.use_my_position is True
+
+
+# ---------------------------------------------------------------------------
+# Scope to the clock window (issue #1318)
+# ---------------------------------------------------------------------------
+
+
+def _scope_state(
+    *,
+    is_on: bool = True,
+    position: int | None = 100,
+    min_mode: bool = False,
+    use_my: bool = False,
+    scope_to_window: bool = False,
+    priority: int = _DEFAULT_PRIORITY,
+    slot: int = 1,
+) -> CustomPositionSensorState:
+    """Slot state for the #1318 gate, with the new opt-in front and centre."""
+    return CustomPositionSensorState(
+        entity_ids=(_ENTITY,),
+        is_on=is_on,
+        position=position,
+        priority=priority,
+        min_mode=min_mode,
+        use_my=use_my,
+        slot=slot,
+        active_entity_ids=(_ENTITY,) if is_on else (),
+        scope_to_window=scope_to_window,
+    )
+
+
+class TestScopeToWindow:
+    """``scope_to_window`` scopes a slot's FIXED claim to the CLOCK window (#1318).
+
+    A slot naming an exact position (or *Use My*) has never had a window gate:
+    it keeps winning the pipeline after ``end_time``, so the end-of-window
+    position on ``DefaultHandler`` (priority 0) can never take over and
+    ``_pipeline_has_active_override`` keeps suppressing the reposition (#895).
+    That is the shipped design and another user asked for it explicitly, so
+    the new behaviour is opt-in per slot and absent reads as today's.
+
+    The gate reads ``clock_window_open``, never ``in_time_window`` — the same
+    rule ``weather._scoped_out_of_window`` follows (#656/#632).
+    """
+
+    def test_fixed_slot_still_wins_outside_the_window_by_default(self) -> None:
+        """No opt-in ⇒ the slot keeps claiming after end_time — #895's polarity.
+
+        This is the tripwire for the whole change: #895 shipped precisely so a
+        sleep-mode custom position survives the end-of-window transition. If
+        this ever needs editing, the new option's default is wrong.
+        """
+        snap = make_snapshot(
+            custom_position_sensors=[_scope_state()],
+            clock_window_open=False,
+            in_time_window=False,
+        )
+        result = _handler(position=100).evaluate(snap)
+        assert result is not None
+        assert result.position == 100
+
+    def test_fixed_slot_stands_down_outside_the_clock_window_when_scoped(self) -> None:
+        """Opted in + clock shut ⇒ decline, so DefaultHandler wins the cycle."""
+        snap = make_snapshot(
+            custom_position_sensors=[_scope_state(scope_to_window=True)],
+            clock_window_open=False,
+            in_time_window=False,
+        )
+        assert _handler(position=100).evaluate(snap) is None
+
+    def test_still_acts_when_scoped_and_clock_open(self) -> None:
+        """Inside the window the opt-in changes nothing at all."""
+        snap = make_snapshot(
+            custom_position_sensors=[_scope_state(scope_to_window=True)],
+            clock_window_open=True,
+            in_time_window=True,
+        )
+        result = _handler(position=100).evaluate(snap)
+        assert result is not None
+        assert result.position == 100
+
+    def test_use_my_slot_is_scoped_too(self) -> None:
+        """*Use My* is the other FIXED claim path, so the gate covers it."""
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _scope_state(position=None, use_my=True, scope_to_window=True)
+            ],
+            my_position_value=42,
+            clock_window_open=False,
+            in_time_window=False,
+        )
+        assert _handler(position=None).evaluate(snap) is None
+
+    def test_safety_slot_ignores_the_scope(self) -> None:
+        """Priority 100 acts outside the window BY DEFINITION (#563).
+
+        A safety slot is storm/forced protection; letting a scheduling
+        checkbox disarm it would be the whole point of the priority undone.
+        The exemption lives inside the predicate, so ``describe_skip`` cannot
+        disagree with ``evaluate`` about it.
+        """
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _scope_state(
+                    position=0,
+                    scope_to_window=True,
+                    priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+                )
+            ],
+            clock_window_open=False,
+            in_time_window=False,
+        )
+        handler = _handler(position=0, priority=CUSTOM_POSITION_SAFETY_PRIORITY)
+        result = handler.evaluate(snap)
+        assert result is not None
+        assert result.is_safety is True
+
+    def test_gate_reads_clock_window_open_not_in_time_window(self) -> None:
+        """A dark daytime gate mid-clock is NOT "outside the window" (#656/#632).
+
+        ``in_time_window`` folds the sun-tracking daytime gate into the clock
+        window, so it reads False at 10:00 on a gate-dark winter morning with
+        the user's clock wide open. Gating on it would silence the slot inside
+        the very window the user scoped it to.
+        """
+        snap = make_snapshot(
+            custom_position_sensors=[_scope_state(scope_to_window=True)],
+            clock_window_open=True,
+            in_time_window=False,
+        )
+        result = _handler(position=100).evaluate(snap)
+        assert result is not None
+        assert result.position == 100
+
+    def test_describe_skip_reads_outside_time_window_when_scoped_and_active(
+        self,
+    ) -> None:
+        """The trace names the gate that actually stopped it, like weather does."""
+        snap = make_snapshot(
+            custom_position_sensors=[_scope_state(scope_to_window=True)],
+            clock_window_open=False,
+            in_time_window=False,
+        )
+        reason = _handler(position=100).describe_skip(snap)
+        assert reason.code is ReasonCode.SKIP_OUTSIDE_WINDOW
+
+    def test_describe_skip_still_reads_not_active_when_trigger_quiet(self) -> None:
+        """A quiet trigger out here still reads "not active", not "outside window".
+
+        Reporting a window scope to a user whose sensor is simply off sends
+        them looking for the wrong setting — ``weather.describe_skip``'s rule.
+        """
+        snap = make_snapshot(
+            custom_position_sensors=[_scope_state(is_on=False, scope_to_window=True)],
+            clock_window_open=False,
+            in_time_window=False,
+        )
+        reason = _handler(position=100).describe_skip(snap)
+        assert reason.code is ReasonCode.SKIP_CUSTOM_NOT_ACTIVE
+
+    def test_describe_skip_constraint_only_slot_never_reads_outside_window(
+        self,
+    ) -> None:
+        """A bounded-claim slot is governed by a DIFFERENT key (#943 item B).
+
+        ``custom_position_outside_window_N`` decides whether a min/max bound
+        survives the clock; this option decides whether an exact position
+        does. A constraint-only slot defers before the gate is reached, so
+        telling its user "outside time window" would point at a setting that
+        does not govern them. This is where the gate order departs from
+        weather's, whose floor drops from the same field its handler reads.
+        """
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _scope_state(position=60, min_mode=True, scope_to_window=True)
+            ],
+            clock_window_open=False,
+            in_time_window=False,
+        )
+        handler = _handler(position=60)
+        assert handler.evaluate(snap) is None
+        assert handler.describe_skip(snap).code is ReasonCode.SKIP_CUSTOM_NOT_ACTIVE

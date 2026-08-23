@@ -634,6 +634,38 @@ class TestVenetianCustomPositionTiltSync:
         assert result[CONF_SUNSET_TILT] == 10
 
 
+class TestCustomPositionScopeToWindowSync:
+    """#1318: the per-slot window scope travels with a slot's values.
+
+    ``custom_position_values`` names its keys in a hand-written tuple while the
+    legacy ``custom_position`` alias is built from ``keys.values()`` and so
+    picks up every slot key automatically. A new key added to the slot map is
+    therefore synced by the alias and silently dropped by the granular
+    category unless it is listed in both — the two disagreeing about the same
+    flag is what these pin shut.
+    """
+
+    _scope_keys = frozenset(
+        keys["scope_to_window"] for keys in CUSTOM_POSITION_SLOTS.values()
+    )
+
+    def test_scope_keys_count_is_10(self):
+        assert len(self._scope_keys) == 10
+
+    @pytest.mark.parametrize("key", sorted(_scope_keys))
+    def test_scope_key_in_custom_position_values_category(self, key):
+        assert key in SYNC_CATEGORIES["custom_position_values"]
+
+    @pytest.mark.parametrize("key", sorted(_scope_keys))
+    def test_scope_key_in_legacy_custom_position_alias(self, key):
+        assert key in SYNC_CATEGORIES["custom_position"]
+
+    def test_syncing_custom_position_values_copies_the_scope_flag(self):
+        entry = _make_entry({CUSTOM_POSITION_SLOTS[1]["scope_to_window"]: True})
+        result = _extract_shared_options(entry, ["custom_position_values"])
+        assert result[CUSTOM_POSITION_SLOTS[1]["scope_to_window"]] is True
+
+
 class TestEnsureUniqueName:
     """Tests for _ensure_unique_name with suffix support."""
 

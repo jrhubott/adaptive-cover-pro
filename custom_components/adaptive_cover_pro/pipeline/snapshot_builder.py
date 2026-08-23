@@ -618,6 +618,12 @@ class PipelineSnapshotBuilder:
             # normalized with it: the flag says WHEN a surviving claim binds,
             # never WHICH claims exist, so no mutual-exclusion pass touches it.
             outside_window = bool(options.get(slot_keys["outside_window"], False))
+            # Issue #1318 — the inverse-polarity sibling of the key above, read
+            # the same way and normalized by nothing for the same reason: it
+            # says WHEN a FIXED claim stops binding, never WHICH claims exist.
+            # Deliberately independent of ``outside_window``: the two govern
+            # disjoint claim classes and a slot may legitimately set both.
+            scope_to_window = bool(options.get(slot_keys["scope_to_window"], False))
             # Mutual exclusion: tilt_only wins over min_mode / use_my
             # (decision Q3). A slot can fix only the slat angle OR claim
             # position as a floor / via My — not both. Normalize here, the
@@ -674,6 +680,7 @@ class PipelineSnapshotBuilder:
                 tilt_min=tilt_min,
                 tilt_max=tilt_max,
                 outside_window=outside_window,
+                scope_to_window=scope_to_window,
                 is_valid=is_valid,
             )
             # Remember the last valid read so a later fully-invalid read can

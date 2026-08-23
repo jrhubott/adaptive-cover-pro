@@ -1065,6 +1065,7 @@
           "custom_position_use_my": "Utiliser la position My",
           "custom_position_position_max": "Position maximale",
           "custom_position_outside_window": "Garder les limites actives hors de la plage horaire",
+          "custom_position_scope_to_window": "Appliquer uniquement dans la plage horaire",
           "custom_position_tilt": "Inclinaison",
           "custom_position_tilt_only": "Inclinaison uniquement",
           "custom_position_tilt_min": "Inclinaison minimale",
@@ -1082,6 +1083,7 @@
           "custom_position_tilt_only": "Lorsqu'activé, cet emplacement corrige uniquement l'angle des lamelles (sa valeur Inclinaison) — le suivi solaire pilote toujours la position du chariot. Stores vénitiens uniquement. Remplace le mode Minimum et Utiliser la position « My » pour cet emplacement.",
           "custom_position_position_max": "Lorsque définie, la position agit comme un plafond maximum tant que le déclencheur de ce slot est actif — les positions plus basses du suivi solaire ou d'autres calculs sont autorisées, mais tout ce qui dépasse est ramené à cette valeur. Le pendant du mode minimum. Laisser vide pour aucun maximum. En cas de conflit avec un minimum, le minimum l'emporte.",
           "custom_position_outside_window": "Lorsque activé, les limites minimum/maximum de ce slot (mode minimum, position maximale, inclinaison minimale, inclinaison maximale) continuent de s'appliquer après la fermeture de la plage horaire de début/fin, tant que le déclencheur reste actif — un contact de fenêtre qui doit maintenir les lames ouvertes à 3 h du matin, par exemple. Seul l'axe limité bouge, et seulement jusqu'à sa limite ; l'autre axe reste où il est — un tablier non limité est commandé là où le volet se trouve déjà, et des lames non limitées ne reçoivent aucune commande — ainsi ni l'un ni l'autre ne saute à la position par défaut. Une position exacte, un angle de lame fixe et Utiliser ma position n'agissent jamais hors de la plage horaire, quel que soit ce réglage. Une dérogation manuelle encore active l'emporte ici, quelle que soit la priorité du slot : tant qu'elle tient, les limites attendent la réouverture de la plage horaire (dans la plage horaire, une limite qui prime sur la dérogation continue de la contraindre). Quand le déclencheur retombe la nuit, le volet reste simplement là où la limite l'a laissé.",
+          "custom_position_scope_to_window": "Lorsque activé, ce slot arrête de s'appliquer une fois que la plage horaire de début/fin se ferme, pour que le volet puisse revenir à sa Position Fin-de-Fenêtre (ou à la position par défaut actuelle) au lieu de rester où le slot l'a mis. Cela régit uniquement la revendication de Position exacte de ce slot et Utiliser ma position — le fait qu'une limite minimum ou maximum survive à la fenêtre est décidé par « Garder les limites actives hors de la plage horaire » à la place, et les deux sont définis indépendamment. La priorité 100 (sécurité) l'ignore : agir hors de la fenêtre est ce que signifie cette priorité. Désactivé par défaut, donc un slot existant continue de maintenir sa position toute la nuit. Le repositionnement à l'heure de fin lui-même nécessite toujours que « Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte » soit activé.",
           "custom_position_tilt_min": "Lorsque définie, l'inclinaison agit comme un minimum tant que le déclencheur de ce slot est actif — une inclinaison calculée en dessous est relevée à cette valeur, et tout ce qui est au-dessus reste inchangé. Contrairement à « Inclinaison uniquement » (qui fixe un angle exact), il s'agit d'une limite. Stores vénitiens uniquement. Laisser vide pour aucun minimum.",
           "custom_position_tilt_max": "Lorsque définie, l'inclinaison agit comme un maximum tant que le déclencheur de ce slot est actif — une inclinaison calculée au-dessus est abaissée à cette valeur. Stores vénitiens uniquement. Laisser vide pour aucun maximum."
         }
@@ -1777,6 +1779,10 @@
         "use_my": {
           "name": "Utiliser Somfy My",
           "description": "Si vrai, utiliser my_position_value au lieu de position."
+        },
+        "scope_to_window": {
+          "name": "Appliquer uniquement dans la plage horaire",
+          "description": "Si activé, la position exacte de cet emplacement (ou Ma position) cesse de s'appliquer une fois que la fenêtre horaire de début/fin se ferme, pour que la position de fin de fenêtre puisse prendre le relais. Désactivé par défaut. La priorité 100 (sécurité) l'ignore. Le repositionnement à l'heure de fin lui-même nécessite toujours que « Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte » soit activé."
         }
       }
     },

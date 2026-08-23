@@ -634,6 +634,18 @@ set_custom_position:
         resume when the window reopens.
       selector:
         boolean:
+    scope_to_window:
+      name: Only apply within time window
+      description: >-
+        If true, this slot's exact position (or Use My position) stops applying
+        once the start/end time window closes, so the end-of-window position can
+        take over. Off by default, which keeps the slot winning the pipeline all
+        night. Governs the exact-position claim only — whether a min/max bound
+        survives the window is decided by outside_window instead. Priority 100
+        (safety) ignores this: acting outside the window is what that priority
+        means. The end-of-window reposition itself still requires return_sunset.
+      selector:
+        boolean:
 
 set_motion:
   name: Set occupancy settings (deprecated)

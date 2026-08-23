@@ -1188,6 +1188,24 @@ def _custom_position_slot_keys(n: int) -> dict[str, str]:
         # Deliberately NOT tilt-gated: it also governs `min_mode` and
         # `position_max`, which every cover type has.
         "outside_window": f"custom_position_outside_window_{n}",
+        # Stand this slot's FIXED claim down once the user's start/end clock
+        # window has closed (issue #1318). Opt-in, absent = off.
+        #
+        # The exact INVERSE of `outside_window` above, and disjoint from it in
+        # claim class: that key extends BOUNDED claims past the clock and never
+        # admits a FIXED one; this key withdraws a FIXED claim (an exact
+        # position, `use_my`) at the clock and never touches a bound. A slot may
+        # set both — they govern different claims. Do NOT fold the two together:
+        # `outside_window` is opt-in/absent-off, so widening it to FIXED claims
+        # would stop every existing slot acting outside the window with nobody
+        # having opted in.
+        #
+        # Default off because #895 is the inverse request from another user — a
+        # sleep-mode slot that must SURVIVE the end-of-window transition — and
+        # both outcomes have to stay reachable. Priority >= 100 (safety) ignores
+        # this entirely: acting outside the window IS what that priority means
+        # (#563).
+        "scope_to_window": f"custom_position_scope_to_window_{n}",
         # `enabled` is opt-out: existing entries lack the key and behave as
         # enabled. Set to False to silence a slot without clearing its
         # configuration — used by the companion card's slot toggle UI.
@@ -1225,6 +1243,7 @@ CUSTOM_POSITION_FORM_KEYS: dict[str, str] = {
     "tilt_min": "custom_position_tilt_min",
     "tilt_max": "custom_position_tilt_max",
     "outside_window": "custom_position_outside_window",
+    "scope_to_window": "custom_position_scope_to_window",
 }
 
 

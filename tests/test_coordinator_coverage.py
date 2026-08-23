@@ -858,6 +858,108 @@ async def test_window_close_still_defers_to_custom_position_after_refresh():
     cmd_svc.apply_position.assert_not_called()
 
 
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_window_close_sends_eow_position_after_scoped_slot_stands_down_at_refresh():
+    """A slot scoped to the clock window releases the end-of-window reposition.
+
+    Issue #1318, and the proof that it needed no coordinator change at all.
+    Sibling of ``test_window_close_still_defers_to_custom_position_after_refresh``
+    with the polarity flipped: the stale result is the in-window
+    CUSTOM_POSITION winner, and the #1241 refresh resolves it to DEFAULT
+    because ``CustomPositionHandler`` now declines once the clock is shut and
+    the slot opted in. ``_pipeline_has_active_override`` sees no override — not
+    because it learned about a new option, but because the handler correctly
+    stood down — so the end-of-window position is dispatched.
+
+    The unopted-in path is pinned by the two #895 guards above, which must keep
+    passing unmodified.
+    """
+    import datetime as dt
+    from types import SimpleNamespace
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DEFAULT_HEIGHT,
+        ControlMethod,
+    )
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+    coord._event_buffer = EventBuffer(maxlen=50)
+    coord.automatic_control = True
+    coord._track_end_time = True
+    coord._inverse_state = False
+    coord.entities = [MagicMock()]
+    coord.hass = MagicMock()
+    # The last in-window cycle: the slot was genuinely winning at 23:44.
+    coord._pipeline_result = SimpleNamespace(
+        control_method=ControlMethod.CUSTOM_POSITION
+    )
+
+    cmd_svc = MagicMock()
+    cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    cmd_svc.clear_non_safety_targets = MagicMock()
+    coord._cmd_svc = cmd_svc
+
+    def _refresh_resolves_to_default(*_args, **_kwargs):
+        # What a real post-close cycle now produces for a scoped slot: the
+        # handler declines, DefaultHandler wins, and the effective default
+        # carries end_of_window_position.
+        coord._pipeline_result = SimpleNamespace(control_method=ControlMethod.DEFAULT)
+
+    coord.async_refresh = AsyncMock(side_effect=_refresh_resolves_to_default)
+
+    options = {CONF_DEFAULT_HEIGHT: 0}
+    config_entry = MagicMock()
+    config_entry.options = options
+    coord.config_entry = config_entry
+
+    cover_data = MagicMock()
+    cover_data.sun_data = MagicMock()
+    coord.get_blind_data = MagicMock(return_value=cover_data)
+    coord._build_position_context = MagicMock(return_value=MagicMock(force=True))
+    coord.manager = MagicMock()
+
+    from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
+        WindowTransitionTracker,
+    )
+
+    tracker = WindowTransitionTracker(
+        hass=MagicMock(),
+        logger=coord.logger,
+        event_buffer=coord._event_buffer,
+        sunset_window_open_fn=lambda _opts: False,
+    )
+    tracker._prev_sunset_window_open = True
+    coord._window_tracker = tracker
+
+    with patch(
+        "custom_components.adaptive_cover_pro.helpers.compute_effective_default",
+        return_value=(0, False),
+    ):
+        time_mgr = MagicMock()
+
+        coord._policy = get_policy("cover_blind")
+
+        async def _invoke(track_end_time, refresh_callback, on_window_open=None):
+            await refresh_callback()
+
+        time_mgr.check_transition = _invoke
+        coord._time_mgr = time_mgr
+
+        await coord._check_time_window_transition(dt.datetime.now(dt.UTC))
+
+    cmd_svc.apply_position.assert_called_once()
+    assert cmd_svc.apply_position.call_args[0][2] == "end_time_default"
+
+
 # ---------------------------------------------------------------------------
 # _build_pipeline: tilt threaded from options to CustomPositionHandler
 # ---------------------------------------------------------------------------
