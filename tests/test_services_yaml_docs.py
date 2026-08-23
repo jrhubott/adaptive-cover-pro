@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 import yaml
+
+from custom_components.adaptive_cover_pro.config_fields import _BINARY_ON_DOMAINS
+from custom_components.adaptive_cover_pro.const import (
+    CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
+    OPTION_RANGES,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -16,10 +23,29 @@ SERVICES_YAML = (
     / "services.yaml"
 )
 
+EN_JSON = (
+    Path(__file__).parent.parent
+    / "custom_components"
+    / "adaptive_cover_pro"
+    / "translations"
+    / "en.json"
+)
+
 
 def _load():
     with SERVICES_YAML.open(encoding="utf-8") as fh:
         return yaml.safe_load(fh)
+
+
+def _load_en_services():
+    """Return the ``services`` block of translations/en.json."""
+    with EN_JSON.open(encoding="utf-8") as fh:
+        return json.load(fh)["services"]
+
+
+def _fields(block, name):
+    """Return the set of field names documented for ``name`` in ``block``."""
+    return set((block.get(name) or {}).get("fields") or {})
 
 
 def test_set_blind_spot_gamma_fields_exist_with_signed_range():
@@ -63,48 +89,9 @@ def test_get_diagnostics_and_get_troubleshooting_config_entry_id_descriptions_ma
     assert diag_desc == troubleshoot_desc
 
 
-def test_set_blind_spot_en_json_fields_match_services_yaml():
-    """en.json set_blind_spot.fields must document exactly the yaml fields.
-
-    Without this lock a new yaml field (the signed-gamma edges, #247) can ship
-    with a stale en.json that still describes the old FOV-relative frame and
-    lacks the gamma fields — HA then renders no label/description for them. Keys
-    must match 1:1 in both directions.
-    """
-    import json
-
-    yaml_fields = set(_load()["set_blind_spot"]["fields"])
-    en_path = (
-        Path(__file__).parent.parent
-        / "custom_components"
-        / "adaptive_cover_pro"
-        / "translations"
-        / "en.json"
-    )
-    with en_path.open(encoding="utf-8") as fh:
-        en = json.load(fh)
-    en_fields = set(en["services"]["set_blind_spot"]["fields"])
-    assert en_fields == yaml_fields, (
-        "services.yaml and en.json set_blind_spot fields disagree: "
-        f"only in yaml={sorted(yaml_fields - en_fields)}, "
-        f"only in en.json={sorted(en_fields - yaml_fields)}"
-    )
-
-
 def test_set_blind_spot_en_json_legacy_fields_marked_deprecated():
     """The legacy edges in en.json must be flagged deprecated (frame switch #247)."""
-    import json
-
-    en_path = (
-        Path(__file__).parent.parent
-        / "custom_components"
-        / "adaptive_cover_pro"
-        / "translations"
-        / "en.json"
-    )
-    with en_path.open(encoding="utf-8") as fh:
-        en = json.load(fh)
-    fields = en["services"]["set_blind_spot"]["fields"]
+    fields = _load_en_services()["set_blind_spot"]["fields"]
     for key in ("blind_spot_left", "blind_spot_right"):
         assert "deprecated" in fields[key]["description"].lower()
 
@@ -251,30 +238,137 @@ def test_set_position_limits_min_position_sun_tracking_field_exists_with_correct
     assert sel["unit_of_measurement"] == "%"
 
 
-def test_set_position_limits_en_json_fields_match_services_yaml():
-    """services.yaml and en.json set_position_limits fields must match 1:1 — mirrors
-    test_set_blind_spot_en_json_fields_match_services_yaml (issue #247's guard).
-    Without this lock, a yaml field can ship with no translation (silently falls back
-    to raw English in the Actions UI, confirmed in issue #1242's screenshot for
-    enable_position_matching) or a translation entry can exist with no yaml field
-    behind it (silently invisible in the Actions UI — issue #1242's root cause for
-    min_position_sun_tracking).
+def test_set_light_cloud_is_sunny_sensor_offers_every_binary_on_domain():
+    """Issue #1251: the option is wired (_SECTION_LIGHT_CLOUD, FIELD_VALIDATORS)
+    and already documented in en.json; only the yaml field the Actions UI renders
+    from was missing. The picker must offer the same domains as the config-flow
+    selector (binary_on_selector) — a narrower list would make an input_boolean
+    set through the UI unsettable through the service.
     """
-    import json
-
-    yaml_fields = set(_load()["set_position_limits"]["fields"])
-    en_path = (
-        Path(__file__).parent.parent
-        / "custom_components"
-        / "adaptive_cover_pro"
-        / "translations"
-        / "en.json"
+    fields = _load()["set_light_cloud"]["fields"]
+    assert "is_sunny_sensor" in fields
+    assert set(fields["is_sunny_sensor"]["selector"]["entity"]["domain"]) == set(
+        _BINARY_ON_DOMAINS
     )
-    with en_path.open(encoding="utf-8") as fh:
-        en = json.load(fh)
-    en_fields = set(en["services"]["set_position_limits"]["fields"])
-    assert en_fields == yaml_fields, (
-        "services.yaml and en.json set_position_limits fields disagree: "
-        f"only in yaml={sorted(yaml_fields - en_fields)}, "
-        f"only in en.json={sorted(en_fields - yaml_fields)}"
+
+
+def test_set_venetian_backrotate_publish_lag_selector_matches_option_range():
+    """Issue #1251: wired via _SECTION_VENETIAN + FIELD_VALIDATORS(_range) and
+    already in en.json; only the yaml field was missing. The slider bounds are
+    read from OPTION_RANGES — the same tuple options_service._range() validates
+    against — so the UI can never offer a value the handler rejects.
+    """
+    fields = _load()["set_venetian"]["fields"]
+    assert "venetian_backrotate_publish_lag" in fields
+    sel = fields["venetian_backrotate_publish_lag"]["selector"]["number"]
+    lo, hi = OPTION_RANGES[CONF_VENETIAN_BACKROTATE_PUBLISH_LAG]
+    assert sel["min"] == lo
+    assert sel["max"] == hi
+    assert sel["unit_of_measurement"] == "s"
+
+
+def test_set_geometry_does_not_expose_venetian_tilt_skip_above():
+    """Issue #1251: CONF_VENETIAN_TILT_SKIP_ABOVE is in _SECTION_VENETIAN, not
+    _SECTION_GEOMETRY_ALL (services/options_service.py:1023-1043), so _build_patch
+    would silently drop it from a set_geometry call. Exposing it there — in yaml
+    OR in a translation — creates a UI-visible field that does nothing.
+    set_venetian owns this option and documents it in both files.
+    """
+    services = _load()
+    en_services = _load_en_services()
+    assert "venetian_tilt_skip_above" not in services["set_geometry"]["fields"]
+    assert "venetian_tilt_skip_above" not in en_services["set_geometry"]["fields"]
+    assert "venetian_tilt_skip_above" in services["set_venetian"]["fields"]
+
+
+# Known services.yaml ↔ en.json field drift, one entry per (service, field).
+# Issue #1251. THIS LIST ONLY EVER SHRINKS.
+#
+# Each pair is a field documented in exactly one of the two files. Every entry
+# here is a real gap that still needs fixing; the pair is suppressed only so the
+# parity lock below can guard the other 35 services today instead of after the
+# cleanup lands.
+#
+# To remove an entry: make the two files agree on that field (add the missing
+# services.yaml field, add the missing en.json name+description and sync DE/FR
+# via the acp-translate skill, or delete the field if the service's handler
+# section does not accept it), then delete the line. Deleting is not optional —
+# test_known_field_drift_entries_are_still_drifting fails on a stale entry.
+#
+# NEVER add an entry. A new drift is a bug in the PR that introduced it, not a
+# known-issue to park here. If you believe an addition is genuinely warranted,
+# that is a maintainer decision — open an issue.
+KNOWN_FIELD_DRIFT: frozenset[tuple[str, str]] = frozenset(
+    {
+        # set_custom_position — 4 fields in services.yaml with no en.json entry
+        # (#943 axis constraints, #1318 window scope). Needs EN/DE/FR authoring.
+        ("set_custom_position", "outside_window"),
+        ("set_custom_position", "position_max"),
+        ("set_custom_position", "tilt_max"),
+        ("set_custom_position", "tilt_min"),
+        # set_climate — 3 fields in services.yaml with no en.json entry.
+        ("set_climate", "extreme_heat_position"),
+        ("set_climate", "temp_extreme_heat"),
+        ("set_climate", "tracking_seasons"),
+    }
+)
+
+
+@pytest.mark.parametrize("service", sorted(_load()))
+def test_services_yaml_en_json_field_parity(service: str) -> None:
+    """Every services.yaml service must document exactly the en.json fields.
+
+    Issue #1251: hand-written per-service parity guards existed for two services
+    only (set_blind_spot, set_position_limits), so the other 35 could — and did —
+    ship a yaml-only field (raw English in a translated Actions UI) or an
+    en.json-only field (invisible in the Actions UI) with no test failing.
+    """
+    yaml_services = _load()
+    en_services = _load_en_services()
+    assert service in en_services, (
+        f"services.yaml documents '{service}' but translations/en.json has no "
+        f"services.{service} entry — the whole action renders untranslated."
+    )
+    suppressed = {f for (s, f) in KNOWN_FIELD_DRIFT if s == service}
+    yaml_fields = _fields(yaml_services, service)
+    en_fields = _fields(en_services, service)
+    only_yaml = yaml_fields - en_fields - suppressed
+    only_en = en_fields - yaml_fields - suppressed
+    assert not only_yaml and not only_en, (
+        f"services.yaml and translations/en.json disagree on '{service}' fields.\n"
+        "  only in services.yaml (no translation — the Actions UI shows raw "
+        f"English even in DE/FR): {sorted(only_yaml)}\n"
+        "  only in en.json (no yaml field — the option is invisible in the "
+        f"Actions UI): {sorted(only_en)}\n"
+        "Fix: add the missing entry to the other file — or, if the field is not "
+        "an option this service's handler section accepts, delete it (a field "
+        "outside the handler's allowed_keys is silently dropped by _build_patch).\n"
+        "Do NOT add it to KNOWN_FIELD_DRIFT: that list only shrinks (issue #1251)."
+    )
+
+
+def test_known_field_drift_entries_are_still_drifting() -> None:
+    """Every KNOWN_FIELD_DRIFT pair must name a field that is genuinely still
+    drifting. Issue #1251: the list only shrinks, and nothing shrinks it unless
+    forgetting to prune is a hard failure. A suppression left standing after the
+    drift is fixed silently swallows the next real regression on that field.
+    """
+    yaml_services = _load()
+    en_services = _load_en_services()
+    stale = []
+    for service, field in sorted(KNOWN_FIELD_DRIFT):
+        if service not in yaml_services:
+            stale.append(f"  {service}.{field} (service no longer in services.yaml)")
+            continue
+        drifting = _fields(yaml_services, service) ^ _fields(en_services, service)
+        if field not in drifting:
+            stale.append(f"  {service}.{field} (services.yaml and en.json now agree)")
+    assert not stale, (
+        "KNOWN_FIELD_DRIFT (tests/test_services_yaml_docs.py) lists (service, field) "
+        "pairs that are no longer drifting — services.yaml and translations/en.json "
+        "now agree on them, so the suppression is dead weight hiding the next real "
+        "regression.\n"
+        "Delete these entries from KNOWN_FIELD_DRIFT:\n"
+        + "\n".join(stale)
+        + "\nThis list only ever shrinks (issue #1251)."
     )

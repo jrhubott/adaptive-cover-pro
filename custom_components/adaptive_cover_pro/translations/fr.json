@@ -1851,10 +1851,6 @@
           "description": "Largeur de la fenêtre en mètres (0,1–50 m, métrique canonique, indépendamment de la locale HA). Store vertical uniquement.",
           "name": "Largeur de la fenêtre"
         },
-        "venetian_tilt_skip_above": {
-          "name": "Ignorer l'inclinaison au-dessus de la position (%)",
-          "description": "Ignore la commande d'inclinaison quand la position commandée dépasse cette valeur. Stores vénitiens uniquement. Par défaut 95."
-        },
         "tilt_horizontal_percent": {
           "name": "Pourcentage d'Inclinaison à l'Horizontale",
           "description": "Point d'étalonnage optionnel : le pourcentage d'inclinaison rapporté quand les lamelles sont exactement horizontales (90°). 0 désactive cette option. Exige que l'angle d'inclinaison à 0 % et l'angle d'inclinaison à 100 % se situent de part et d'autre de 90°."

@@ -1851,10 +1851,6 @@
           "description": "Fensterbreite in Metern (0,1–50 m, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Vertikaljalousie.",
           "name": "Fensterbreite"
         },
-        "venetian_tilt_skip_above": {
-          "name": "Neigung über Position überspringen (%)",
-          "description": "Neigungsbefehl überspringen, wenn die angeforderte Position diesen Wert überschreitet. Nur Jalousien. Standard 95."
-        },
         "tilt_horizontal_percent": {
           "name": "Neigungsprozentsatz bei horizontal",
           "description": "Optionaler dritter Kalibrierungspunkt: der Neigungsprozentsatz, der gemeldet wird, wenn die Lamellen genau horizontal (90°) sind. 0 deaktiviert ihn. Erfordert, dass der Neigungswinkel bei 0% und der Neigungswinkel bei 100% auf gegenüberliegenden Seiten von 90° liegen."

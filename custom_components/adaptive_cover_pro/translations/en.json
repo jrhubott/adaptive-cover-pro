@@ -2203,10 +2203,6 @@
         "tilt_horizontal_percent": {
           "name": "Tilt percentage at horizontal",
           "description": "Optional third calibration point: the tilt percentage reported when the slats are exactly horizontal (90°). 0 disables it. Requires tilt angle at 0% and tilt angle at 100% to sit on opposite sides of 90°."
-        },
-        "venetian_tilt_skip_above": {
-          "name": "Skip tilt above position (%)",
-          "description": "Skip the tilt command when commanded position exceeds this value. Venetian only. Default 95."
         }
       }
     },

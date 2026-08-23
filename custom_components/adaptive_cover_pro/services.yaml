@@ -808,6 +808,16 @@ set_light_cloud:
       description: "If true, suppress solar positioning when cloud coverage exceeds the threshold."
       selector:
         boolean:
+    is_sunny_sensor:
+      name: Is Sunny binary sensor
+      description: "Binary entity that authoritatively reports sun-on-window. ON = sunny, OFF = cloud suppression fires. Unavailable falls back to weather state. Null = none."
+      selector:
+        entity:
+          domain:
+            - binary_sensor
+            - input_boolean
+            - switch
+            - schedule
 
 set_climate:
   name: Set climate settings
@@ -1412,6 +1422,16 @@ set_venetian:
           min: 0.0
           max: 10.0
           step: 0.1
+          mode: slider
+          unit_of_measurement: s
+    venetian_backrotate_publish_lag:
+      name: Publish-lag window (s)
+      description: "Seconds the integration tolerates a late position/tilt-state publish from the actuator before treating it as a user touch (15–180 s). Default 45 s. Raise to 60–120 s for slow KNX bus or Fibaro/Shelly republish; tighten only for unusually fast actuators."
+      selector:
+        number:
+          min: 15.0
+          max: 180.0
+          step: 1
           mode: slider
           unit_of_measurement: s
 
