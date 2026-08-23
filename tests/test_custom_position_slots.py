@@ -37,6 +37,7 @@ _REQUIRED_KEYS = frozenset(
         "tilt_min",
         "tilt_max",
         "outside_window",
+        "scope_to_window",
         "enabled",
     }
 )

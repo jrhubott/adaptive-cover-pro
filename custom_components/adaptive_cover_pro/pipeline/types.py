@@ -251,6 +251,22 @@ class CustomPositionSensorState:
     # position outside the window is the #215/#216/#223 defect class.
     outside_window: bool = False
 
+    # Opt-in: stand this slot's FIXED claim down once the user's start/end clock
+    # window has closed (issue #1318). Read straight off
+    # ``custom_position_scope_to_window_N``; absent = False = today's behaviour,
+    # which is what #895 asked for and shipped (a sleep-mode slot must survive
+    # the end-of-window transition). The two users want opposite outcomes from
+    # one code path, so it is a per-slot choice rather than a new default.
+    #
+    # The exact INVERSE polarity of ``outside_window`` above, and disjoint from
+    # it in claim class: that key extends BOUNDED claims past the clock and
+    # never admits a FIXED one; this key withdraws a FIXED claim at the clock
+    # and never touches a bound. A slot may set both — they govern different
+    # claims — so neither normalizes the other away.
+    # ``handlers.custom_position.CustomPositionHandler._scoped_out_of_window``
+    # is the single place that reads it.
+    scope_to_window: bool = False
+
     # Whether this cycle's read was usable (issue #1005). True when at least one
     # bound sensor reported a non-invalid state (not unavailable/unknown/missing)
     # OR a condition template rendered an opinion. False = NEITHER input spoke
@@ -326,6 +342,24 @@ class CustomPositionSensorState:
         return (
             not self.use_my and is_bounded_mode(self.position_mode)
         ) or is_bounded_mode(self.tilt_mode)
+
+    @property
+    def has_fixed_claim(self) -> bool:
+        """Whether this slot DRIVES the position axis to a value of its own.
+
+        The mirror of :attr:`has_bounded_claim`, and the question three
+        separate seats ask: ``CustomPositionHandler.evaluate``'s deferral to
+        the axis-constraint composition pass, the #1318 window gate, and the
+        config-flow summary's warning that the gate has nothing to act on.
+        Asked of the slot itself for the same reason the bounded question is —
+        a hand-rolled copy of "is this FIXED?" in the summary is exactly the
+        drift ``has_bounded_claim`` was extracted to stop.
+
+        ``use_my`` is a FIXED claim even though :attr:`position_mode` never
+        says so: the My path is hardware-pinned, ignores constraint semantics
+        entirely, and always claims the axis.
+        """
+        return self.use_my or self.position_mode is AxisConstraintMode.FIXED
 
     @property
     def slot_name(self) -> str | None:

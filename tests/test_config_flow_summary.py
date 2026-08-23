@@ -4843,6 +4843,145 @@ def test_custom_position_outside_window_with_bounds_no_warning():
     assert "constraints stay active outside the time window" in summary
 
 
+# ---------------------------------------------------------------------------
+# Scope the FIXED claim to the time window (issue #1318)
+# ---------------------------------------------------------------------------
+
+
+def test_custom_position_scope_to_window_renders_a_line():
+    """An opted-in FIXED slot says it stands down when the window closes."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 100,
+        "custom_position_priority_1": 70,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "only applies within the time window" in summary
+
+
+def test_custom_position_scope_to_window_absent_renders_nothing():
+    """The default (off) adds no line — #895's behaviour, and no churn."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 100,
+        "custom_position_priority_1": 70,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "within the time window" not in summary
+
+
+def test_custom_position_scope_to_window_without_a_fixed_claim_warns():
+    """The option governs the exact-position claim only — a floor has none.
+
+    A ``min_mode`` slot defers to the axis-constraint pass before the gate is
+    ever reached, and whether its bound survives the clock is decided by the
+    *other* key (``custom_position_outside_window_N``, #943 item B). Saying so
+    stops a user setting the wrong checkbox for the behaviour they want.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 40,
+        "custom_position_min_mode_1": True,
+        "custom_position_priority_1": 70,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "within the time window" in ln
+    )
+    assert "no exact position" in warn_line
+
+
+def test_custom_position_scope_to_window_tilt_only_slot_warns():
+    """A tilt-only slot disclaims the position axis, so there is nothing to scope."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_tilt_1": 30,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+        "custom_position_priority_1": 70,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "within the time window" in ln
+    )
+    assert "no exact position" in warn_line
+
+
+def test_custom_position_scope_to_window_at_safety_priority_warns_ignored():
+    """Priority 100 acts outside the window by definition — the option is inert.
+
+    The #563 exemption is unconditional in the handler; the summary has to say
+    so, or a user will believe they scheduled their storm protection off.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.storm",
+        "custom_position_1": 0,
+        "custom_position_priority_1": 100,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "within the time window" in ln
+    )
+    assert "safety" in warn_line.lower()
+
+
+def test_custom_position_scope_to_window_use_my_slot_is_a_fixed_claim():
+    """*Use My* claims the axis, so the scope applies and no warning fires.
+
+    The exact mirror of ``test_custom_position_outside_window_use_my_floor_is_not_a_bound``:
+    a ``min_mode`` + ``use_my`` slot has NO bound (My is hardware-pinned, so
+    the floor emits nothing) but it DOES drive the axis. One derivation has to
+    answer both questions, or the two summary blocks contradict each other
+    about the same slot.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 40,
+        "custom_position_min_mode_1": True,
+        "custom_position_use_my_1": True,
+        "custom_position_priority_1": 70,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "only applies within the time window" in summary
+    assert not any(
+        "⚠️" in ln and "within the time window" in ln for ln in summary.splitlines()
+    )
+
+
+def test_custom_position_both_window_options_render_independently():
+    """A slot may scope its exact position AND extend its bounds (#943 B + #1318).
+
+    The two keys are inverse-polarity and govern disjoint claim classes, so a
+    min+max range slot with an exact position configured can want both lines.
+    Neither may suppress the other.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 40,
+        "custom_position_min_mode_1": True,
+        "custom_position_position_max_1": 80,
+        "custom_position_priority_1": 70,
+        "custom_position_outside_window_1": True,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "constraints stay active outside the time window" in summary
+    # The slot's position claim is a floor, not an exact position, so the
+    # scope has nothing to act on and says so rather than going quiet.
+    assert any("⚠️" in ln and "no exact position" in ln for ln in summary.splitlines())
+
+
 # --- Weather-override slat angle (issue #1297) ---
 
 _WX_TILT_MIN_MODE_PHRASE = "minimum position mode is on"

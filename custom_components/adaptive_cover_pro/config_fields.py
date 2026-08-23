@@ -1222,6 +1222,19 @@ def _custom_position_base_specs() -> list[FieldSpec]:
                 make_selector=_bool(),
             )
         )
+        # Stand this slot's exact-position / Use-My claim down once the clock
+        # window closes (issue #1318). Also ALWAYS rendered, and for the mirror
+        # reason: it governs the position claim every cover type can make.
+        # Absent = off, so no DEFAULT_* constant exists for it either.
+        specs.append(
+            FieldSpec(
+                slot["scope_to_window"],
+                SECTION_CUSTOM_POSITION,
+                ValidatorKind.BOOL,
+                default=False,
+                make_selector=_bool(),
+            )
+        )
     return specs
 
 
@@ -1324,6 +1337,11 @@ def _custom_position_slot_fields(
     # governs the position floor and ceiling as well as the tilt bounds, so it
     # is as relevant to a plain blind as to a venetian.
     schema[vol.Optional(keys["outside_window"], default=False)] = (
+        selector.BooleanSelector()
+    )
+    # Scope-to-window opt-in (issue #1318) — UNGATED for the mirror reason: it
+    # governs the slot's exact position and Use My, which every cover type has.
+    schema[vol.Optional(keys["scope_to_window"], default=False)] = (
         selector.BooleanSelector()
     )
     if include_tilt:

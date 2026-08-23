@@ -633,6 +633,12 @@ FIELD_VALIDATORS: dict[str, Any] = {
         slot_keys["outside_window"]: _bool_v()
         for slot_keys in CUSTOM_POSITION_SLOTS.values()
     },
+    # Scope-to-window opt-in (issue #1318) — the inverse-polarity sibling of
+    # the key above, and a plain boolean too, so no OPTION_RANGES entry.
+    **{
+        slot_keys["scope_to_window"]: _bool_v()
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
+    },
     **{slot_keys["enabled"]: _bool_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()},
     # Glare zones 1–4 — name is free-form text; x/y/radius/z pull ranges from
     # OPTION_RANGES (bounds mirror config_flow._build_glare_zones_schema).
@@ -1394,6 +1400,8 @@ async def _handle_set_custom_position(hass: HomeAssistant, call: ServiceCall) ->
         "tilt_min": slot_keys["tilt_min"],
         "tilt_max": slot_keys["tilt_max"],
         "outside_window": slot_keys["outside_window"],
+        # Scope the FIXED claim to the clock window (issue #1318)
+        "scope_to_window": slot_keys["scope_to_window"],
     }
 
     # Build patch: only include fields that were supplied in the call
