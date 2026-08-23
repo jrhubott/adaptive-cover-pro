@@ -630,14 +630,21 @@ class TestWeatherStateDefault:
         assert ["sunny", "partlycloudy", "clear"] == DEFAULT_WEATHER_STATE
         assert "cloudy" not in DEFAULT_WEATHER_STATE
 
+        # `is` (not `==`) is deliberate: voluptuous wraps a non-callable
+        # `default=` in a lambda closing over that exact object, so
+        # `marker.default()` returns the SAME list instance passed at
+        # schema-construction time (verified empirically — a copied literal
+        # with equal contents would still pass `==` but fail `is`). Identity
+        # is what actually proves these three sites import one constant
+        # instead of each carrying its own independently-maintained literal.
         weather_options_marker = next(
             k for k in WEATHER_OPTIONS.schema if str(k) == CONF_WEATHER_STATE
         )
-        assert weather_options_marker.default() == DEFAULT_WEATHER_STATE
+        assert weather_options_marker.default() is DEFAULT_WEATHER_STATE
 
         light_cloud_marker = next(
             k for k in LIGHT_CLOUD_SCHEMA.schema if str(k) == CONF_WEATHER_STATE
         )
-        assert light_cloud_marker.default() == DEFAULT_WEATHER_STATE
+        assert light_cloud_marker.default() is DEFAULT_WEATHER_STATE
 
-        assert FIELD_SPECS[CONF_WEATHER_STATE].default == DEFAULT_WEATHER_STATE
+        assert FIELD_SPECS[CONF_WEATHER_STATE].default is DEFAULT_WEATHER_STATE

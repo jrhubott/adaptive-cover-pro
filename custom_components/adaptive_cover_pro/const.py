@@ -947,7 +947,9 @@ CONF_PRESENCE_ENTITY = "presence_entity"  # presence/occupancy sensor entity_id
 CONF_PRESENCE_TEMPLATE = "presence_template"  # truthy = occupied
 CONF_PRESENCE_TEMPLATE_MODE = "presence_template_mode"  # TemplateCombineMode
 CONF_WEATHER_ENTITY = "weather_entity"  # weather. integration entity_id
-CONF_WEATHER_STATE = "weather_state"  # states that trigger climate handler
+# Gates is_sunny; feeds cloud_suppression (priority 60) and climate's
+# is_low_light — not a standalone "climate handler" trigger.
+CONF_WEATHER_STATE = "weather_state"
 # Default weather-state selection for the is_sunny weather-entity fallback
 # (issue #1300): both maintainer-authored help texts for this field agree
 # "cloudy" should not be part of the recommended default; the shipped default

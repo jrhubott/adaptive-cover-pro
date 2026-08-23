@@ -490,6 +490,78 @@ def test_priority_field_documents_all_three_gates() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Issue #1300 — the shipped CONF_WEATHER_STATE default and its own help text
+# drifted apart once already (default included "cloudy", both help strings
+# said it shouldn't). Lock the two in sync going forward.
+# ---------------------------------------------------------------------------
+
+# Markers are matched in order; each pairs an opening phrase with the
+# character that closes the enumeration it introduces. Keyed on these short,
+# stable substrings (not the surrounding sentence) so prose can be reworded
+# freely around the list without this test needing an edit.
+_WEATHER_STATE_DEFAULTS_MARKERS: tuple[tuple[str, str], ...] = (
+    ("Defaults: ", "."),
+    ("the defaults (", ")"),
+)
+
+
+def _parse_weather_state_defaults(desc: str) -> list[str]:
+    """Extract the comma-separated list following a defaults-enumeration marker.
+
+    Raises AssertionError (with the offending text) if no known marker is
+    found, or a marker is found with no matching terminator — a silent empty
+    result would let this guard pass vacuously if the help text is reworded
+    to drop the enumeration entirely.
+    """
+    for marker, terminator in _WEATHER_STATE_DEFAULTS_MARKERS:
+        start = desc.find(marker)
+        if start == -1:
+            continue
+        start += len(marker)
+        end = desc.find(terminator, start)
+        assert end != -1, (
+            f"found defaults marker {marker!r} but no closing {terminator!r} "
+            f"in: {desc!r}"
+        )
+        items = [s.strip() for s in desc[start:end].split(",") if s.strip()]
+        assert items, f"defaults marker {marker!r} enumerated nothing in: {desc!r}"
+        return items
+    raise AssertionError(
+        "no defaults-enumeration marker "
+        f"({[m for m, _ in _WEATHER_STATE_DEFAULTS_MARKERS]!r}) found in: {desc!r}"
+    )
+
+
+def test_weather_state_help_text_matches_default_weather_state() -> None:
+    """en.json's weather_state help text must enumerate exactly
+    const.DEFAULT_WEATHER_STATE (issue #1300).
+
+    The shipped default and its own documented default drifted apart once
+    already: the default list included "cloudy" while both maintainer-authored
+    help strings said the recommended default excludes it. This guards both
+    surfaces (options.step.weather and its options.step.light_cloud sibling)
+    against the same drift recurring, by parsing the enumerated list rather
+    than pinning the whole sentence — so rewording the prose around the list
+    doesn't force an edit here (and isn't tempting to just delete).
+    """
+    from custom_components.adaptive_cover_pro.const import DEFAULT_WEATHER_STATE
+
+    en = _load(TRANSLATIONS_DIR / "en.json")
+    expected = set(DEFAULT_WEATHER_STATE)
+    sites = (
+        ("options.step.weather.data_description.weather_state", "weather"),
+        ("options.step.light_cloud.data_description.weather_state", "light_cloud"),
+    )
+    for label, step in sites:
+        desc = en["options"]["step"][step]["data_description"]["weather_state"]
+        actual = set(_parse_weather_state_defaults(desc))
+        assert actual == expected, (
+            f"{label} enumerates {sorted(actual)} but "
+            f"const.DEFAULT_WEATHER_STATE is {sorted(expected)}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Issue #457 — FR cloud_suppression decision trace label must use action-oriented phrasing
 # ---------------------------------------------------------------------------
 
