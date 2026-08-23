@@ -76,6 +76,21 @@ def _readings(
     )
 
 
+def _primed_manager(logger, *, hold_time_seconds: int) -> ClimateSmoothingManager:
+    """Build an enabled manager that already observed its resting (no-crossing) state.
+
+    The FIRST observation after construction or a config reload is seeded in-line
+    (issue #1264, the temperature analogue of #1238): it is the world as found,
+    not a change, so it commits without starting a hold timer. Every test below
+    is about the SECOND reading — the one that is a genuine transition and
+    therefore the one the hold-time governs.
+    """
+    m = ClimateSmoothingManager(logger=logger)
+    m.update_config(enabled=True, hold_time_seconds=hold_time_seconds)
+    m.evaluate(_readings())
+    return m
+
+
 # ---------------------------------------------------------------------------
 # (a) Back-compat: hold=0 + blank release ⇒ resolved flags == raw activate bits
 # ---------------------------------------------------------------------------
@@ -143,16 +158,14 @@ class TestHoldTimeDebounce:
     """A hold-time delays the flip; reverting before expiry cancels it."""
 
     def test_pending_change_signals_timer_and_does_not_flip(self, logger):
-        m = ClimateSmoothingManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
         signal = m.evaluate(_readings(winter=True))
         assert signal == "should_start_timeout"
         assert m.resolved_flags.winter is False  # unchanged pending expiry
 
     @pytest.mark.asyncio
     async def test_revert_before_expiry_cancels(self, logger):
-        m = ClimateSmoothingManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
         assert m.evaluate(_readings(winter=True)) == "should_start_timeout"
         m.start_hold_timeout(AsyncMock())
         assert m.is_timeout_running is True
@@ -163,8 +176,7 @@ class TestHoldTimeDebounce:
 
     @pytest.mark.asyncio
     async def test_second_evaluate_while_running_does_not_resignal(self, logger):
-        m = ClimateSmoothingManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
         assert m.evaluate(_readings(winter=True)) == "should_start_timeout"
         m.start_hold_timeout(AsyncMock())
         assert m.evaluate(_readings(winter=True)) is None
@@ -173,8 +185,7 @@ class TestHoldTimeDebounce:
     @pytest.mark.asyncio
     async def test_mixed_pending_uses_single_aggregate_timer(self, logger):
         """A second crossing changing mid-hold keeps ONE timer, updates pending."""
-        m = ClimateSmoothingManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
         assert m.evaluate(_readings(winter=True)) == "should_start_timeout"
         m.start_hold_timeout(AsyncMock())
         # Now outside_high also flips: same timer, no new signal.
@@ -193,8 +204,7 @@ class TestTimerExpiry:
 
     @pytest.mark.asyncio
     async def test_expiry_commits_and_calls_refresh(self, logger):
-        m = ClimateSmoothingManager(logger=logger)
-        m.update_config(enabled=True, hold_time_seconds=120)
+        m = _primed_manager(logger, hold_time_seconds=120)
         m.evaluate(_readings(winter=True))
         assert m.resolved_flags.winter is False
 
@@ -253,3 +263,75 @@ class TestDisabled:
         assert mgr.resolved_flags == ClimateTempFlags(
             winter=False, summer_warm=False, outside_high=False, extreme_heat=False
         )
+
+
+# ---------------------------------------------------------------------------
+# (g) A fresh manager's first observation commits in-line (issue #1264)
+# ---------------------------------------------------------------------------
+
+
+class TestUnseededStartup:
+    """The world as found on startup commits immediately, not after a hold.
+
+    A fresh manager (or one just re-armed by ``_reset()``) has no prior
+    observation to compare against, so its first reading is not a "change" —
+    debouncing it would sun-track for a full hold-time on every reload/outage
+    recovery that happens to start in a crossed state. This is the temperature
+    analogue of the guarantee ``CloudSuppressionManager`` already has (#1238).
+    """
+
+    def test_first_observation_commits_without_debounce(self, logger):
+        m = ClimateSmoothingManager(logger=logger)
+        m.update_config(enabled=True, hold_time_seconds=120)
+        signal = m.evaluate(_readings(winter=True))
+        assert signal is None
+        assert m.resolved_flags.winter is True
+        assert m.is_timeout_running is False
+
+
+# ---------------------------------------------------------------------------
+# (h) A transient readings outage re-seeds the debounce (issue #1264)
+# ---------------------------------------------------------------------------
+
+
+class TestReadingsOutage:
+    """``readings is None`` resets, so the next reading is a first sighting again."""
+
+    @pytest.mark.asyncio
+    async def test_outage_during_a_pending_hold_recovers_in_line(self, logger):
+        """Outage → the next valid reading commits without re-arming the hold.
+
+        The outage is what ends the pending transition: ``_reset`` cancels the
+        timer, drops the pending target and forces ``resolved`` back to
+        all-False — it did that before this fix too. The seed only decides what
+        the NEXT valid reading costs. Seeded, that reading would re-arm a fresh
+        full hold — a one-cycle blip would buy another ``hold_time`` of the
+        wrong state, which is the restart bug issue #1264 fixed. Unseeded, it is
+        treated as the world as found and commits in-line; the seed is
+        one-shot, so the transition after it debounces normally again.
+        """
+        m = _primed_manager(logger, hold_time_seconds=120)
+
+        assert m.evaluate(_readings(winter=True)) == "should_start_timeout"
+        m.start_hold_timeout(AsyncMock())
+        assert m.is_timeout_running is True
+
+        # One cycle without readings: timer cancelled, resolved back to False.
+        assert m.evaluate(None) is None
+        assert m.is_timeout_running is False
+        assert m.resolved_flags.winter is False
+
+        # The reading that follows is the world as found → commits in-line.
+        assert m.evaluate(_readings(winter=True)) is None
+        assert m.resolved_flags.winter is True
+        assert m.is_timeout_running is False
+
+    def test_the_transition_after_an_outage_still_debounces(self, logger):
+        """The re-seed is one-shot — the next genuine change holds again."""
+        m = _primed_manager(logger, hold_time_seconds=120)
+        m.evaluate(None)
+        m.evaluate(_readings(winter=True))  # re-seeded → in-line
+        assert m.resolved_flags.winter is True
+
+        assert m.evaluate(_readings(winter=False)) == "should_start_timeout"
+        assert m.resolved_flags.winter is True  # release edge held
