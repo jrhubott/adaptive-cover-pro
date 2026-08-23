@@ -948,6 +948,13 @@ CONF_PRESENCE_TEMPLATE = "presence_template"  # truthy = occupied
 CONF_PRESENCE_TEMPLATE_MODE = "presence_template_mode"  # TemplateCombineMode
 CONF_WEATHER_ENTITY = "weather_entity"  # weather. integration entity_id
 CONF_WEATHER_STATE = "weather_state"  # states that trigger climate handler
+# Default weather-state selection for the is_sunny weather-entity fallback
+# (issue #1300): both maintainer-authored help texts for this field agree
+# "cloudy" should not be part of the recommended default; the shipped default
+# included it by mistake. Plain list (matches the DEFAULT_TRACKING_SEASONS
+# idiom elsewhere in this file) — schema defaults here are read-only, never
+# mutated in place by callers.
+DEFAULT_WEATHER_STATE: list[str] = ["sunny", "partlycloudy", "clear"]
 # True to close covers at night in winter for added insulation.
 CONF_WINTER_CLOSE_INSULATION = "winter_close_insulation"
 # True to let summer climate-close ignore the sun-in-FOV min floor

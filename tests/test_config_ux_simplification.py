@@ -23,6 +23,7 @@ from custom_components.adaptive_cover_pro.config_flow import (
     POSITION_SCHEMA,
     SYNC_CATEGORIES,
     TEMPERATURE_CLIMATE_SCHEMA,
+    WEATHER_OPTIONS,
     WEATHER_OVERRIDE_SCHEMA,
     _build_config_summary,
     _build_custom_position_schema_dict,
@@ -54,6 +55,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_STATE,
     CONF_WEATHER_WIND_SPEED_SENSOR,
+    DEFAULT_WEATHER_STATE,
     CoverType,
 )
 
@@ -612,3 +614,30 @@ class TestOptionalKeyConstants:
             f"{label}: constant has keys that are not UNDEFINED in schema "
             f"(stale): {sorted(extra)}"
         )
+
+
+class TestWeatherStateDefault:
+    """CONF_WEATHER_STATE's default must exclude "cloudy" (issue #1300): both
+    translated help texts for this field agree the recommended/pre-filled
+    default excludes it, but the shipped schema default included it anyway.
+    All three schema sites must be single-sourced from
+    const.DEFAULT_WEATHER_STATE, not independent literal copies.
+    """
+
+    def test_weather_state_default_excludes_cloudy(self):
+        from custom_components.adaptive_cover_pro.config_fields import FIELD_SPECS
+
+        assert ["sunny", "partlycloudy", "clear"] == DEFAULT_WEATHER_STATE
+        assert "cloudy" not in DEFAULT_WEATHER_STATE
+
+        weather_options_marker = next(
+            k for k in WEATHER_OPTIONS.schema if str(k) == CONF_WEATHER_STATE
+        )
+        assert weather_options_marker.default() == DEFAULT_WEATHER_STATE
+
+        light_cloud_marker = next(
+            k for k in LIGHT_CLOUD_SCHEMA.schema if str(k) == CONF_WEATHER_STATE
+        )
+        assert light_cloud_marker.default() == DEFAULT_WEATHER_STATE
+
+        assert FIELD_SPECS[CONF_WEATHER_STATE].default == DEFAULT_WEATHER_STATE

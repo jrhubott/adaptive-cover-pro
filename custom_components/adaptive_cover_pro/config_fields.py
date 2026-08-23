@@ -1640,7 +1640,7 @@ _LIGHT_CLOUD_SPECS = _spec(
         CONF_WEATHER_STATE,
         SECTION_LIGHT_CLOUD,
         ValidatorKind.NONE,
-        default=["sunny", "partlycloudy", "cloudy", "clear"],
+        default=const.DEFAULT_WEATHER_STATE,
     ),
     FieldSpec(
         CONF_LUX_THRESHOLD, SECTION_LIGHT_CLOUD, ValidatorKind.NONE, default=1000
