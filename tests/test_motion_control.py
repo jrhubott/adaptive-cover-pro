@@ -852,6 +852,47 @@ def test_motion_status_sensor_no_motion():
     assert sensor.native_value == "no_motion"
 
 
+def test_motion_status_sensor_holding_state_is_declared_option():
+    """Sensor returns holding when its own branch condition is satisfied.
+
+    Regression for issue #1162: ``_motion_status_value`` has a
+    ``return "holding"`` branch guarded by
+    ``pr.skip_command and pr.control_method.value == "motion"``, but the
+    ``motion_status`` spec's declared ``options`` tuple never gained a
+    matching entry. HA's SensorEntity validates every reported ENUM value
+    against ``options`` and raises ValueError instead of publishing the
+    state, so this asserts both the value function's return AND that the
+    value is a declared option.
+
+    ``_pipeline_result`` is a duck-typed stand-in (not the real
+    ``PipelineResult`` + ``ControlMethod.MOTION``) because
+    ``ControlMethod.MOTION.value`` is ``"motion_timeout"``, not
+    ``"motion"`` — the branch's own literal comparison, so this test
+    satisfies the condition exactly as written rather than asserting
+    something the real enum cannot produce.
+    """
+    from custom_components.adaptive_cover_pro.sensor import _DIAGNOSTIC_SPECS
+
+    coordinator = MagicMock()
+    coordinator._motion_mgr = _make_motion_mgr(
+        last_motion_time=1700000000.0,
+        timeout_active=True,
+    )
+    coordinator._pipeline_result = SimpleNamespace(
+        skip_command=True,
+        control_method=SimpleNamespace(value="motion"),
+    )
+
+    sensor = _make_motion_status_sensor(coordinator)
+    assert sensor.native_value == "holding"
+
+    spec = next(s for s in _DIAGNOSTIC_SPECS if s.suffix == "motion_status")
+    assert "holding" in spec.options, (
+        "'holding' is a reachable _motion_status_value return but is missing "
+        f"from the motion_status spec's declared options: {spec.options!r}"
+    )
+
+
 def test_motion_status_sensor_waiting_for_data_fallback():
     """Sensor returns waiting_for_data when neither active nor pending.
 

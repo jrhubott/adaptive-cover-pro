@@ -1564,6 +1564,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
             "timeout_pending",
             "no_motion",
             "waiting_for_data",
+            "holding",
         ),
         should_poll=False,
         value_fn=_motion_status_value,
