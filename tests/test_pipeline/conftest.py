@@ -11,6 +11,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
     PipelineSnapshot,
 )
+from custom_components.adaptive_cover_pro.position_utils import InterpolationCurve
 
 
 def _make_mock_cover(
@@ -96,6 +97,7 @@ def make_snapshot(
     current_cover_position: int | None = None,
     cover_positions: Mapping[str, int | None] | None = None,
     position_axis_inverted: bool = False,
+    interp_curve: InterpolationCurve | None = None,
     default_tilt: int | None = None,
     sunset_tilt: int | None = None,
     min_tilt: int = 0,
@@ -182,6 +184,7 @@ def make_snapshot(
         current_cover_position=current_cover_position,
         cover_positions=cover_positions,
         position_axis_inverted=position_axis_inverted,
+        interp_curve=interp_curve,
         default_tilt=default_tilt,
         sunset_tilt=sunset_tilt,
         min_tilt=min_tilt,

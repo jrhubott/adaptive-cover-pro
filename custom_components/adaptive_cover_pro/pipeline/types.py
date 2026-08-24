@@ -14,6 +14,7 @@ from ..const import (
     GroupIntentKind,
     GroupScene,
 )
+from ..position_utils import InterpolationCurve
 from ..reason_i18n import Reason, render_en
 
 if TYPE_CHECKING:
@@ -567,7 +568,9 @@ class PipelineSnapshot:
     # manual-override / group-lock holds as a presentation value. It is a
     # *summary*: no per-cover decision consumes it — the registry judges each
     # held cover against its own entry in ``cover_positions`` below (#1174).
-    # This is a RAW cover-frame read — see position_axis_inverted below.
+    # This is a RAW cover-frame read — see position_axis_inverted and
+    # interp_curve below for the two transforms standing between it and the
+    # logical frame every user-facing bound is expressed in.
     current_cover_position: int | None = None
 
     # Per-entity RAW cover-frame positions — the same frame and the same source
@@ -583,10 +586,24 @@ class PipelineSnapshot:
     # (inverse-state configured and not suppressed by interpolation, per
     # ``cover_types.base.axis_inverted``). A handler that puts a raw cover read
     # such as ``current_cover_position`` into ``PipelineResult.position`` must
-    # convert it to the logical frame first (``position_utils.flip_if``),
-    # because ``coordinator.state`` maps every winner through
-    # ``_to_cover_frame`` on the way out — no flag exempts one (#1028 / #1036).
+    # convert it to the logical frame first (``position_utils.from_cover_frame``,
+    # which folds this flag together with ``interp_curve`` below), because
+    # ``coordinator.state`` maps every winner through ``_to_cover_frame`` on the
+    # way out — no flag exempts one (#1028 / #1036 / #1230).
     position_axis_inverted: bool = False
+
+    # This install's position calibration curve, or None when interpolation is
+    # switched off. The other half of the same frame question
+    # ``position_axis_inverted`` answers: ``coordinator._to_cover_frame`` maps a
+    # logical value to the wire by interpolating and THEN inverting, so undoing
+    # it needs both halves and inversion alone is not the whole map (#1230).
+    # Carried as plain data so the pure pipeline can un-map a raw read without
+    # reaching for a coordinator; the registry consumes it via
+    # ``position_utils.from_cover_frame``, the inverse of that whole chain.
+    # ``None`` on a legacy / test snapshot means "no curve", which reduces that
+    # helper to exactly ``flip_if`` and leaves every uncalibrated install
+    # byte-identical.
+    interp_curve: InterpolationCurve | None = None
 
     # The CoverTypePolicy chosen at coordinator startup. Handlers should consult
     # this for cover-type-aware decisions (axis routing, intent → position

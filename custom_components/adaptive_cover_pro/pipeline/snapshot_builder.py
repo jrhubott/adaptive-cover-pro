@@ -54,6 +54,11 @@ from ..const import (
     CONF_SUN_TRACKING_GATE_TEMPLATE,
     CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
     DEFAULT_CONDITION_GATE_GRACE_SECONDS,
+    CONF_INTERP,
+    CONF_INTERP_END,
+    CONF_INTERP_LIST,
+    CONF_INTERP_LIST_NEW,
+    CONF_INTERP_START,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
@@ -128,6 +133,7 @@ from ..helpers import (
 )
 from ..managers.common.graceful_source import GracefulSource, SourceResolution
 from ..managers.common.condition_gate import ConditionGate
+from ..position_utils import InterpolationCurve
 from ..templates import combine_with_mode, is_template_string, render_condition_or_none
 from .types import (
     ClimateOptions,
@@ -923,6 +929,21 @@ class PipelineSnapshotBuilder:
             current_cover_position=current_cover_position,
             cover_positions=cover_positions,
             position_axis_inverted=axis_inverted(self._policy.axes[0], options),
+            # The calibration curve, carried as data so the pure registry can
+            # un-map a held cover's raw read before judging it against a
+            # logical bound (#1230). Gated on the master enable exactly as
+            # ``coordinator._to_cover_frame`` gates the forward map, so a stray
+            # start/end left behind by a disabled curve arrives as ``None``.
+            interp_curve=(
+                InterpolationCurve(
+                    start_value=options.get(CONF_INTERP_START),
+                    end_value=options.get(CONF_INTERP_END),
+                    normal_list=options.get(CONF_INTERP_LIST),
+                    new_list=options.get(CONF_INTERP_LIST_NEW),
+                )
+                if bool(options.get(CONF_INTERP))
+                else None
+            ),
             policy=self._policy,
             group_intent=group_intent,
             minimize_movements=bool(

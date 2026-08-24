@@ -66,6 +66,7 @@ def _floor_vs_hold(
     floor: int = _FLOOR,
     floor_priority: int = ABOVE_HOLDER,
     position_axis_inverted: bool = False,
+    interp_curve=None,
 ):
     """Evaluate a manual hold against one min-mode custom-position floor."""
     registry = _registry_with_custom(
@@ -80,6 +81,7 @@ def _floor_vs_hold(
             default_position=100,
             direct_sun_valid=False,
             position_axis_inverted=position_axis_inverted,
+            interp_curve=interp_curve,
             custom_position_sensors=[
                 _cp_state(
                     "binary_sensor.floor",
@@ -435,7 +437,9 @@ async def _dispatch_targets(
     return {cover: sent.get(cover) for cover in covers}
 
 
-def _tilt_clamp_vs_hold(*, cover_positions=None, with_position_floor: bool = False):
+def _tilt_clamp_vs_hold(
+    *, cover_positions=None, with_position_floor: bool = False, interp_curve=None
+):
     """Evaluate a manual hold released by an outranking TILT bound.
 
     A FIXED tilt-only slot below the holder fills the tilt (#514); a tilt floor
@@ -444,6 +448,10 @@ def _tilt_clamp_vs_hold(*, cover_positions=None, with_position_floor: bool = Fal
     the shape the #1170 audit named when it ruled that a tilt clamp is a
     command. ``with_position_floor`` adds an outranking position floor so both
     axes clamp in the same cycle.
+
+    ``interp_curve`` puts a calibration curve on the SNAPSHOT — what the judge
+    reads (#1230), as distinct from ``_dispatch_coordinator``'s ``interp``,
+    which calibrates the write side alone.
     """
     sensors = [
         _slot(1, tilt=_TILT_FILL, tilt_only=True, priority=BELOW_HOLDER),
@@ -469,6 +477,7 @@ def _tilt_clamp_vs_hold(*, cover_positions=None, with_position_floor: bool = Fal
             cover_positions=cover_positions,
             default_position=100,
             direct_sun_valid=False,
+            interp_curve=interp_curve,
             custom_position_sensors=sensors,
         )
     )
@@ -728,6 +737,7 @@ def _coupled_hold(
     ceiling: int | None = None,
     tilt_min: int | None = None,
     position_axis_inverted: bool = False,
+    interp_curve=None,
 ):
     """Evaluate a manual hold on a dual-fabric shade with the named bounds active.
 
@@ -776,6 +786,7 @@ def _coupled_hold(
             default_position=100,
             direct_sun_valid=False,
             position_axis_inverted=position_axis_inverted,
+            interp_curve=interp_curve,
             custom_position_sensors=sensors,
         )
     )

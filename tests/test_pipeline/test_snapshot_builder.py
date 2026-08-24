@@ -83,6 +83,7 @@ def _make_builder(
     states: dict | None = None,
     time_mgr=None,
     policy=None,
+    config_service=None,
 ):
     hass = MagicMock()
     states_map = states or {}
@@ -112,7 +113,7 @@ def _make_builder(
         climate_provider=climate_provider,
         toggles=toggles,
         policy=policy,
-        config_service=MagicMock(),
+        config_service=config_service if config_service is not None else MagicMock(),
         time_mgr=time_mgr,
     )
     return builder, climate_provider, hass
@@ -1765,6 +1766,71 @@ def test_build_carries_a_closed_gate_onto_the_snapshot():
         snapshot = _build_minimal(builder, opts)
     assert snapshot.enable_sun_tracking is True
     assert snapshot.sun_tracking_gate_closed is False
+
+
+@pytest.mark.unit
+def test_build_carries_the_interpolation_curve():
+    """The curve reaches the pure pipeline as data, not as a coordinator handle.
+
+    ``_judge_position_axis`` compares a held cover's RAW read against a logical
+    bound and needs the full inverse of ``_to_cover_frame`` to do it (#1230).
+    The curve lived only on the coordinator, which a 0-HA-import module cannot
+    reach — so this binding is the whole transport.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_INTERP,
+        CONF_INTERP_END,
+        CONF_INTERP_LIST,
+        CONF_INTERP_LIST_NEW,
+        CONF_INTERP_START,
+    )
+    from custom_components.adaptive_cover_pro.position_utils import InterpolationCurve
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(
+        builder,
+        {CONF_INTERP: True, CONF_INTERP_START: 20, CONF_INTERP_END: 80},
+    )
+    assert snapshot.interp_curve == InterpolationCurve(start_value=20, end_value=80)
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(
+        builder,
+        {
+            CONF_INTERP: True,
+            CONF_INTERP_LIST: [0, 50, 100],
+            CONF_INTERP_LIST_NEW: [10, 40, 90],
+        },
+    )
+    assert snapshot.interp_curve == InterpolationCurve(
+        normal_list=[0, 50, 100], new_list=[10, 40, 90]
+    )
+
+
+@pytest.mark.unit
+def test_build_without_interp_leaves_the_curve_none():
+    """No curve configured -> ``None``, even with stray start/end values stored.
+
+    ``coordinator._to_cover_frame`` gates the forward map on the master enable
+    alone, so the inverse has to be gated identically — a disabled curve whose
+    endpoints were never cleared must not start un-mapping reads. ``None`` is
+    also what keeps every uncalibrated snapshot byte-identical.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_INTERP,
+        CONF_INTERP_END,
+        CONF_INTERP_START,
+    )
+
+    builder, _, _ = _make_builder()
+    assert _build_minimal(builder, {}).interp_curve is None
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(
+        builder,
+        {CONF_INTERP: False, CONF_INTERP_START: 20, CONF_INTERP_END: 80},
+    )
+    assert snapshot.interp_curve is None
 
 
 @pytest.mark.unit
