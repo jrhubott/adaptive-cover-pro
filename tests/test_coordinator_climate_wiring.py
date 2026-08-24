@@ -850,6 +850,23 @@ def _winter_readings() -> ClimateReadings:
     )
 
 
+def _baseline_readings() -> ClimateReadings:
+    """ClimateReadings with no crossing active — the resting state to seed with."""
+    return ClimateReadings(
+        outside_temperature=None,
+        inside_temperature=None,
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+        temp_below_low_threshold=False,
+        temp_low_release_cleared=True,
+        outside_above_threshold=False,
+        outside_release_cleared=True,
+    )
+
+
 class TestClimateSmoothingCoordinatorWiring:
     """Coordinator wiring for the climate-smoothing manager (issue #917)."""
 
@@ -913,6 +930,10 @@ class TestClimateSmoothingCoordinatorWiring:
         coord._climate_smoothing_mgr = ClimateSmoothingManager(logger=MagicMock())
         coord._climate_smoothing_mgr.update_config(enabled=True, hold_time_seconds=120)
         coord._start_climate_temp_hold_timeout = MagicMock()
+
+        # Seed: the manager's first observation is the resting state, not a
+        # transition (issue #1264) — consume it before the real scenario.
+        coord._reconcile_climate_smoothing(_baseline_readings())
 
         coord._reconcile_climate_smoothing(_winter_readings())
         assert coord._climate_smoothing_mgr.resolved_flags.winter is False

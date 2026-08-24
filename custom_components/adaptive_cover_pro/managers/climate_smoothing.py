@@ -76,7 +76,13 @@ class ClimateSmoothingManager:
         self._debouncer = HoldDebouncer(
             logger, label="climate-temp hold", on_commit=self._on_commit
         )
-        self._debouncer.reset(_ALL_FALSE)
+        # seeded=False: the first reading after construction/reload is the world
+        # as found, not a change, so it must not be debounced (issue #1264, the
+        # temperature analogue of #1238). Without it a restart during genuinely
+        # cold weather would leave the resolved winter flag False — sun-tracking
+        # (misclassified as "not winter") for the whole hold-time before the
+        # smoothed flag caught up.
+        self._debouncer.reset(_ALL_FALSE, seeded=False)
 
     # --- Configuration ---
 
@@ -200,9 +206,24 @@ class ClimateSmoothingManager:
         )
 
     def _reset(self) -> None:
-        """Drop all latch/resolved/pending state and cancel any timer."""
+        """Drop all latch/resolved/pending state and cancel any timer.
+
+        Runs on every cycle with nothing to fold in — not just a config reload
+        that disables the feature, but also a **transient readings outage**
+        (``readings is None`` in :meth:`evaluate`).
+
+        ``seeded=False`` is deliberate on that outage path too. The reset itself
+        is what ends an interrupted hold: it cancels the timer, drops the
+        pending target, and forces the resolved flags back to all-False.
+        Re-seeding only decides what the *next* valid reading costs. Seeded,
+        that reading would re-arm a fresh full hold — a one-cycle blip would buy
+        another ``hold_time`` of the wrong season, which is the restart bug
+        issue #1264 fixed. Unseeded, it is treated as the world as found and
+        commits in-line; the seed is one-shot, so the transition after it
+        debounces normally again.
+        """
         self._winter_latched = False
         self._summer_warm_latched = False
         self._outside_high_latched = False
         self._extreme_heat_latched = False
-        self._debouncer.reset(_ALL_FALSE)
+        self._debouncer.reset(_ALL_FALSE, seeded=False)

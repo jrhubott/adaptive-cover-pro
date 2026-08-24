@@ -104,6 +104,10 @@ class TestReporterScenario:
         mgr = ClimateSmoothingManager(logger=MagicMock())
         mgr.update_config(enabled=True, hold_time_seconds=600)
 
+        # Seed: the manager's first observation is the resting state, not a
+        # transition (issue #1264) — commits in-line before the real scenario.
+        mgr.evaluate(harness.read("31.0"))
+
         # A brief spike above threshold → transition pending, timer requested.
         signal = mgr.evaluate(harness.read("33.0"))
         assert signal == "should_start_timeout"
