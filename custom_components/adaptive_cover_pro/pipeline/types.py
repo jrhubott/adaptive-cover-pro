@@ -586,10 +586,19 @@ class PipelineSnapshot:
     # (inverse-state configured and not suppressed by interpolation, per
     # ``cover_types.base.axis_inverted``). A handler that puts a raw cover read
     # such as ``current_cover_position`` into ``PipelineResult.position`` must
-    # convert it to the logical frame first (``position_utils.from_cover_frame``,
-    # which folds this flag together with ``interp_curve`` below), because
-    # ``coordinator.state`` maps every winner through ``_to_cover_frame`` on the
-    # way out — no flag exempts one (#1028 / #1036 / #1230).
+    # convert it to the logical frame first, because ``coordinator.state`` maps
+    # every winner through ``_to_cover_frame`` on the way out — no flag exempts
+    # one (#1028 / #1036).
+    #
+    # The two handlers that do this — ``motion_timeout``'s hold and
+    # ``group_lock``'s freeze — convert with ``position_utils.flip_if``, i.e.
+    # with THIS FLAG ALONE. That is the whole map only while no curve is
+    # configured; under one, ``_to_cover_frame`` re-interpolates the held motor
+    # read and the published target drifts. Pre-existing, unchanged by #1230,
+    # and stated in place at ``motion_timeout.py`` since #1028, which reserves
+    # it to #925. The registry's hold judge is the one caller that takes the
+    # FULL inverse, via ``position_utils.from_cover_frame`` — that helper folds
+    # this flag together with ``interp_curve`` below (#1230).
     position_axis_inverted: bool = False
 
     # This install's position calibration curve, or None when interpolation is

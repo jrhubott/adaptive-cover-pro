@@ -117,12 +117,31 @@ class InterpolationCurve:
     ``None`` everywhere — the all-default instance — expresses no curve at all,
     which is what lets ``PipelineSnapshot.interp_curve`` default to ``None``
     and leave every uncalibrated install byte-identical.
+
+    The control-point pair is coerced to ``tuple`` on construction, because the
+    caller hands it ``options.get(CONF_INTERP_LIST)`` verbatim — a ``list`` that
+    the config entry still owns. ``frozen=True`` freezes the *binding*, not the
+    object behind it, so without the copy the curve's samples could change under
+    it, and the synthesised ``__hash__`` would raise ``TypeError: unhashable
+    type: 'list'`` the first time anything put a curve in a set or memo dict.
+    Coercing here rather than at the one builder call site makes every
+    construction site safe, test fixtures included, and leaves
+    :func:`interpolate_position` alone — its callers pass the four values
+    straight off the coordinator and never build a curve object, so a coercion
+    on that signature would be a no-op with a wider blast radius.
     """
 
     start_value: float | None = None
     end_value: float | None = None
     normal_list: Sequence[float] | None = None
     new_list: Sequence[float] | None = None
+
+    def __post_init__(self) -> None:
+        """Copy the control-point sequences into tuples (see the class docstring)."""
+        for name in ("normal_list", "new_list"):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, tuple):
+                object.__setattr__(self, name, tuple(value))
 
 
 def _interp_ranges(
@@ -258,6 +277,21 @@ def from_cover_frame(
     which is the identity composition on the integer reads every caller
     actually holds — that is what keeps an uncalibrated install byte-identical
     after the registry swapped one call for the other.
+
+    **Round-trip bound.** ``interpolate_position(from_cover_frame(d)) == d``
+    holds exactly for a curve every leg of which CONTRACTS — one whose device
+    span is no wider than the logical span it maps from. Every ``start``/``end``
+    pair qualifies (``end - start <= 100`` by construction), which is the shape
+    ``coordinator._verdict_dispatch_target`` reasons about: the inverse of a
+    contraction expands, so the half-point this rounds away re-maps to less than
+    half a point and rounding recovers ``d``. A multi-point control-point list
+    can be locally EXPANSIVE — ``normal_list=[0, 50, 100]`` against
+    ``new_list=[0, 10, 100]`` runs at slope 1.8 on its upper leg — and there the
+    round trip can land one device point off. That is a rounding artefact of an
+    unusual calibration, not a frame error, and it is pinned by
+    ``test_from_cover_frame_round_trip_is_off_by_one_on_an_expanding_curve``
+    rather than corrected here: sub-integer positions are not dispatchable and
+    the delta gate swallows a one-point move.
 
     Lives beside :func:`flip_if` and :func:`interpolate_position` in this pure
     module (0 HA imports) so ``pipeline/registry.py`` can reach it: the curve

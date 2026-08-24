@@ -203,7 +203,7 @@ def test_from_cover_frame_inverts_a_multi_point_curve() -> None:
 @pytest.mark.unit
 @pytest.mark.parametrize(("start", "end"), [(20, 80), (30, 70), (0, 100), (10, 95)])
 def test_from_cover_frame_round_trips_with_to_cover_frame(start: int, end: int) -> None:
-    """Every reachable device read survives un-mapping and re-mapping.
+    """Every reachable device read survives un-mapping and re-mapping — on a CONTRACTION.
 
     This is the property the whole fix rests on. Once the judge emits truly
     logical targets, ``coordinator._verdict_dispatch_target``'s ``own_read``
@@ -212,11 +212,47 @@ def test_from_cover_frame_round_trips_with_to_cover_frame(start: int, end: int) 
     is exact for a contraction curve: the un-mapping expands, so rounding the
     logical value can move the re-mapped device value by less than half a
     point.
+
+    Every ``start``/``end`` pair contracts (``end - start <= 100``), which is
+    why all four parameter sets here do. The bound genuinely stops there — see
+    ``test_from_cover_frame_round_trip_is_off_by_one_on_an_expanding_curve``.
     """
     curve = InterpolationCurve(start_value=start, end_value=end)
     for device in range(start, end + 1):
         logical = from_cover_frame(device, inverted=False, curve=curve)
         assert round(interpolate_position(logical, start, end, None, None)) == device
+
+
+@pytest.mark.unit
+def test_from_cover_frame_round_trip_is_off_by_one_on_an_expanding_curve() -> None:
+    """The exactness above is a contraction property, not a universal one.
+
+    A multi-point control-point list can expand locally: ``[0, 50, 100]`` onto
+    ``[0, 10, 100]`` runs at slope 1.8 above the midpoint, so the half-point
+    ``from_cover_frame`` rounds away re-maps to nearly a full point and the
+    round trip misses. Device 11 un-maps to logical 51, which maps back to 12.
+
+    Pinned rather than fixed: sub-integer positions are not dispatchable, so
+    there is nothing to carry the lost precision, and a one-point move dies in
+    the delta gate. The reason this is written down is that
+    ``_verdict_dispatch_target`` leans on the exactness claim, and a claim no
+    test bounds is one that quietly grows.
+    """
+    normal_list = [0, 50, 100]
+    new_list = [0, 10, 100]
+    curve = InterpolationCurve(normal_list=normal_list, new_list=new_list)
+
+    logical = from_cover_frame(11, inverted=False, curve=curve)
+    assert logical == 51
+    assert round(interpolate_position(logical, None, None, normal_list, new_list)) == 12
+
+    # The contracting lower leg of the very same curve still round-trips exactly.
+    for device in range(0, 11):
+        back = from_cover_frame(device, inverted=False, curve=curve)
+        assert (
+            round(interpolate_position(back, None, None, normal_list, new_list))
+            == device
+        )
 
 
 @pytest.mark.unit
@@ -264,11 +300,59 @@ def test_from_cover_frame_un_inverts_before_un_interpolating() -> None:
     The combination is unsupported at runtime (the coordinator logs it and
     skips the inversion), but the helper is the stated algebraic inverse and
     has to compose in the right order to earn that description.
+
+    **The curve has to be asymmetric or this test proves nothing.** For a
+    ``start``/``end`` pair the two compositions are
+    ``(100 - x - s) * 100 / (e - s)`` and ``100 - (x - s) * 100 / (e - s)``,
+    which are algebraically equal exactly when ``s + e == 100``. ``_ISSUE_CURVE``
+    is 20-80, so it satisfies that and returns 40 either way round — a guard
+    that cannot fail. On the 10-95 curve below the correct order gives 40 and
+    the swapped one gives 46, which is what makes the assertion discriminate.
     """
-    assert from_cover_frame(56, inverted=True, curve=_ISSUE_CURVE) == 40
+    curve = InterpolationCurve(start_value=10, end_value=95)
+
+    assert from_cover_frame(56, inverted=True, curve=curve) == 40
+
+    # The swapped composition, spelled out, so the 40 above is pinned against a
+    # specific wrong answer instead of against nothing.
+    assert inverse_state(from_cover_frame(56, inverted=False, curve=curve)) == 46
 
 
 @pytest.mark.unit
 def test_from_cover_frame_ignores_an_empty_curve() -> None:
     """A curve object expressing no ranges is the same as no curve at all."""
     assert from_cover_frame(42, inverted=False, curve=InterpolationCurve()) == 42
+
+
+@pytest.mark.unit
+def test_curve_copies_its_control_points_and_stays_hashable() -> None:
+    """``frozen=True`` freezes the binding, not the list behind it.
+
+    The builder hands this ``options.get(CONF_INTERP_LIST)`` verbatim, so the
+    config entry still owns the object. Without the copy the samples could
+    change under a curve that advertises itself as immutable, and the
+    synthesised ``__hash__`` raised ``TypeError: unhashable type: 'list'`` the
+    moment anything put one in a set or a memo dict.
+    """
+    normal = [0, 50, 100]
+    new = [10, 40, 90]
+    curve = InterpolationCurve(normal_list=normal, new_list=new)
+
+    assert isinstance(curve.normal_list, tuple)
+    assert isinstance(curve.new_list, tuple)
+    # Hashable, which the frozen dataclass promised and could not deliver.
+    assert hash(curve) == hash(InterpolationCurve(normal_list=normal, new_list=new))
+    assert len({curve, InterpolationCurve(normal_list=normal, new_list=new)}) == 1
+
+    # The caller's list moving on does not move the curve.
+    normal.append(200)
+    new[0] = 99
+    assert curve.normal_list == (0, 50, 100)
+    assert curve.new_list == (10, 40, 90)
+    assert from_cover_frame(65, inverted=False, curve=curve) == 75
+
+    # A tuple-built curve is the same curve, so equality survives the coercion
+    # and every existing ``== InterpolationCurve(normal_list=[...])`` still holds.
+    assert InterpolationCurve(normal_list=(0, 50, 100)) == InterpolationCurve(
+        normal_list=[0, 50, 100]
+    )

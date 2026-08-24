@@ -384,6 +384,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._climate_mode = self.config_entry.options.get(CONF_CLIMATE_MODE, False)
         self._inverse_state = self.config_entry.options.get(CONF_INVERSE_STATE, False)
         self._inverse_tilt = self.config_entry.options.get(CONF_INVERSE_TILT, False)
+        # Read once and never refreshed — unlike start_value/end_value/
+        # normal_list/new_list, which _update_options re-reads every cycle. Safe
+        # only because CONF_INTERP is not in _RUNTIME_APPLICABLE_OPTIONS, so
+        # changing it reloads the config entry and re-runs this __init__. That
+        # matters more since #1230: PipelineSnapshotBuilder reads CONF_INTERP
+        # fresh out of options on every build, and a stale flag here would have
+        # the judge un-map a read that _to_cover_frame then declines to re-map.
+        # Pinned by test_snapshot_builder.py::
+        # test_toggling_interpolation_reloads_rather_than_patching_a_live_coordinator.
         self._use_interpolation = self.config_entry.options.get(CONF_INTERP, False)
         self._track_end_time = self.config_entry.options.get(CONF_RETURN_SUNSET)
         # Toggle state manager (switch entities delegate here)
@@ -2938,18 +2947,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         a floor made "minimum 25 % open" drive an inverse cover to 75 %.
 
         **The ``own_read`` short-circuit below is REDUNDANT for a read inside
-        the calibrated travel, and load-bearing for one outside it.** Keep it.
-        Inside the travel the un-mapping is exact — the inverse of a contraction
-        curve expands, so rounding the logical value moves the re-mapped device
-        value by less than half a point — and ``_to_cover_frame(target)``
-        returns the read the branch would have returned anyway. Outside it there
-        is nothing to be exact about: a shade reading device 0 under a 20–80
-        curve un-maps to logical 0 (``np.interp`` clamps to the endpoint), and
-        re-mapping that opens it to 20. The short-circuit fires there — the
-        target equals the read, because both clamped to the same end — and the
-        cover stays put. Removing the branch as "redundant post-#1230" would put
-        a phantom carriage move back into exactly the tilt-only command this
-        whole path exists to keep positionally inert (#1170 / #1174).
+        the calibrated travel of a contracting curve, and load-bearing
+        everywhere else.** Keep it. Inside such a travel the un-mapping is exact
+        — the inverse of a contraction expands, so rounding the logical value
+        moves the re-mapped device value by less than half a point — and
+        ``_to_cover_frame(target)`` returns the read the branch would have
+        returned anyway. Outside the travel there is nothing to be exact about:
+        a shade reading device 0 under a 20–80 curve un-maps to logical 0
+        (``np.interp`` clamps to the endpoint), and re-mapping that opens it to
+        20. The short-circuit fires there — the target equals the read, because
+        both clamped to the same end — and the cover stays put. It is also what
+        absorbs the one-point round-trip miss a locally EXPANDING multi-point
+        curve can produce (``position_utils.from_cover_frame`` states that
+        bound). Every ``interp_start``/``interp_end`` pair contracts, so that
+        case needs a hand-built control-point list to reach. Removing the branch
+        as "redundant post-#1230" would put a phantom carriage move back into
+        exactly the tilt-only command this whole path exists to keep
+        positionally inert (#1170 / #1174).
 
         The equality test is also what tells the two cases apart, and it says it
         in the frame the comparison has to happen in: the target equals the

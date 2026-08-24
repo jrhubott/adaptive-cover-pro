@@ -566,6 +566,14 @@ async def test_a_tilt_only_clamp_is_a_no_op_on_a_calibrated_install() -> None:
     (#1036). Sending both through ``_to_cover_frame`` re-maps the reads: on a
     20–80 curve the three shades at 80/80/0 were commanded to 68/68/20, which
     is the carriage move this whole path exists to prevent.
+
+    The curve here is on the DISPATCH coordinator only; the snapshot carries
+    ``interp_curve=None``. That combination is deliberately not a state
+    production reaches — both sides read the same ``CONF_INTERP`` since #1230 —
+    and it is the point: this pins the write-side #1229 behaviour against the
+    NO-CURVE judge path, holding one variable still. The consistent-state
+    equivalent, curve on both halves, is
+    ``test_hold_clamp_interpolated_frame.py::test_a_curve_snapshot_tilt_clamp_is_still_a_no_op_end_to_end``.
     """
     result = _tilt_clamp_vs_hold(cover_positions=_ABOVE_FLOOR_POSITIONS)
 
@@ -584,6 +592,12 @@ async def test_a_calibrated_floor_still_reaches_its_own_device_position() -> Non
     edge — a logical 40, which a 20–80 curve puts at device 44. Suppressing the
     curve for every verdict would under-close it, which is #469's defect in the
     opposite direction.
+
+    As above, the curve is on the DISPATCH coordinator only and the snapshot
+    carries ``interp_curve=None`` — a state production does not reach since
+    #1230, held deliberately so this pins the write-side mapping against the
+    no-curve judge path. The consistent-state equivalent is
+    ``test_hold_clamp_interpolated_frame.py::test_a_calibrated_release_dispatches_the_floor_in_the_device_frame``.
     """
     result = _tilt_clamp_vs_hold(
         cover_positions=_ABOVE_FLOOR_POSITIONS, with_position_floor=True

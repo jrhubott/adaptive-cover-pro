@@ -113,7 +113,7 @@ def _make_builder(
         climate_provider=climate_provider,
         toggles=toggles,
         policy=policy,
-        config_service=config_service if config_service is not None else MagicMock(),
+        config_service=config_service or MagicMock(),
         time_mgr=time_mgr,
     )
     return builder, climate_provider, hass
@@ -1831,6 +1831,44 @@ def test_build_without_interp_leaves_the_curve_none():
         {CONF_INTERP: False, CONF_INTERP_START: 20, CONF_INTERP_END: 80},
     )
     assert snapshot.interp_curve is None
+
+
+@pytest.mark.unit
+def test_toggling_interpolation_reloads_rather_than_patching_a_live_coordinator():
+    """The builder reads ``CONF_INTERP`` per cycle; the coordinator caches it once.
+
+    ``coordinator._use_interpolation`` is assigned in ``__init__`` and never
+    refreshed — ``_update_options`` re-reads ``start_value``/``end_value``/
+    ``normal_list``/``new_list`` every cycle but not the enable flag — while
+    this builder now reads ``CONF_INTERP`` fresh out of ``options`` on every
+    build. Those two only stay in step because the option cannot change under a
+    live coordinator: it is not in ``_RUNTIME_APPLICABLE_OPTIONS``, so
+    ``_async_update_listener`` reloads the whole config entry and ``__init__``
+    re-reads it.
+
+    Without that, switching interpolation ON would have the judge un-map a
+    device read while ``_to_cover_frame`` declined to re-map the answer — 42
+    judged as 37 and then commanded as 37. Pinned here rather than left as a
+    comment because the divergence is silent and the rule lives in a different
+    module from either half of it.
+    """
+    from custom_components.adaptive_cover_pro import _RUNTIME_APPLICABLE_OPTIONS
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_INTERP,
+        CONF_INTERP_END,
+        CONF_INTERP_LIST,
+        CONF_INTERP_LIST_NEW,
+        CONF_INTERP_START,
+    )
+
+    for key in (
+        CONF_INTERP,
+        CONF_INTERP_START,
+        CONF_INTERP_END,
+        CONF_INTERP_LIST,
+        CONF_INTERP_LIST_NEW,
+    ):
+        assert key not in _RUNTIME_APPLICABLE_OPTIONS
 
 
 @pytest.mark.unit
