@@ -27,6 +27,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_INTERP,
     CONF_INVERSE_STATE,
     CUSTOM_POSITION_SAFETY_PRIORITY,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
     AxisConstraintMode,
     ControlMethod,
     ReasonCode,
@@ -619,36 +620,75 @@ def test_admission_withheld_without_position_reads():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    ("bound_priority", "expect_admitted"),
-    [
-        # Equal priorities: ``outranking`` is strictly-greater, so the bound
-        # loses to a holder that is not actually holding anything.
-        (77, False),
-        # One point above the winner and it binds.
-        (78, True),
-    ],
-)
-def test_pseudo_hold_ties_are_judged_against_the_winners_own_priority(
-    bound_priority, expect_admitted
-):
-    """The pseudo-hold borrows the WINNER's priority, ties included.
+def test_pseudo_hold_no_longer_yields_to_a_same_priority_bound():
+    """The reporter's exact repro (#1231): both slots at the shipped default.
 
-    Pinning today's behaviour, not endorsing it. ``_as_outside_window_pseudo_hold``
-    leaves ``holder_priority`` at ``winning_handler.priority``, so when a FIXED
+    Leaving both slots at the shipped default priority (77) is a configuration
+    a user reaches with no unusual setup, and the floor must still bind once
+    the clock window closes. ``current_cover_position=40`` sits below the
+    floor of 60, so the floor is a genuine violation that must raise the
+    dispatched position to 60 — a value the fix's holder-priority sentinel has
+    to let survive ``outranking`` for this to happen, since the bound is
+    opted-in at the same priority (77) as the pseudo-held winner.
+    """
+    sensors = [
+        _slot(1, position=30, priority=DEFAULT_CUSTOM_POSITION_PRIORITY),
+        _slot(
+            2,
+            position=60,
+            min_mode=True,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+            outside_window=True,
+        ),
+    ]
+    snap = _snapshot(
+        sensors=sensors,
+        clock_open=False,
+        policy=get_policy("cover_blind"),
+        default_position=100,
+        current_cover_position=40,
+        cover_positions={"cover.a": 40},
+    )
+    registry = PipelineRegistry(
+        [
+            CustomPositionHandler(
+                slot=1, position=30, priority=DEFAULT_CUSTOM_POSITION_PRIORITY
+            ),
+            CustomPositionHandler(
+                slot=2, position=None, priority=DEFAULT_CUSTOM_POSITION_PRIORITY
+            ),
+            DefaultHandler(),
+        ]
+    )
+    result = registry.evaluate(snap)
+
+    assert result.position == 60
+    assert result.position_constraint_applied is True
+    assert result.outside_window_constraint_active is True
+
+
+@pytest.mark.unit
+def test_pseudo_hold_never_yields_to_a_tied_bound_priority():
+    """The pseudo-hold's holder priority is below-everything (#1231).
+
+    ``_as_outside_window_pseudo_hold`` no longer borrows the winner's own
+    priority for the pseudo-hold; the call site hands ``outranking`` a
+    below-everything sentinel instead (``PSEUDO_HOLD_HOLDER_PRIORITY``). A
+    pseudo-hold is scaffolding — nothing is actually holding the cover — so a
+    bound tied with the winner still outranks it: when a FIXED
     Custom Position slot wins outside the window at the default 77, another
-    slot's opted-in bound at that same 77 is filed as ``yielded_to_hold`` and the
-    opt-in does nothing on that configuration — a reachable config, since 77 is
-    the default for every slot. Against ``DefaultHandler`` at 0 (every other test
-    in this file) the gate is inert, which is why nothing else catches it.
-
-    See ``_as_outside_window_pseudo_hold``'s docstring for the open design
-    question this locks the current answer to.
+    slot's opted-in bound at that same 77 now binds rather than being filed
+    as ``yielded_to_hold``.
     """
     sensors = [
         # The FIXED winner: an exact position, so its handler produces a result.
-        _slot(1, position=90, priority=77),
-        _slot(2, position_max=30, priority=bound_priority, outside_window=True),
+        _slot(1, position=90, priority=DEFAULT_CUSTOM_POSITION_PRIORITY),
+        _slot(
+            2,
+            position_max=30,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+            outside_window=True,
+        ),
     ]
     snap = _snapshot(
         sensors=sensors,
@@ -660,29 +700,30 @@ def test_pseudo_hold_ties_are_judged_against_the_winners_own_priority(
     )
     registry = PipelineRegistry(
         [
-            CustomPositionHandler(slot=1, position=90, priority=77),
-            CustomPositionHandler(slot=2, position=None, priority=bound_priority),
+            CustomPositionHandler(
+                slot=1, position=90, priority=DEFAULT_CUSTOM_POSITION_PRIORITY
+            ),
+            CustomPositionHandler(
+                slot=2, position=None, priority=DEFAULT_CUSTOM_POSITION_PRIORITY
+            ),
             DefaultHandler(),
         ]
     )
     result = registry.evaluate(snap)
 
     assert result.control_method is ControlMethod.CUSTOM_POSITION
-    assert result.outside_window_constraint_active is expect_admitted
+    assert result.outside_window_constraint_active is True
     yielded = [
         step
         for step in result.decision_trace
         if step.reason_payload is not None
         and step.reason_payload.code is ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD
     ]
-    assert bool(yielded) is not expect_admitted
-    # Either way the FIXED winner's own 90 stays off the wire: a non-safety
-    # result has no licence out here, admitted or not.
+    assert yielded == []
+    # The FIXED winner's own 90 stays off the wire: a non-safety result has no
+    # licence out here, even admitted.
     verdicts = result.hold_clamp_verdicts
-    if expect_admitted:
-        assert verdicts["cover.a"].target == 30
-    else:
-        assert verdicts is None
+    assert verdicts["cover.a"].target == 30
 
 
 @pytest.mark.unit
