@@ -313,21 +313,38 @@ KNOWN_FIELD_DRIFT: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
+# The issue #1251 seed count for KNOWN_FIELD_DRIFT. This number may only ever be
+# revised DOWNWARD, in the same commit that removes the pair(s) it accounts for.
+# Raising it re-opens the escape hatch #1251 closed.
+KNOWN_FIELD_DRIFT_CEILING = 7
 
-@pytest.mark.parametrize("service", sorted(_load()))
+
+@pytest.mark.parametrize("service", sorted(set(_load()) | set(_load_en_services())))
 def test_services_yaml_en_json_field_parity(service: str) -> None:
-    """Every services.yaml service must document exactly the en.json fields.
+    """services.yaml and en.json must agree on every service and its fields.
 
     Issue #1251: hand-written per-service parity guards existed for two services
     only (set_blind_spot, set_position_limits), so the other 35 could — and did —
     ship a yaml-only field (raw English in a translated Actions UI) or an
     en.json-only field (invisible in the Actions UI) with no test failing.
+
+    Parametrized over the UNION of both files' service names, not just
+    services.yaml's: an en.json block with no yaml service behind it is the
+    service-level analogue of the stray set_geometry field this issue deleted,
+    and iterating services.yaml alone would never look at it.
     """
     yaml_services = _load()
     en_services = _load_en_services()
     assert service in en_services, (
         f"services.yaml documents '{service}' but translations/en.json has no "
         f"services.{service} entry — the whole action renders untranslated."
+    )
+    assert service in yaml_services, (
+        f"translations/en.json documents 'services.{service}' but services.yaml "
+        f"has no '{service}' service — the translation block is orphaned: no "
+        "action stands behind it, so nothing ever renders it. Delete the en.json "
+        "block (and its DE/FR mirrors, via the acp-translate skill), or add the "
+        "missing services.yaml service if the action was meant to exist."
     )
     suppressed = {f for (s, f) in KNOWN_FIELD_DRIFT if s == service}
     yaml_fields = _fields(yaml_services, service)
@@ -371,4 +388,26 @@ def test_known_field_drift_entries_are_still_drifting() -> None:
         "Delete these entries from KNOWN_FIELD_DRIFT:\n"
         + "\n".join(stale)
         + "\nThis list only ever shrinks (issue #1251)."
+    )
+
+
+def test_known_field_drift_never_grows() -> None:
+    """The allowlist may only shrink. Issue #1251: the comment above
+    KNOWN_FIELD_DRIFT says "THIS LIST ONLY EVER SHRINKS", but a comment stops
+    nobody — without this ceiling a PR can park a fresh drift in the list and
+    stay green, which is the exact escape hatch this issue exists to close.
+
+    Paired with test_known_field_drift_entries_are_still_drifting, the two make
+    the invariant real in both directions: the list cannot grow, and it must
+    shrink once a drift is actually fixed.
+    """
+    assert len(KNOWN_FIELD_DRIFT) <= KNOWN_FIELD_DRIFT_CEILING, (
+        f"KNOWN_FIELD_DRIFT holds {len(KNOWN_FIELD_DRIFT)} entries, above the "
+        f"ceiling of {KNOWN_FIELD_DRIFT_CEILING} (the issue #1251 seed count).\n"
+        "If you ADDED a pair: don't. Fix the drift instead — make services.yaml "
+        "and translations/en.json agree on that field (the comment above "
+        "KNOWN_FIELD_DRIFT spells out how). A new drift is a bug in the PR that "
+        "introduced it, not a known-issue to park here.\n"
+        "If you REMOVED a pair: lower KNOWN_FIELD_DRIFT_CEILING to match in this "
+        "same commit — the ceiling only ever moves down."
     )
