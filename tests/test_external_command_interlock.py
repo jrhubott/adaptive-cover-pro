@@ -410,10 +410,20 @@ def _listener_coordinator(*, plan=None, acp_contexts: set[str] | None = None):
     coordinator = MagicMock()
     # The listener's position branch is a real method, bound onto the duck-typed
     # self the way the rail-sequencing suite binds ``_entity_target``. Left as an
-    # auto-mock it would swallow the very dispatch under test.
+    # auto-mock it would swallow the very dispatch under test. ``_start_interlock_task``
+    # has to be real too — it holds the cancel-prior/register block
+    # ``_plan_external_interlock`` now delegates to (#1156).
     coordinator._plan_external_interlock = types.MethodType(
         AdaptiveDataUpdateCoordinator._plan_external_interlock, coordinator
     )
+    coordinator._start_interlock_task = types.MethodType(
+        AdaptiveDataUpdateCoordinator._start_interlock_task, coordinator
+    )
+    # ``_interlock_pair_key`` is a ``staticmethod``: binding it the way the
+    # instance methods above are bound would pass ``coordinator`` as an
+    # implicit first argument, shadowing the real ``plan`` argument. A direct
+    # attribute assignment keeps it a plain one-argument callable.
+    coordinator._interlock_pair_key = AdaptiveDataUpdateCoordinator._interlock_pair_key
     coordinator.entities = [_BOTTOM, _MIDDLE]
     coordinator.logger = MagicMock()
     coordinator._policy = MagicMock()
@@ -424,9 +434,19 @@ def _listener_coordinator(*, plan=None, acp_contexts: set[str] | None = None):
     )
     coordinator._external_interlock_tasks = {}
     coordinator.config_entry = MagicMock()
-    coordinator.config_entry.async_create_task = MagicMock(
-        side_effect=lambda *_a, **_kw: MagicMock()
-    )
+
+    def _spawn_task(*_a, **_kw):
+        # A fresh mock per call — not the shared ``.return_value`` — so two
+        # calls (a supersede) produce two distinct task objects, the way two
+        # real ``asyncio.Task``s would. Also parked onto ``.return_value``
+        # itself, so a test can assert identity against
+        # ``async_create_task.return_value`` right after the call it cares
+        # about, without a mock plumbing detail leaking into the assertion.
+        task = MagicMock()
+        coordinator.config_entry.async_create_task.return_value = task
+        return task
+
+    coordinator.config_entry.async_create_task = MagicMock(side_effect=_spawn_task)
     return coordinator
 
 
@@ -532,35 +552,59 @@ async def test_no_plan_spawns_no_task() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_plan_spawns_an_entry_scoped_task_keyed_by_follower() -> None:
+async def test_a_plan_spawns_an_entry_scoped_task_keyed_by_the_pair() -> None:
     """The corrective sequence runs off the listener so gate waits never block it."""
     coordinator = _listener_coordinator(plan=_plan())
 
     await _listen(coordinator, _position_event("close_cover", _MIDDLE))
 
     coordinator.config_entry.async_create_task.assert_called_once()
-    assert set(coordinator._external_interlock_tasks) == {_MIDDLE}
+    assert set(coordinator._external_interlock_tasks) == {frozenset({_BOTTOM, _MIDDLE})}
     assert (
-        coordinator._external_interlock_tasks[_MIDDLE]
+        coordinator._external_interlock_tasks[frozenset({_BOTTOM, _MIDDLE})]
         is coordinator.config_entry.async_create_task.return_value
-        or coordinator._external_interlock_tasks[_MIDDLE] is not None
     )
 
 
 @pytest.mark.asyncio
-async def test_second_plan_cancels_prior_task_for_same_follower() -> None:
+async def test_second_plan_cancels_prior_task_for_the_same_pair() -> None:
     """Last writer wins: two genuine commands in a row must not race each other."""
     coordinator = _listener_coordinator(plan=_plan())
 
     await _listen(coordinator, _position_event("close_cover", _MIDDLE))
-    first = coordinator._external_interlock_tasks[_MIDDLE]
+    first = coordinator._external_interlock_tasks[frozenset({_BOTTOM, _MIDDLE})]
     first.done.return_value = False
 
     await _listen(coordinator, _position_event("open_cover", _MIDDLE))
-    second = coordinator._external_interlock_tasks[_MIDDLE]
+    second = coordinator._external_interlock_tasks[frozenset({_BOTTOM, _MIDDLE})]
 
     first.cancel.assert_called_once()
     assert second is not first
+
+
+@pytest.mark.asyncio
+async def test_a_correction_on_either_rail_supersedes_the_other() -> None:
+    """The registry keys on the PAIR, not the follower (#1144 item 2 / #1156).
+
+    A command aimed at the middle rail and a command aimed at the bottom rail
+    plan two DIFFERENT follower entities, but they correct the SAME two
+    physical rails. Follower-only keying let both corrections live at once —
+    the registry has to supersede across the pair regardless of which rail's
+    command named the follower.
+    """
+    coordinator = _listener_coordinator(plan=_plan(follower=_MIDDLE, leader=_BOTTOM))
+
+    await _listen(coordinator, _position_event("close_cover", _MIDDLE))
+    first = next(iter(coordinator._external_interlock_tasks.values()))
+    first.done.return_value = False
+
+    coordinator._policy.plan_external_command_interlock.return_value = _plan(
+        follower=_BOTTOM, leader=_MIDDLE
+    )
+    await _listen(coordinator, _position_event("open_cover", _BOTTOM))
+
+    first.cancel.assert_called_once()
+    assert set(coordinator._external_interlock_tasks) == {frozenset({_BOTTOM, _MIDDLE})}
 
 
 @pytest.mark.asyncio
@@ -569,7 +613,7 @@ async def test_a_finished_prior_task_is_not_cancelled() -> None:
     coordinator = _listener_coordinator(plan=_plan())
 
     await _listen(coordinator, _position_event("close_cover", _MIDDLE))
-    first = coordinator._external_interlock_tasks[_MIDDLE]
+    first = coordinator._external_interlock_tasks[frozenset({_BOTTOM, _MIDDLE})]
     first.done.return_value = True
 
     await _listen(coordinator, _position_event("open_cover", _MIDDLE))

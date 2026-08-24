@@ -9,6 +9,7 @@ pytest-homeassistant-custom-component.
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 from collections.abc import Mapping
 from typing import Any
@@ -350,6 +351,33 @@ def make_mock_policy(**attrs: Any) -> MagicMock:
     return policy
 
 
+def wire_entry_task_factory(coord: Any) -> Any:
+    """Point ``coord.config_entry.async_create_task`` at a real asyncio task.
+
+    A bare ``MagicMock`` coordinator leaves ``config_entry.async_create_task``
+    as an auto-mocked callable that returns a non-awaitable ``MagicMock``. That
+    is harmless for a fire-and-forget caller, but the user-seam interlock
+    (issue #1156) awaits the task it registers so it can return the
+    correction's own outcome — awaiting a bare ``MagicMock`` raises
+    ``TypeError``. Real HA schedules the coroutine on the entry via
+    ``ConfigEntry.async_create_task(hass, coro, name=...)``; this stand-in
+    schedules it on the running loop instead, ignoring the ``hass`` positional
+    and the ``name`` kwarg, which is exactly the part production code needs
+    from it here.
+
+    One definition, several callers (`_coord` in
+    ``tests/test_manual_command_interlock.py``, ``_user_seam_coordinator`` in
+    ``tests/test_day_night_rail_sequencing.py``, and ``bind_user_position_seam``
+    below) — see CODING_GUIDELINES.md § No Code Duplication.
+    """
+    coord.config_entry.async_create_task = MagicMock(
+        side_effect=lambda _hass, coro, name=None: (  # noqa: ARG005
+            asyncio.get_running_loop().create_task(coro)
+        )
+    )
+    return coord
+
+
 def bind_user_position_seam(coord: Any, *, interlock_plan: Any = None) -> Any:
     """Bind ``async_apply_user_position`` and the siblings it calls onto ``coord``.
 
@@ -374,14 +402,26 @@ def bind_user_position_seam(coord: Any, *, interlock_plan: Any = None) -> Any:
         AdaptiveDataUpdateCoordinator,
     )
 
+    wire_entry_task_factory(coord)
+    if not isinstance(getattr(coord, "_external_interlock_tasks", None), dict):
+        coord._external_interlock_tasks = {}  # noqa: SLF001
     for name in (
         "async_apply_user_position",
         "_interlock_user_command",
         "_execute_external_interlock",
+        "_start_interlock_task",
     ):
         setattr(
             coord, name, getattr(AdaptiveDataUpdateCoordinator, name).__get__(coord)
         )
+    # ``_interlock_pair_key`` is a ``staticmethod`` — binding it through
+    # ``.__get__(coord)`` like the instance methods above would turn it into a
+    # bound method that implicitly passes ``coord`` as the first (and only)
+    # positional argument, shadowing the real ``plan`` argument. A direct
+    # attribute assignment leaves it a plain one-argument callable.
+    coord._interlock_pair_key = (
+        AdaptiveDataUpdateCoordinator._interlock_pair_key
+    )  # noqa: SLF001
 
     # An unset `_resolved_options` is a bare MagicMock, and the seam reads
     # options through it. That is not an inert default: `MagicMock.get(...)`
