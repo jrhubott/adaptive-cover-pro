@@ -2956,11 +2956,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         a shade reading device 0 under a 20–80 curve un-maps to logical 0
         (``np.interp`` clamps to the endpoint), and re-mapping that opens it to
         20. The short-circuit fires there — the target equals the read, because
-        both clamped to the same end — and the cover stays put. It is also what
-        absorbs the one-point round-trip miss a locally EXPANDING multi-point
+        both clamped to the same end — and the cover stays put. It does NOT
+        absorb the one-point round-trip miss a locally EXPANDING multi-point
         curve can produce (``position_utils.from_cover_frame`` states that
-        bound). Every ``interp_start``/``interp_end`` pair contracts, so that
-        case needs a hand-built control-point list to reach. Removing the branch
+        bound): the branch compares a logical target against a device read, so
+        on that curve's expanding leg the two differ and it does not fire —
+        device 11 judges to logical 51 and re-maps to 12. The delta gate is what
+        absorbs that one point, not this branch. Every
+        ``interp_start``/``interp_end`` pair contracts, so the case needs a
+        hand-built control-point list to reach at all. Removing the branch
         as "redundant post-#1230" would put a phantom carriage move back into
         exactly the tilt-only command this whole path exists to keep
         positionally inert (#1170 / #1174).
