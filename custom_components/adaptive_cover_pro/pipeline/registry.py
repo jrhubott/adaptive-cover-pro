@@ -7,7 +7,7 @@ import datetime as dt
 import logging
 from collections.abc import Mapping
 
-from ..const import AxisConstraintMode, ReasonCode
+from ..const import PSEUDO_HOLD_HOLDER_PRIORITY, AxisConstraintMode, ReasonCode
 from ..cover_types.base import AXIS_NAME_POSITION, AXIS_NAME_TILT
 from ..diagnostics.event_buffer import EventBuffer
 from ..position_utils import flip_if
@@ -472,27 +472,26 @@ def _as_outside_window_pseudo_hold(
     ``held_position``. Borrowing it is what makes the new capability a
     restatement of an existing rule rather than a second one.
 
-    The holder priority stays ``winning_handler.priority`` at the call site,
-    which has a consequence worth stating plainly. A REAL hold (manual override
-    at 80, a group lock at 100) never reaches here at all — ``held_position`` is
-    already set — and still beats a 77 slot through the unchanged
-    :func:`outranking` gate. But a pseudo-hold inherits its winner's priority as
-    if that winner were holding the cover, and :func:`outranking` is
-    strictly-greater. Against ``DefaultHandler`` at 0 that is inert: every
-    constraint outranks it. Against a **FIXED custom-position slot** winning at
-    the default 77, a second slot's opted-in bound at 77 does NOT outrank it and
-    is filed as ``yielded_to_hold`` — so on that configuration the opt-in is
-    inert and the user sees a ``bound_yielded_to_hold`` trace step naming a
-    holder that is not holding anything.
+    The call site does NOT hand this pseudo-hold ``winning_handler.priority``.
+    A REAL hold (manual override at 80, a group lock at 100) never reaches here
+    at all — ``held_position`` is already set — and still beats a 77 slot
+    through the unchanged :func:`outranking` gate, using the winner's own
+    priority exactly as before. But a pseudo-hold is scaffolding: nobody is
+    actually holding the cover, so #463's rule that composition against a
+    *computed* winner is priority-independent applies to it, not
+    :func:`outranking`'s real-hold tie rule. The call site therefore hands it
+    ``PSEUDO_HOLD_HOLDER_PRIORITY`` — a sentinel below every value a user can
+    configure for a slot and below ``DefaultHandler``'s 0 — so any real claim
+    (priority ≥ 1) always outranks it. Against a **FIXED custom-position slot**
+    winning at the default 77, a second slot's opted-in bound at that same 77
+    now outranks the pseudo-hold and binds, instead of being filed as
+    ``yielded_to_hold`` against a holder that isn't holding anything (#1231).
 
-    That is today's behaviour and it is pinned by
+    This resolves what used to be an open design question here, pinned by
     ``tests/test_pipeline/test_outside_window_constraints.py``
-    ``::test_pseudo_hold_ties_are_judged_against_the_winners_own_priority``.
-    Whether it is the RIGHT behaviour is a separate question left open: the
-    pseudo-hold is scaffolding, nobody is holding the cover, and #463's rule for
-    a computed winner is that composition is priority-independent — which argues
-    for handing this call site a below-everything holder priority rather than
-    the winner's own. That is a design change, so it is not made here.
+    ``::test_pseudo_hold_never_yields_to_a_tied_bound_priority``: a bound tied
+    with the winner still outranks the pseudo-hold, because nothing is
+    actually holding the cover.
 
     ``held_position`` is stripped back off before the result is returned: it is
     a user-facing field (the Target Position sensor, the Model B stash replay in
@@ -959,8 +958,22 @@ class PipelineRegistry:
         # unless the winner is holding a physical position, in which case a
         # bound must outrank the holder (#1170). Consumed by both axes; the
         # FIXED tilt overlay below deliberately reads the unfiltered list.
+        #
+        # A pseudo-hold is scaffolding, not a real hold — nothing is actually
+        # holding the cover, so #463's rule that composition against a
+        # computed winner is priority-independent applies to it, not
+        # outranking()'s real-hold tie rule. Handing it the winner's own
+        # priority let a same-priority opt-in bound lose to a "holder" that
+        # wasn't holding anything (#1231); the below-everything sentinel
+        # restores the priority-independent rule for this synthetic case
+        # while leaving every REAL hold's holder priority untouched.
+        holder_priority = (
+            PSEUDO_HOLD_HOLDER_PRIORITY
+            if outside_window_active
+            else winning_handler.priority
+        )
         bound_constraints, yielded_to_hold = _split_bounds_against_hold(
-            constraints, winner, winning_handler.priority
+            constraints, winner, holder_priority
         )
 
         # --- Position axis: bounded kinds ---

@@ -1126,6 +1126,16 @@ CUSTOM_POSITION_SLOT_NUMBERS: tuple[int, ...] = tuple(
 # bypass the delta-position/delta-time send gates (issue #563).
 CUSTOM_POSITION_SAFETY_PRIORITY = 100
 
+# Holder priority the registry hands its outside-window pseudo-hold (issue
+# #943 item B), NOT the winning handler's own priority. A pseudo-hold is
+# scaffolding — nothing is actually holding the cover, so #463's rule that
+# composition against a computed winner is priority-independent applies here,
+# not outranking()'s real-hold tie rule. This sentinel sits below every value
+# a user can configure for a slot (priority_slider() floors at 1) and below
+# DefaultHandler's 0, so every real claim strictly outranks it and the
+# pseudo-hold can never again swallow a same-priority opt-in bound (#1231).
+PSEUDO_HOLD_HOLDER_PRIORITY = -1
+
 # Cover-group scene intents claim the pipeline at this priority (issue #790,
 # Phase 2): above manual_override (80) so "put the room in Privacy" wins over
 # a stale per-cover manual state, below weather (90) so wind/rain safety on an
