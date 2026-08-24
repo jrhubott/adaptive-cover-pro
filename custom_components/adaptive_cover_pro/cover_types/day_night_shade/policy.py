@@ -270,6 +270,11 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # supplies no accessor: the gate then falls back on the two observation
         # signals, which is exactly the pre-#1140 behaviour.
         self._get_booked_target: Callable[[str], int | None] | None = None
+        # The unconditional counterpart of ``_get_booked_target`` above — the
+        # raw last-commanded target for a rail, gated on nothing (issue #1154).
+        # Only read by :meth:`plan_external_command_interlock`'s leader-target
+        # clamp, never by the suppression check ``_booked_clears`` makes.
+        self._get_command_target: Callable[[str], int | None] | None = None
         # Last resolved fabric blend, replayed by ``maybe_update_tilt_only`` when
         # the position axis won't fire this cycle. Cleared on every suppressed
         # branch of ``post_pipeline_resolve`` (mirrors venetian's ``_last_tilt``).
@@ -1659,6 +1664,9 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # rail, or None once it settles. Additive kwarg — every other policy
         # ignores it, and an absent one degrades to the observation signals.
         self._get_booked_target = kwargs.get("get_booked_target")
+        # Signal for the #1154 clamp: the raw, unconditional last-commanded
+        # target for a rail. Additive kwarg, same shape as the one above.
+        self._get_command_target = kwargs.get("get_command_target")
         # Model C rail-role resolution needs the instance's cover list; additive
         # kwarg, read via ``kwargs.get`` so every other policy ignores it.
         self._attached_entities = tuple(kwargs.get("entities") or ())
@@ -2480,6 +2488,36 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         plan is the seam that has to close it here, because it is the seam that
         produced the numbers.
 
+        **The leader-target clamp (issue #1154).** Once a correction is going
+        ahead — ``blocked`` is True and :meth:`_booked_clears` has already
+        answered False — the plan still has to pick a VALUE for the leader,
+        and it is not always safe to reuse ``wire_target`` (the follower's own
+        target) there. A leading rail's dispatch may have failed with a
+        ``HomeAssistantError``; the handler in
+        :meth:`CoverCommandService.apply_position` clears ``waiting`` there but
+        deliberately KEEPS the target, because it is still the honest
+        last-commanded value — just no longer evidence of anything in flight.
+        That is exactly the state that makes ``_get_booked_target`` (gated on
+        ``is_waiting_for_target``) answer None and :meth:`_booked_clears`
+        correctly decline to suppress, but blindly sending ``wire_target``
+        anyway then overwrites a kept, still-valid target with the follower's
+        own — the reported bug. ``self._get_command_target`` is the
+        unconditional counterpart of ``_get_booked_target`` (no ``waiting``
+        gate) that reads it. Three cases, all resolved through the same
+        :meth:`_rail_blocks` inequality :meth:`_booked_clears` already applies
+        — never restated:
+
+        * a target IS recorded AND it clears the follower — use it. This is
+          the fix: the leader's kept, still-honest target survives the
+          correction instead of being overwritten by ``wire_target``.
+        * a target IS recorded but does NOT clear the follower (a stale
+          target, #1151) — fall through to ``wire_target``, exactly as before
+          this clamp existed. Reusing the leader's own value here regardless
+          of clearance would silently reintroduce the #1151 stall this very
+          correction exists to break.
+        * no target is recorded at all (a cold start, or no accessor
+          supplied) — fall through to ``wire_target``, exactly as before.
+
         Returns ``None`` — nothing to correct — for every non-Model-C instance,
         every entity outside the pair, a degenerate pair the gate is itself inert
         for, an unreadable partner rail (no reading, no evidence of a collision),
@@ -2556,9 +2594,24 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             wire_target,
             leading_rail,
         )
+        # The leader-target clamp (issue #1154) — see the docstring's "leader-
+        # target clamp" section above for the three cases and why each falls
+        # out the way it does. Reuses ``_rail_blocks`` (never restated), the
+        # same inequality ``_booked_clears`` above already applies.
+        leader_target = (
+            self._get_command_target(leading_rail) if self._get_command_target else None
+        )
+        leading_target = (
+            leader_target
+            if leader_target is not None
+            and not self._rail_blocks(
+                leader_target, target_open, inverse, is_middle=is_middle
+            )
+            else wire_target
+        )
         return ExternalInterlockPlan(
             leading_entity_id=leading_rail,
-            leading_target=wire_target,
+            leading_target=leading_target,
             follower_entity_id=entity_id,
             follower_target=wire_target,
             reason=EXTERNAL_INTERLOCK_REASON,

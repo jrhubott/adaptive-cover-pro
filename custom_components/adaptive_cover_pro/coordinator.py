@@ -846,6 +846,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     else None
                 )
             ),
+            # The raw target ACP last COMMANDED an entity to, regardless of
+            # whether it is still in flight (issue #1154). Unlike
+            # ``get_booked_target`` above, this accessor's contract is not
+            # "evidence of physical travel" — it is "what did ACP last book for
+            # this rail", used only to decide what VALUE a correction that is
+            # already going ahead should send. A failed dispatch's
+            # ``HomeAssistantError`` handler clears ``waiting`` but deliberately
+            # keeps the target (it is still the honest last-commanded value),
+            # so gating this on ``is_waiting_for_target`` the way
+            # ``get_booked_target`` is would make a correction blind to that
+            # kept value in exactly the case it must read it.
+            #
+            # NOT gated on dry_run, unlike ``get_booked_target``: dry run books
+            # a target through the identical ``set_target`` call a live cycle
+            # makes (before the dry-run gate short-circuits the actual service
+            # call), so the value is equally meaningful bookkeeping either way,
+            # and this accessor never feeds a suppression decision that a
+            # fictional "clearing" could corrupt — it only picks a number for a
+            # correction plan that ``_booked_clears`` has already decided must
+            # be built. Gating it would just make dry-run's simulated
+            # diagnostics diverge from what the same cycle does live.
+            get_command_target=lambda eid: self._cmd_svc.get_target(eid),
             get_current_tilt_position=lambda eid: state_attr(
                 self.hass, eid, "current_tilt_position"
             ),

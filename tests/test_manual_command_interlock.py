@@ -73,6 +73,11 @@ def _coord(cmd_svc, policy, ctx, *, dry_run=False, unavailable=()):
         if dry_run
         else (cmd_svc.get_target(eid) if cmd_svc.is_waiting_for_target(eid) else None)
     )
+    # Signal for the #1154 clamp: the raw, unconditional target ACP last
+    # commanded a rail to, independent of whether it is still "in flight"
+    # (unlike ``_get_booked_target`` above). Mirrors the production wiring in
+    # ``coordinator.py``'s ``attach()`` call.
+    policy._get_command_target = lambda eid: cmd_svc.get_target(eid)  # noqa: SLF001
     coord = MagicMock()
     coord.logger = MagicMock()
     coord._policy = policy
@@ -227,6 +232,14 @@ async def test_a_stale_in_flight_target_does_not_suppress_the_correction(
     83. Suppressing on "the middle rail is busy" left the correction declining
     (it believed the blocker was moving) and the gate refusing (61 does not
     clear 83) — the command was dropped by both halves, with no skip logged.
+
+    The value assertion below is the #1154 clamp's clearance-gating branch,
+    exercised: MIDDLE's own recorded 61 does NOT clear 83 (it is the stale
+    target this whole test is about), so the correction must fall through to
+    the follower's ``wire_target`` (83), exactly as before the clamp existed.
+    A naive clamp that unconditionally preferred MIDDLE's own recorded target
+    over ``wire_target`` — with no clearance check — would send 61 here and
+    silently reintroduce the #1151 stall this test guards against.
     """
     cmd_svc, policy, _rails, events = _harness(
         monkeypatch, script={_BOTTOM: [59], _MIDDLE: [69] * 4 + [83]}, position=83
@@ -235,11 +248,23 @@ async def test_a_stale_in_flight_target_does_not_suppress_the_correction(
     cmd_svc.set_target(_MIDDLE, 61)  # does NOT clear 83
     cmd_svc.set_waiting(_MIDDLE, True)
 
+    payloads: list[tuple[str, int | None]] = []
+    hass = cmd_svc._hass  # noqa: SLF001
+    inner = hass.services.async_call.side_effect
+
+    async def _record(domain, service, data, context=None):
+        await inner(domain, service, data, context=context)
+        payloads.append((data["entity_id"], data.get("position")))
+
+    hass.services.async_call = AsyncMock(side_effect=_record)
+
     with _patch_caps():
         outcome = await coord._interlock_user_command(_BOTTOM, 83, dispatch_token=False)
 
     assert outcome is not None
     assert _sends(events) == [f"send:{_MIDDLE}", f"send:{_BOTTOM}"]
+    assert (_MIDDLE, 83) in payloads, payloads
+    assert (_MIDDLE, 61) not in payloads, payloads
 
 
 @pytest.mark.asyncio
@@ -325,6 +350,75 @@ async def test_a_dry_run_target_is_not_evidence_of_motion(monkeypatch) -> None:
         outcome = await cmd_svc.apply_position(_MIDDLE, 40, "solar", ctx)
 
     assert outcome == ("skipped", "policy_deferred")
+
+
+@pytest.mark.asyncio
+async def test_a_kept_target_after_a_failed_dispatch_is_not_overwritten(
+    monkeypatch,
+) -> None:
+    """The reported failure (#1154): a correction must not clobber a kept target.
+
+    The bottom rail's own dispatch to 40 failed with a ``HomeAssistantError``.
+    PR #1152's handler clears ``waiting`` but deliberately keeps the booked
+    target at 40 — a legitimate, still-clearing target, not evidence of
+    anything in flight. A SECOND command then lands on the middle rail (target
+    70) and triggers a correction on the bottom rail; that correction must read
+    the bottom rail's own kept 40, not overwrite it with the middle rail's own
+    target, because 40 already clears 70 (and 70 does not need to "clear"
+    itself).
+    """
+    cmd_svc, policy, _rails, _events = _harness(
+        monkeypatch, script={_BOTTOM: [100] * 4 + [40], _MIDDLE: [100]}, position=70
+    )
+    coord = _coord(cmd_svc, policy, _rail_context(policy))
+    cmd_svc.set_target(_BOTTOM, 40)
+    cmd_svc.set_waiting(_BOTTOM, False)
+
+    payloads: list[tuple[str, int | None]] = []
+    hass = cmd_svc._hass  # noqa: SLF001
+    inner = hass.services.async_call.side_effect
+
+    async def _record(domain, service, data, context=None):
+        await inner(domain, service, data, context=context)
+        payloads.append((data["entity_id"], data.get("position")))
+
+    hass.services.async_call = AsyncMock(side_effect=_record)
+
+    with _patch_caps():
+        outcome = await coord._interlock_user_command(_MIDDLE, 70, dispatch_token=False)
+
+    assert outcome is not None
+    assert (_BOTTOM, 40) in payloads, payloads
+    assert (_BOTTOM, 70) not in payloads, payloads
+    assert cmd_svc.get_target(_BOTTOM) == 40
+
+
+@pytest.mark.asyncio
+async def test_a_waiting_kept_target_after_a_failed_dispatch_declines_the_correction(
+    monkeypatch,
+) -> None:
+    """The control for the test above — already passes today, and must keep passing.
+
+    Same numbers, but ``waiting`` was never cleared: the bottom rail is
+    genuinely in flight to 40, which clears the middle rail's 70, so
+    ``_booked_clears`` suppresses the correction outright and the gate is left
+    to do its job. This documents the existing-good path and guards
+    ``_booked_clears``'s own ``waiting`` gate (``get_booked_target``) against a
+    future regression from the #1154 clamp reading a DIFFERENT, unconditional
+    accessor.
+    """
+    cmd_svc, policy, _rails, events = _harness(
+        monkeypatch, script={_BOTTOM: [100] * 4 + [40], _MIDDLE: [100]}, position=70
+    )
+    coord = _coord(cmd_svc, policy, _rail_context(policy))
+    cmd_svc.set_target(_BOTTOM, 40)
+    cmd_svc.set_waiting(_BOTTOM, True)
+
+    with _patch_caps():
+        outcome = await coord._interlock_user_command(_MIDDLE, 70, dispatch_token=False)
+
+    assert outcome is None
+    assert _sends(events) == []
 
 
 # ---------------------------------------------------------------------------
