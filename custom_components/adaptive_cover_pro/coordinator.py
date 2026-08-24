@@ -948,12 +948,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._custom_position_hold_unsub: Callable[[], None] | None = None
         self._sun_tracking_gate_unsub: Callable[[], None] | None = None
 
-        # Issue #1138: in-flight external-command interlock corrections, keyed
-        # by the entity whose command is being re-issued. One per follower —
-        # a fresh plan for the same follower supersedes (cancels) the previous
-        # correction rather than racing it. Entry-scoped tasks, cancelled on
-        # shutdown so nothing is left pending after an unload.
-        self._external_interlock_tasks: dict[str, asyncio.Task] = {}
+        # Issue #1138 (re-keyed for #1156 / #1144 item 2): in-flight
+        # external-command interlock corrections, keyed by the UNORDERED PAIR
+        # of entities the correction moves — not by whichever one's command is
+        # being re-issued. One per pair — a fresh plan touching either rail of
+        # an already-in-flight pair supersedes (cancels) the previous
+        # correction rather than racing it, whether the two commands named the
+        # same entity or opposite ends of the same pair. Entry-scoped tasks,
+        # cancelled on shutdown so nothing is left pending after an unload.
+        self._external_interlock_tasks: dict[frozenset[str], asyncio.Task] = {}
 
     def _make_detector_config(self, options) -> DetectorConfig:
         """Build the manual-override DetectorConfig from raw options.
@@ -1393,6 +1396,49 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     entity_id, int(my_position_value)
                 )
 
+    @staticmethod
+    def _interlock_pair_key(plan: ExternalInterlockPlan) -> frozenset[str]:
+        """Return the unordered pair of entities a correction moves (#1156 / #1144).
+
+        Derived entirely from the plan the policy already produced — no
+        cover-type knowledge, no "these are rails" — so both writers of
+        ``_external_interlock_tasks`` (and its shutdown drain) can key on the
+        pair without the coordinator learning anything cover-type-specific.
+        """
+        return frozenset({plan.leading_entity_id, plan.follower_entity_id})
+
+    def _start_interlock_task(
+        self, plan: ExternalInterlockPlan, **kwargs: Any
+    ) -> asyncio.Task:
+        """Register a correction, superseding whatever still holds this pair.
+
+        Single source of truth for the cancel-prior / register / name-the-task
+        policy (CODING_GUIDELINES.md § No Code Duplication): the external
+        listener (:meth:`_plan_external_interlock`, fire-and-forget) and the
+        user seam (:meth:`_interlock_user_command`, which awaits the returned
+        task so it can hand back the correction's own outcome) both delegate
+        here instead of each keeping its own copy of the block.
+
+        Keyed by :meth:`_interlock_pair_key`, not by ``plan.follower_entity_id``
+        alone — a command naming either end of an already-in-flight pair must
+        supersede the correction in progress, not just a second command naming
+        the same entity (#1156, subsuming #1144 item 2). ``**kwargs`` forwards
+        ``stop_follower`` / ``mark_override`` straight through to
+        :meth:`_execute_external_interlock` so a caller's distinguishing
+        arguments are never dropped by this shared seam.
+        """
+        key = self._interlock_pair_key(plan)
+        prior = self._external_interlock_tasks.get(key)
+        if prior is not None and not prior.done():
+            prior.cancel()
+        task = self.config_entry.async_create_task(
+            self.hass,
+            self._execute_external_interlock(plan, **kwargs),
+            name=f"acp_rail_interlock_{plan.follower_entity_id}",
+        )
+        self._external_interlock_tasks[key] = task
+        return task
+
     def _plan_external_interlock(
         self,
         event: Event,
@@ -1445,21 +1491,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             if plan is None:
                 continue
-            # Last writer wins, keyed by the entity whose command is being
-            # re-issued: a second genuine external command on the same pair
-            # supersedes the correction still in flight for the first rather
-            # than racing it. Entry-scoped so an unload cancels whatever is
-            # still running instead of leaking a pending task.
-            prior = self._external_interlock_tasks.get(plan.follower_entity_id)
-            if prior is not None and not prior.done():
-                prior.cancel()
-            self._external_interlock_tasks[plan.follower_entity_id] = (
-                self.config_entry.async_create_task(
-                    self.hass,
-                    self._execute_external_interlock(plan),
-                    name=f"acp_external_interlock_{plan.follower_entity_id}",
-                )
-            )
+            # Last writer wins, keyed by the pair: a second genuine external
+            # command touching either rail of this pair supersedes the
+            # correction still in flight rather than racing it. Fire-and-forget
+            # — the listener call stack must not block on a rail-clearance
+            # wait — so the task is dropped, not awaited.
+            self._start_interlock_task(plan)
 
     async def _execute_external_interlock(
         self,
@@ -4760,8 +4797,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         governs whether an EXTERNAL touch takes ownership and has no authority
         over ACP's own seams.
 
-        Returns the follower's dispatch outcome when the correction ran, or
-        ``None`` when the caller should dispatch normally.
+        **Registered, not awaited inline (#1156).** The correction runs through
+        :meth:`_start_interlock_task`, the same pair-keyed registry the
+        external listener uses — keyed by the two entities the correction
+        moves, not by whichever one's command is being re-issued, so a second
+        overlapping user command on EITHER rail of this pair, or a genuine
+        external command on either rail, supersedes this correction instead of
+        racing it. Awaiting the registered task rather than the inline
+        coroutine directly means a supersede can surface here as
+        ``asyncio.CancelledError``, which is translated to
+        ``("skipped", "interlock_superseded")`` — except when the cancellation
+        came from OUTSIDE (an entry unload, HA shutdown cancelling this very
+        service-call task), which must propagate untouched rather than read as
+        an ordinary skip.
+
+        Returns the follower's dispatch outcome when the correction ran,
+        ``("skipped", "interlock_superseded")`` when a later plan superseded it
+        first, or ``None`` when the caller should dispatch normally.
         """
         if self._cmd_svc.is_entity_unavailable(entity_id):
             return None
@@ -4776,11 +4828,31 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Nothing has reached the motor, so there is no refused-command latch to
         # clear and the follower must NOT be stopped: on an open/close-only
         # cover a stop-while-stationary is the hardware's "go to My" gesture.
-        return await self._execute_external_interlock(
+        # Registered through the SAME pair-keyed seam the external listener
+        # uses (#1156) rather than awaited inline, so a second overlapping
+        # user command — or an external command on either rail of this pair —
+        # supersedes this correction instead of racing it.
+        task = self._start_interlock_task(
             replace(plan, reason=MANUAL_INTERLOCK_REASON),
             stop_follower=False,
             mark_override=not force,
         )
+        try:
+            return await task
+        except asyncio.CancelledError:
+            # ``task.cancelled()`` is true both when a LATER plan superseded
+            # this one (the ordinary case: translate to a normal skip so the
+            # user's own command still returns one honest outcome) and when
+            # THIS service-call task was itself cancelled from outside — an
+            # entry unload or HA shutdown. ``current_task().cancelling()`` is
+            # non-zero only in the second case, and that one must propagate:
+            # swallowing it would make a torn-down integration look like an
+            # ordinary supersede instead. ``Task.cancelling()`` is 3.11+,
+            # which the project already requires.
+            current = asyncio.current_task()
+            if task.cancelled() and (current is None or not current.cancelling()):
+                return "skipped", "interlock_superseded"
+            raise
 
     async def async_apply_user_tilt(
         self,

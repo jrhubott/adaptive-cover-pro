@@ -70,6 +70,7 @@ from custom_components.adaptive_cover_pro.cover_types.day_night_shade import (
     DayNightShadePolicy,
 )
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+from tests.ha_helpers import wire_entry_task_factory
 
 _BOTTOM = "cover.bottom_rail"
 _MIDDLE = "cover.middle_rail"
@@ -1389,6 +1390,8 @@ def _user_seam_coordinator(cmd_svc, policy, *, entities, monkeypatch, floors=())
     coord._build_position_context = lambda _entity, _options, **_kw: _rail_context(
         policy
     )  # noqa: ARG005
+    coord._external_interlock_tasks = {}
+    wire_entry_task_factory(coord)
     for name in (
         "_entity_target",
         "_to_cover_frame",
@@ -1402,12 +1405,18 @@ def _user_seam_coordinator(cmd_svc, policy, *, entities, monkeypatch, floors=())
         # REAL Model C policy, so the correction it plans is the production one.
         "_interlock_user_command",
         "_execute_external_interlock",
+        "_start_interlock_task",
     ):
         setattr(
             coord,
             name,
             types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
         )
+    # ``_interlock_pair_key`` is a ``staticmethod``: binding it like the
+    # instance methods above would pass ``coord`` as an implicit first
+    # argument, shadowing the real ``plan`` argument. A direct attribute
+    # assignment keeps it a plain one-argument callable.
+    coord._interlock_pair_key = AdaptiveDataUpdateCoordinator._interlock_pair_key
     monkeypatch.setattr(
         coordinator_module, "gather_active_floors", lambda _s: list(floors)
     )
@@ -3880,12 +3889,21 @@ def _interlock_coordinator(cmd_svc, policy):
             policy=policy,
         )
     )
-    for name in ("_plan_external_interlock", "_execute_external_interlock"):
+    for name in (
+        "_plan_external_interlock",
+        "_execute_external_interlock",
+        "_start_interlock_task",
+    ):
         setattr(
             coord,
             name,
             types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
         )
+    # ``_interlock_pair_key`` is a ``staticmethod``: binding it like the
+    # instance methods above would pass ``coord`` as an implicit first
+    # argument, shadowing the real ``plan`` argument. A direct attribute
+    # assignment keeps it a plain one-argument callable.
+    coord._interlock_pair_key = AdaptiveDataUpdateCoordinator._interlock_pair_key
     return coord, spawned
 
 

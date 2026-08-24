@@ -33,6 +33,7 @@ the case the observation-based signals cannot serve.
 
 from __future__ import annotations
 
+import asyncio
 import types
 from unittest.mock import AsyncMock, MagicMock
 
@@ -43,6 +44,7 @@ from custom_components.adaptive_cover_pro.const import MANUAL_INTERLOCK_REASON
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
+from tests.ha_helpers import wire_entry_task_factory
 from tests.test_day_night_rail_sequencing import (
     _BOTTOM,
     _MIDDLE,
@@ -83,12 +85,24 @@ def _coord(cmd_svc, policy, ctx, *, dry_run=False, unavailable=()):
     coord._event_buffer = MagicMock()
     coord._build_position_context = lambda _e, _o, **_kw: ctx  # noqa: ARG005
     cmd_svc.is_entity_unavailable = lambda eid: eid in unavailable
-    for name in ("_interlock_user_command", "_execute_external_interlock"):
+    coord._external_interlock_tasks = {}
+    wire_entry_task_factory(coord)
+    for name in (
+        "_interlock_user_command",
+        "_execute_external_interlock",
+        "_start_interlock_task",
+    ):
         setattr(
             coord,
             name,
             types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
         )
+    # ``_interlock_pair_key`` is a ``staticmethod``: binding it like the
+    # instance methods above (``.__get__``-style, via ``types.MethodType``)
+    # would pass ``coord`` as an implicit first argument, shadowing the real
+    # ``plan`` argument. A direct attribute assignment keeps it a plain
+    # one-argument callable.
+    coord._interlock_pair_key = AdaptiveDataUpdateCoordinator._interlock_pair_key
     return coord
 
 
@@ -454,6 +468,93 @@ async def test_the_user_seam_returns_the_corrections_own_outcome(monkeypatch) ->
     assert outcome == ("sent", "set_cover_position")
     # Exactly one command each — the correction's, not one from each path.
     assert _sends(events) == [f"send:{_BOTTOM}", f"send:{_MIDDLE}"]
+
+
+@pytest.mark.asyncio
+async def test_a_second_user_command_supersedes_the_correction_still_in_flight(
+    monkeypatch,
+) -> None:
+    """Two drags on the same rail must not race two live corrections (#1156).
+
+    Before the pair-keyed registry, the user seam awaited its correction
+    inline and registered nothing, so a second overlapping drag ran its own
+    independent correction: two brackets open on the same rail pair, and the
+    stale first drag's target could still land on the motor. Registering the
+    task the same way the external path does lets the second drag cancel the
+    first's still-in-flight correction outright, so exactly one bracket is
+    ever open and only the live drag's target is ever dispatched.
+    """
+    cmd_svc, policy, _rails, events = _harness(
+        monkeypatch, script={_BOTTOM: [100] * 6 + [70], _MIDDLE: [100]}, position=40
+    )
+    coord = _user_seam_coordinator(
+        cmd_svc, policy, entities=[_BOTTOM, _MIDDLE], monkeypatch=monkeypatch
+    )
+    coord.manual_ignore_external = False
+    coord._event_buffer = MagicMock()
+    cmd_svc.is_entity_unavailable = lambda _eid: False
+
+    with _patch_caps():
+        first, second = await asyncio.gather(
+            coord.async_apply_user_position(_MIDDLE, 40, trigger="set_axes"),
+            coord.async_apply_user_position(_MIDDLE, 70, trigger="set_axes"),
+        )
+
+    assert first == ("skipped", "interlock_superseded")
+    assert second == ("sent", "set_cover_position")
+    # Both writes land under the same pair key, so the dict never grows past
+    # one live entry — the second write replaces the first's rather than
+    # adding beside it.
+    assert set(coord._external_interlock_tasks) == {frozenset({_BOTTOM, _MIDDLE})}
+
+
+@pytest.mark.asyncio
+async def test_an_outer_cancellation_is_not_swallowed_as_a_supersede(
+    monkeypatch,
+) -> None:
+    """Entry unload / HA shutdown must not read as an ordinary supersede (#1156).
+
+    ``task.cancelled()`` is true both when a LATER command supersedes this one
+    and when the SERVICE-CALL task itself is cancelled from outside (an entry
+    unload, HA shutdown). Only the first case may return a normal
+    ``("skipped", ...)`` tuple; the second must propagate ``CancelledError``
+    untouched — swallowing it would make an unload look like an ordinary skip
+    instead of a torn-down integration. The discriminator is
+    ``asyncio.current_task().cancelling()``: non-zero only when the awaiting
+    task (this one) was itself asked to cancel.
+    """
+    cmd_svc, policy, _rails, _events = _harness(
+        monkeypatch, script={_BOTTOM: [100] * 4 + [40], _MIDDLE: [100]}, position=40
+    )
+    coord = _user_seam_coordinator(
+        cmd_svc, policy, entities=[_BOTTOM, _MIDDLE], monkeypatch=monkeypatch
+    )
+    coord.manual_ignore_external = False
+    coord._event_buffer = MagicMock()
+    cmd_svc.is_entity_unavailable = lambda _eid: False
+
+    # Hang the FOLLOWER's own re-dispatch in the clearance gate deterministically
+    # — no wall-clock race — while leaving the LEADING rail's gate real, since
+    # the leading rail of any plan is always clear by construction.
+    real_gate = policy.await_dispatch_clearance
+    parked = asyncio.Event()
+
+    async def _gate(entity_id, **kwargs):
+        if entity_id == _MIDDLE:
+            parked.set()
+            await asyncio.sleep(3600)
+        return await real_gate(entity_id, **kwargs)
+
+    policy.await_dispatch_clearance = _gate
+
+    with _patch_caps():
+        outer = asyncio.create_task(
+            coord.async_apply_user_position(_MIDDLE, 40, trigger="set_axes")
+        )
+        await parked.wait()
+        outer.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await outer
 
 
 @pytest.mark.asyncio
