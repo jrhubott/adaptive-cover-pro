@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from ..const import PSEUDO_HOLD_HOLDER_PRIORITY, AxisConstraintMode, ReasonCode
 from ..cover_types.base import AXIS_NAME_POSITION, AXIS_NAME_TILT
 from ..diagnostics.event_buffer import EventBuffer
-from ..position_utils import flip_if
+from ..position_utils import from_cover_frame
 from ..reason_i18n import Reason, render_en
 from .axis_constraints import (
     bound_label,
@@ -278,13 +278,23 @@ def _judge_position_axis(
 
     **Frames.** Held positions are RAW cover-frame reads and the bounds are
     logical user values, so each is converted before comparing — the #1036
-    conversion, now applied per cover instead of once to the mean. A policy's
-    reference arrives ALREADY LOGICAL: the reduction is the inverse of the whole
-    dispatch chain, wire decoding included, so the policy un-flips and decodes
-    it itself and this function must not flip it a second time. Every ``target``
-    is on the logical side of that conversion, matching
-    ``PipelineResult.position``, so the coordinator maps it to the wire through
-    the same ``_to_cover_frame`` seam it already uses for the shared value.
+    conversion, applied per cover instead of once to the mean since #1174. That
+    conversion is ``position_utils.from_cover_frame``, the FULL inverse of
+    ``coordinator._to_cover_frame``: inversion undone *and* the calibration
+    curve un-mapped. Inversion alone was not the whole map, and because
+    ``axis_inverted`` suppresses inversion on an interpolated axis it was not
+    even part of it — on a calibrated install the old ``flip_if`` was the
+    identity and a device read was compared straight against a logical bound
+    (#1230). A policy's reference arrives ALREADY LOGICAL: the reduction is the
+    inverse of the whole dispatch chain, wire decoding included, so the policy
+    un-flips and decodes it itself and this function must not convert it a
+    second time — and that exemption covers the curve leg too, deliberately.
+    ``CoverTypePolicy.hold_reference_position`` states that it does not unwind
+    interpolation and reserves that to #925; running the reference through this
+    conversion would un-map a value that was never mapped. Every ``target`` is
+    on the logical side of the conversion, matching ``PipelineResult.position``,
+    so the coordinator maps it to the wire through the same ``_to_cover_frame``
+    seam it already uses for the shared value.
 
     For a hold, ``effective_winner_pos`` names the *violating* cover — the
     lowest judged position when a floor raised, the highest when a ceiling
@@ -318,7 +328,8 @@ def _judge_position_axis(
     entries: list[tuple[str | None, int | None, int]]
     if per_entity is None and reference is not None:
         # Already LOGICAL — the policy un-flipped and decoded it itself, so the
-        # #1036 conversion below must NOT run a second time on this value.
+        # conversion below must NOT run a second time on this value. Both legs
+        # of it: the #1036 inversion and #1230's curve un-mapping.
         entries = [(None, None, reference)]
     else:
         # #1174's per-entity set, or the legacy single pseudo-entry on the mean.
@@ -330,7 +341,15 @@ def _judge_position_axis(
         for entity_id, position in judged.items():
             raw = position if position is not None else winner.held_position
             entries.append(
-                (entity_id, raw, flip_if(raw, inverted=snapshot.position_axis_inverted))
+                (
+                    entity_id,
+                    raw,
+                    from_cover_frame(
+                        raw,
+                        inverted=snapshot.position_axis_inverted,
+                        curve=snapshot.interp_curve,
+                    ),
+                )
             )
     verdicts: dict[str, HoldClampVerdict] = {}
     effective_positions: list[int] = []
@@ -363,7 +382,11 @@ def _judge_position_axis(
         effective_winner_pos = (
             reference
             if reference is not None
-            else flip_if(winner.held_position, inverted=snapshot.position_axis_inverted)
+            else from_cover_frame(
+                winner.held_position,
+                inverted=snapshot.position_axis_inverted,
+                curve=snapshot.interp_curve,
+            )
         )
     return PositionAxisJudgment(
         effective_winner_pos=effective_winner_pos,
@@ -420,6 +443,13 @@ def _release_hold_for_tilt_clamp(
     tilt bound forcing the dispatch while the position axis stayed inert — or
     yielded to the hold (#1170) — would otherwise send that shadow and move a
     cover the user had just placed by hand.
+
+    ``effective_winner_pos`` is where the cover is in the LOGICAL frame, not the
+    device read it was derived from: ``coordinator.state`` maps whatever lands
+    in ``position`` back out through ``_to_cover_frame``, so handing it a raw
+    read means the curve is applied to a value that already carries it. That is
+    the singular-path half of #1230 — on a 20–80 curve a shade held at device 42
+    was commanded to 45 by a tilt-only clamp.
 
     Since #943 item B the "hold" may be a PSEUDO one
     (:func:`_as_outside_window_pseudo_hold`): outside the clock window a

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -66,10 +68,16 @@ def flip_if(value: float, *, inverted: bool) -> float:
       entity and hands it to a logical-frame field.
       ``PipelineResult.position`` is logical for every winner, so a handler
       holding a raw read (``MotionTimeoutHandler``'s hold,
-      ``GroupLockHandler``'s freeze) must convert first, and the registry must
-      convert before comparing a held position against a user-configured bound.
+      ``GroupLockHandler``'s freeze) must convert first.
     * **logical → cover** — a consumer turning a pipeline value into the number
       actually dispatched to, or recorded as held on, the entity.
+
+    Inversion is the whole map only where no calibration curve is configured. A
+    caller undoing the full ``coordinator._to_cover_frame`` chain — the registry
+    comparing a held read against a user-configured bound — wants
+    :func:`from_cover_frame` instead, which composes this with the curve leg
+    (#1230). Reaching for ``flip_if`` there is what made that comparison silently
+    frame-mixed on every calibrated install.
 
     The name is deliberately direction-free: while this helper carried a
     directional name, every caller converting the other way hand-rolled the
@@ -96,6 +104,82 @@ def _proportional_remap(value: int, lo: int, hi: int) -> int:
     return round(lo_eff + (hi_eff - lo_eff) * (v / 100))
 
 
+@dataclass(frozen=True)
+class InterpolationCurve:
+    """One install's position calibration curve, as plain data (issue #1230).
+
+    The four option values ``coordinator._to_cover_frame`` reads
+    (``interp_start`` / ``interp_end``, or the ``interp_list`` /
+    ``interp_list_new`` control-point pair), carried together so the pure
+    pipeline can un-map a device read without holding a coordinator. A grouped
+    multi-field value is a frozen dataclass rather than a tuple
+    (CODING_GUIDELINES § "Prefer Dataclasses Over Multi-Field Tuples"), and
+    ``None`` everywhere — the all-default instance — expresses no curve at all,
+    which is what lets ``PipelineSnapshot.interp_curve`` default to ``None``
+    and leave every uncalibrated install byte-identical.
+
+    The control-point pair is coerced to ``tuple`` on construction, because the
+    caller hands it ``options.get(CONF_INTERP_LIST)`` verbatim — a ``list`` that
+    the config entry still owns. ``frozen=True`` freezes the *binding*, not the
+    object behind it, so without the copy the curve's samples could change under
+    it, and the synthesised ``__hash__`` would raise ``TypeError: unhashable
+    type: 'list'`` the first time anything put a curve in a set or memo dict.
+    Coercing here rather than at the one builder call site makes every
+    construction site safe, test fixtures included, and leaves
+    :func:`interpolate_position` alone — its callers pass the four values
+    straight off the coordinator and never build a curve object, so a coercion
+    on that signature would be a no-op with a wider blast radius.
+    """
+
+    start_value: float | None = None
+    end_value: float | None = None
+    normal_list: Sequence[float] | None = None
+    new_list: Sequence[float] | None = None
+
+    def __post_init__(self) -> None:
+        """Copy the control-point sequences into tuples (see the class docstring)."""
+        for name in ("normal_list", "new_list"):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, tuple):
+                object.__setattr__(self, name, tuple(value))
+
+
+def _interp_ranges(
+    start_value: float | None,
+    end_value: float | None,
+    normal_list: Sequence[float] | None,
+    new_list: Sequence[float] | None,
+) -> tuple[list, list] | None:
+    """Resolve the ``(normal_range, new_range)`` sample pair a curve expresses.
+
+    The one place the two supported wire shapes — a simple start/end pair and a
+    multi-point control-point list, with the list winning when both are set —
+    become ``np.interp`` sample points. Both the forward map
+    (:func:`interpolate_position`) and its inverse (:func:`from_cover_frame`)
+    delegate here, because they are the same curve read in two directions and
+    a second copy of this precedence would drift (CODING_GUIDELINES §
+    "Single-Source-of-Truth Helpers for Repeated Formulas").
+
+    ``None`` means no curve is configured, and the caller returns its input
+    untouched.
+    """
+    normal_range = [0, 100]
+    new_range: list = []
+    if start_value is not None and end_value is not None:
+        new_range = [start_value, end_value]
+    if normal_list and new_list:
+        normal_range = list(map(int, normal_list))
+        new_range = list(map(int, new_list))
+    if not new_range:
+        return None
+    return normal_range, new_range
+
+
+def _strictly_increasing(values: Sequence[float]) -> bool:
+    """Whether *values* ascends with no repeated or descending step."""
+    return all(b > a for a, b in zip(values, values[1:], strict=False))
+
+
 def interpolate_position(
     state: float,
     start_value: float | None,
@@ -120,16 +204,104 @@ def interpolate_position(
         interpolation configured
 
     """
-    normal_range = [0, 100]
-    new_range: list = []
-    if start_value is not None and end_value is not None:
-        new_range = [start_value, end_value]
-    if normal_list and new_list:
-        normal_range = list(map(int, normal_list))
-        new_range = list(map(int, new_list))
-    if new_range:
-        state = float(np.interp(state, normal_range, new_range))
-    return state
+    ranges = _interp_ranges(start_value, end_value, normal_list, new_list)
+    if ranges is None:
+        return state
+    normal_range, new_range = ranges
+    return float(np.interp(state, normal_range, new_range))
+
+
+def _un_interpolate(value: float, curve: InterpolationCurve) -> float:
+    """Map a calibrated device value back onto the linear 0-100 scale (#1230).
+
+    :func:`interpolate_position` read backwards: the same sample points with
+    the two ranges swapped. ``np.interp`` needs its sample abscissae ascending,
+    so the device range decides what is possible:
+
+    * strictly **increasing** — swap the ranges and interpolate;
+    * strictly **decreasing** — reverse BOTH ranges first, which restores the
+      ascending order without changing the curve (a ``start=80, end=20`` pair
+      and a descending control-point list are the same case, since the pair is
+      just a two-element list by the time it reaches here);
+    * anything else — a flat segment or a fold makes the forward map
+      non-injective, so there is no inverse to compute and the value is
+      returned untouched.
+
+    That last branch is a deliberate degradation, not an oversight. This runs
+    inside the judge on every update cycle in a pure module: raising would
+    brick the update loop for an install whose forward map has "worked" for
+    years, and clamping would invent data. Skipping reproduces exactly the
+    pre-#1230 treatment of that value, so no install gains a new failure mode.
+    Validating a non-monotonic control-point list at config-flow time is a
+    separate question, deliberately out of scope here.
+
+    A read outside the calibrated travel lands on the nearest end —
+    ``np.interp``'s native endpoint behaviour, mirroring the clamping the
+    forward map already does.
+    """
+    ranges = _interp_ranges(
+        curve.start_value, curve.end_value, curve.normal_list, curve.new_list
+    )
+    if ranges is None:
+        return value
+    normal_range, new_range = ranges
+    if _strictly_increasing(new_range):
+        return float(np.interp(value, new_range, normal_range))
+    if _strictly_increasing(new_range[::-1]):
+        return float(np.interp(value, new_range[::-1], normal_range[::-1]))
+    return value
+
+
+def from_cover_frame(
+    value: float,
+    *,
+    inverted: bool,
+    curve: InterpolationCurve | None = None,
+) -> int:
+    """Map a RAW cover-frame read back to the logical frame (issue #1230).
+
+    The full algebraic inverse of ``coordinator._to_cover_frame``, which maps
+    logical → wire as "interpolate, then invert". Undoing that means reversing
+    the order: **un-invert first**, then **un-interpolate**, then round to the
+    ``int`` the forward map also promises.
+
+    The un-inversion is stated for algebraic correctness rather than for any
+    live configuration: ``cover_types.base.axis_inverted`` suppresses position
+    inversion whenever the axis is interpolated, so *inverted* is always
+    ``False`` while a curve is configured — and that suppression is exactly why
+    #1230 was silent. With ``flip_if`` reduced to the identity, the judge was
+    comparing an untouched device number against a logical bound and nothing
+    looked wrong.
+
+    With ``curve=None`` this is ``flip_if`` composed with ``int(round(...))``,
+    which is the identity composition on the integer reads every caller
+    actually holds — that is what keeps an uncalibrated install byte-identical
+    after the registry swapped one call for the other.
+
+    **Round-trip bound.** ``interpolate_position(from_cover_frame(d)) == d``
+    holds exactly for a curve every leg of which CONTRACTS — one whose device
+    span is no wider than the logical span it maps from. Every ``start``/``end``
+    pair qualifies (``end - start <= 100`` by construction), which is the shape
+    ``coordinator._verdict_dispatch_target`` reasons about: the inverse of a
+    contraction expands, so the half-point this rounds away re-maps to less than
+    half a point and rounding recovers ``d``. A multi-point control-point list
+    can be locally EXPANSIVE — ``normal_list=[0, 50, 100]`` against
+    ``new_list=[0, 10, 100]`` runs at slope 1.8 on its upper leg — and there the
+    round trip can land one device point off. That is a rounding artefact of an
+    unusual calibration, not a frame error, and it is pinned by
+    ``test_from_cover_frame_round_trip_is_off_by_one_on_an_expanding_curve``
+    rather than corrected here: sub-integer positions are not dispatchable and
+    the delta gate swallows a one-point move.
+
+    Lives beside :func:`flip_if` and :func:`interpolate_position` in this pure
+    module (0 HA imports) so ``pipeline/registry.py`` can reach it: the curve
+    travels to the pipeline as data on ``PipelineSnapshot.interp_curve``, never
+    as a coordinator handle.
+    """
+    logical = flip_if(value, inverted=inverted)
+    if curve is not None:
+        logical = _un_interpolate(logical, curve)
+    return int(round(logical))
 
 
 class PositionConverter:

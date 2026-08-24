@@ -384,6 +384,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._climate_mode = self.config_entry.options.get(CONF_CLIMATE_MODE, False)
         self._inverse_state = self.config_entry.options.get(CONF_INVERSE_STATE, False)
         self._inverse_tilt = self.config_entry.options.get(CONF_INVERSE_TILT, False)
+        # Read once and never refreshed — unlike start_value/end_value/
+        # normal_list/new_list, which _update_options re-reads every cycle. Safe
+        # only because CONF_INTERP is not in _RUNTIME_APPLICABLE_OPTIONS, so
+        # changing it reloads the config entry and re-runs this __init__. That
+        # matters more since #1230: PipelineSnapshotBuilder reads CONF_INTERP
+        # fresh out of options on every build, and a stale flag here would have
+        # the judge un-map a read that _to_cover_frame then declines to re-map.
+        # Pinned by test_snapshot_builder.py::
+        # test_toggling_interpolation_reloads_rather_than_patching_a_live_coordinator.
         self._use_interpolation = self.config_entry.options.get(CONF_INTERP, False)
         self._track_end_time = self.config_entry.options.get(CONF_RETURN_SUNSET)
         # Toggle state manager (switch entities delegate here)
@@ -2963,39 +2972,52 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def _verdict_dispatch_target(self, verdict: HoldClampVerdict) -> int:
         """Map ONE per-cover hold verdict onto the wire.
 
-        ``HoldClampVerdict.target`` is not one frame, it is two, and they only
-        coincide while no calibration curve is configured:
+        Every ``HoldClampVerdict.target`` is now a LOGICAL value — either a
+        composed bound edge for a cover a bound moved, or the cover's own read
+        un-mapped back onto the linear scale for one nothing moved. Issue #1230
+        made the second half true: the registry judges through
+        ``position_utils.from_cover_frame``, the full inverse of
+        :meth:`_to_cover_frame`, so what comes back here is on the logical side
+        of the same mapping rather than a raw device number wearing a logical
+        label. :meth:`_to_cover_frame` is therefore the whole mapping for both
+        — which is what issue #469 was about, where skipping the transforms for
+        a floor made "minimum 25 % open" drive an inverse cover to 75 %.
 
-        * **a composed bound edge**, for a cover a bound actually moved. That is
-          a user-configured LOGICAL value like any other, so it is calibrated
-          and inverted like any other — issue #469 skipped both transforms for a
-          floor and made "minimum 25 % open" drive an inverse cover to 75 %.
-          :meth:`_to_cover_frame` is the whole mapping and stays the whole
-          mapping.
-        * **this cover's own read**, for one nothing moved — which is what makes
-          a command forced by the TILT axis a positional no-op the same-position
-          gate turns into a pure secondary-axis call (#1170 / #1174). That value
-          entered the pipeline as a RAW device-frame number and had exactly one
-          transform applied to it, ``flip_if`` (the #1036 conversion). It owes
-          exactly that one back. Running it through the calibration curve as
-          well re-maps a position nobody asked to change: on a 20–80 curve a
-          shade sitting at 80 was commanded to 68.
+        **The ``own_read`` short-circuit below is REDUNDANT for a read inside
+        the calibrated travel of a contracting curve, and load-bearing
+        everywhere else.** Keep it. Inside such a travel the un-mapping is exact
+        — the inverse of a contraction expands, so rounding the logical value
+        moves the re-mapped device value by less than half a point — and
+        ``_to_cover_frame(target)`` returns the read the branch would have
+        returned anyway. Outside the travel there is nothing to be exact about:
+        a shade reading device 0 under a 20–80 curve un-maps to logical 0
+        (``np.interp`` clamps to the endpoint), and re-mapping that opens it to
+        20. The short-circuit fires there — the target equals the read, because
+        both clamped to the same end — and the cover stays put. It does NOT
+        absorb the one-point round-trip miss a locally EXPANDING multi-point
+        curve can produce (``position_utils.from_cover_frame`` states that
+        bound): the branch compares a logical target against a device read, so
+        on that curve's expanding leg the two differ and it does not fire —
+        device 11 judges to logical 51 and re-maps to 12. The delta gate is what
+        absorbs that one point, not this branch. Every
+        ``interp_start``/``interp_end`` pair contracts, so the case needs a
+        hand-built control-point list to reach at all. Removing the branch
+        as "redundant post-#1230" would put a phantom carriage move back into
+        exactly the tilt-only command this whole path exists to keep
+        positionally inert (#1170 / #1174).
 
-        The verdict itself says which case this is, and says it in the frame the
-        comparison has to happen in: the target equals the cover's own logical
-        read precisely when no bound moved it — the same ``fin != eff`` the
-        registry evaluated to set ``released``, before
+        The equality test is also what tells the two cases apart, and it says it
+        in the frame the comparison has to happen in: the target equals the
+        cover's own logical read precisely when no bound moved it — the same
+        ``fin != eff`` the registry evaluated to set ``released``, before
         ``_command_every_held_cover`` overwrote that field so a tilt clamp could
         command the whole group. Where a bound edge lands exactly on the cover's
-        own read the test cannot tell the two cases apart — and does not need
-        to: the equality itself proves the clamp moved this cover nowhere, so
-        the read IS the right answer and taking the first branch is correct.
-        The two branches do NOT agree there under interpolation (``own_read``
-        versus ``interpolate(own_read)``), which is precisely why the tie must
-        fall this way rather than the other.
+        own read the test cannot tell the two apart — and does not need to: the
+        equality itself proves the clamp moved this cover nowhere.
 
-        Uncalibrated installs are unaffected: ``_to_cover_frame`` reduces to the
-        same ``flip_if``, so both branches return the same number.
+        Uncalibrated installs are unaffected: ``_to_cover_frame`` and
+        ``from_cover_frame`` both reduce to the same ``flip_if``, so both
+        branches return the same number.
         """
         own_read = verdict.held_position
         if own_read is not None and verdict.target == flip_if(

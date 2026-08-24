@@ -66,6 +66,7 @@ def _floor_vs_hold(
     floor: int = _FLOOR,
     floor_priority: int = ABOVE_HOLDER,
     position_axis_inverted: bool = False,
+    interp_curve=None,
 ):
     """Evaluate a manual hold against one min-mode custom-position floor."""
     registry = _registry_with_custom(
@@ -80,6 +81,7 @@ def _floor_vs_hold(
             default_position=100,
             direct_sun_valid=False,
             position_axis_inverted=position_axis_inverted,
+            interp_curve=interp_curve,
             custom_position_sensors=[
                 _cp_state(
                     "binary_sensor.floor",
@@ -435,7 +437,9 @@ async def _dispatch_targets(
     return {cover: sent.get(cover) for cover in covers}
 
 
-def _tilt_clamp_vs_hold(*, cover_positions=None, with_position_floor: bool = False):
+def _tilt_clamp_vs_hold(
+    *, cover_positions=None, with_position_floor: bool = False, interp_curve=None
+):
     """Evaluate a manual hold released by an outranking TILT bound.
 
     A FIXED tilt-only slot below the holder fills the tilt (#514); a tilt floor
@@ -444,6 +448,10 @@ def _tilt_clamp_vs_hold(*, cover_positions=None, with_position_floor: bool = Fal
     the shape the #1170 audit named when it ruled that a tilt clamp is a
     command. ``with_position_floor`` adds an outranking position floor so both
     axes clamp in the same cycle.
+
+    ``interp_curve`` puts a calibration curve on the SNAPSHOT — what the judge
+    reads (#1230), as distinct from ``_dispatch_coordinator``'s ``interp``,
+    which calibrates the write side alone.
     """
     sensors = [
         _slot(1, tilt=_TILT_FILL, tilt_only=True, priority=BELOW_HOLDER),
@@ -469,6 +477,7 @@ def _tilt_clamp_vs_hold(*, cover_positions=None, with_position_floor: bool = Fal
             cover_positions=cover_positions,
             default_position=100,
             direct_sun_valid=False,
+            interp_curve=interp_curve,
             custom_position_sensors=sensors,
         )
     )
@@ -557,6 +566,14 @@ async def test_a_tilt_only_clamp_is_a_no_op_on_a_calibrated_install() -> None:
     (#1036). Sending both through ``_to_cover_frame`` re-maps the reads: on a
     20–80 curve the three shades at 80/80/0 were commanded to 68/68/20, which
     is the carriage move this whole path exists to prevent.
+
+    The curve here is on the DISPATCH coordinator only; the snapshot carries
+    ``interp_curve=None``. That combination is deliberately not a state
+    production reaches — both sides read the same ``CONF_INTERP`` since #1230 —
+    and it is the point: this pins the write-side #1229 behaviour against the
+    NO-CURVE judge path, holding one variable still. The consistent-state
+    equivalent, curve on both halves, is
+    ``test_hold_clamp_interpolated_frame.py::test_a_curve_snapshot_tilt_clamp_is_still_a_no_op_end_to_end``.
     """
     result = _tilt_clamp_vs_hold(cover_positions=_ABOVE_FLOOR_POSITIONS)
 
@@ -575,6 +592,12 @@ async def test_a_calibrated_floor_still_reaches_its_own_device_position() -> Non
     edge — a logical 40, which a 20–80 curve puts at device 44. Suppressing the
     curve for every verdict would under-close it, which is #469's defect in the
     opposite direction.
+
+    As above, the curve is on the DISPATCH coordinator only and the snapshot
+    carries ``interp_curve=None`` — a state production does not reach since
+    #1230, held deliberately so this pins the write-side mapping against the
+    no-curve judge path. The consistent-state equivalent is
+    ``test_hold_clamp_interpolated_frame.py::test_a_calibrated_release_dispatches_the_floor_in_the_device_frame``.
     """
     result = _tilt_clamp_vs_hold(
         cover_positions=_ABOVE_FLOOR_POSITIONS, with_position_floor=True
@@ -728,6 +751,7 @@ def _coupled_hold(
     ceiling: int | None = None,
     tilt_min: int | None = None,
     position_axis_inverted: bool = False,
+    interp_curve=None,
 ):
     """Evaluate a manual hold on a dual-fabric shade with the named bounds active.
 
@@ -776,6 +800,7 @@ def _coupled_hold(
             default_position=100,
             direct_sun_valid=False,
             position_axis_inverted=position_axis_inverted,
+            interp_curve=interp_curve,
             custom_position_sensors=sensors,
         )
     )
