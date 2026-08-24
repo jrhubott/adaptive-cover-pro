@@ -793,6 +793,32 @@ def _make_motion_status_sensor(coordinator, motion_sensors=None):
     return sensor
 
 
+def _make_motion_timeout_coordinator(*, skip_command: bool, position: int = 42):
+    """Coordinator with an active motion timeout and a MOTION-method pipeline result.
+
+    Mirrors what ``MotionTimeoutHandler`` actually produces (issue #1162's
+    second bug): both its hold branch and its return-to-default branch stamp
+    ``control_method=ControlMethod.MOTION`` (``pipeline/handlers/motion_timeout.py``
+    lines 60-67 and 75-90) — only ``skip_command`` distinguishes them. Callers
+    pick which branch to simulate via ``skip_command``.
+    """
+    from custom_components.adaptive_cover_pro.const import ControlMethod
+    from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+
+    coordinator = MagicMock()
+    coordinator._motion_mgr = _make_motion_mgr(
+        last_motion_time=1700000000.0,
+        timeout_active=True,
+    )
+    coordinator._pipeline_result = PipelineResult(
+        position=position,
+        control_method=ControlMethod.MOTION,
+        reason="occupancy timeout",
+        skip_command=skip_command,
+    )
+    return coordinator
+
+
 def test_motion_status_sensor_not_configured():
     """Sensor returns not_configured when no motion sensors are set up."""
     coordinator = MagicMock()
@@ -847,6 +873,59 @@ def test_motion_status_sensor_no_motion():
         timeout_active=True,
     )
     type(coordinator).is_motion_detected = property(lambda self: False)
+
+    sensor = _make_motion_status_sensor(coordinator)
+    assert sensor.native_value == "no_motion"
+
+
+def test_motion_status_sensor_holding_state_is_declared_option():
+    """Sensor returns holding when the motion-timeout hold branch wins.
+
+    Regression for issue #1162: ``_motion_status_value`` has a
+    ``return "holding"`` branch guarded by
+    ``pr.skip_command and pr.control_method == ControlMethod.MOTION``, but the
+    ``motion_status`` spec's declared ``options`` tuple never gained a
+    matching entry. HA's SensorEntity validates every reported ENUM value
+    against ``options`` and raises ValueError instead of publishing the
+    state, so this asserts both the value function's return AND that the
+    value is a declared option.
+
+    ``_pipeline_result`` is a real ``PipelineResult`` with the real
+    ``ControlMethod.MOTION`` enum member and ``skip_command=True`` — exactly
+    what ``MotionTimeoutHandler``'s hold branch constructs
+    (``pipeline/handlers/motion_timeout.py`` lines 60-67). A prior version of
+    this test used a ``SimpleNamespace`` duck-type comparing
+    ``control_method.value == "motion"``, which encoded a second, independent
+    bug: no ``ControlMethod`` member has the value ``"motion"`` (the real
+    member's value is ``"motion_timeout"``), so that comparison could never
+    be satisfied by the real enum and the "holding" branch was dead code.
+    """
+    from custom_components.adaptive_cover_pro.sensor import _DIAGNOSTIC_SPECS
+
+    coordinator = _make_motion_timeout_coordinator(skip_command=True)
+
+    sensor = _make_motion_status_sensor(coordinator)
+    assert sensor.native_value == "holding"
+
+    spec = next(s for s in _DIAGNOSTIC_SPECS if s.suffix == "motion_status")
+    assert "holding" in spec.options, (
+        "'holding' is a reachable _motion_status_value return but is missing "
+        f"from the motion_status spec's declared options: {spec.options!r}"
+    )
+
+
+def test_motion_status_sensor_return_to_default_is_not_holding():
+    """Motion timeout active + ControlMethod.MOTION but skip_command=False → no_motion.
+
+    Pins the discriminator in the opposite direction from the test above.
+    ``MotionTimeoutHandler``'s return-to-default branch
+    (``pipeline/handlers/motion_timeout.py`` lines 75-90) also stamps
+    ``control_method=ControlMethod.MOTION`` — it's the same handler — but
+    leaves ``skip_command`` at its dataclass default of ``False``. Only the
+    hold branch (``skip_command=True``) should report "holding"; this branch
+    must still report "no_motion".
+    """
+    coordinator = _make_motion_timeout_coordinator(skip_command=False)
 
     sensor = _make_motion_status_sensor(coordinator)
     assert sensor.native_value == "no_motion"

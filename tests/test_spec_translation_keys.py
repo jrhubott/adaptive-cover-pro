@@ -26,9 +26,15 @@ When you add a new sensor spec with a translation_key:
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
+import textwrap
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
+
+from homeassistant.components.sensor import SensorDeviceClass
 
 from custom_components.adaptive_cover_pro.binary_sensor import (
     _BINARY_SENSOR_SPECS,
@@ -348,3 +354,148 @@ class TestSwitchTranslationKeys:
             f"_SwitchSpec key: {sorted(orphaned)}\n"
             "Remove the orphaned entry or add a matching _SwitchSpec."
         )
+
+
+# ---------------------------------------------------------------------------
+# ENUM sensor options-coverage guard (issue #1162)
+# ---------------------------------------------------------------------------
+#
+# A static source scan over every ENUM sensor spec's ``value_fn``: every
+# string literal it can return must be a declared member of the spec's
+# ``options`` tuple. This is what would have caught #1162 — the
+# ``motion_status`` spec's ``_motion_status_value`` had a reachable
+# ``return "holding"`` that was never added to ``options``, so HA raised
+# ValueError instead of publishing the state.
+#
+# Deliberately a static scan, not a dynamic reachability prover: it only
+# collects literal string returns, never computed expressions (attribute
+# access, calls — e.g. ``result.control_method.value``,
+# ``climate_mode_from_diagnostics(...)``). Those sensors build their
+# ``options`` directly from the same vocabulary their value_fn reads
+# (decision_trace, travel_calibration, climate_status) and are correct by
+# construction; a heuristic for computed expressions would create noise,
+# not safety.
+
+
+def _literal_strings_in_expr(node: ast.expr) -> set[str]:
+    """Collect string-literal constants out of an expression.
+
+    Follows the branches of a ternary (``a if cond else b``) so a value_fn
+    that picks between literals via a single conditional expression is still
+    fully covered. Anything else (attribute access, calls, names — computed
+    expressions) contributes nothing: chasing those is not feasible in
+    general, see the module-level note above.
+    """
+    if isinstance(node, ast.IfExp):
+        return _literal_strings_in_expr(node.body) | _literal_strings_in_expr(
+            node.orelse
+        )
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return {node.value}
+    return set()
+
+
+def _extract_lambda_expr(source: str, value_fn: Any) -> ast.Lambda:
+    """Isolate a standalone-parseable lambda expression out of raw source.
+
+    ``inspect.getsource`` on a lambda that is one of several keyword
+    arguments on the same source line (e.g. ``value_fn=lambda e: ..., ``)
+    returns the surrounding statement, which is not valid Python on its own,
+    so a direct ``ast.parse`` of it can raise ``SyntaxError``. Find the
+    ``lambda`` token and progressively trim trailing characters (a comma, an
+    enclosing call's closing paren, …) until what remains parses as a
+    standalone expression whose body is a ``Lambda`` node.
+
+    Raises AssertionError naming ``value_fn`` if no such expression can be
+    recovered, so an unprocessable spec fails loudly instead of silently
+    reporting zero literals (and therefore vacuously "passing").
+    """
+    idx = source.find("lambda")
+    assert idx != -1, f"No 'lambda' token found in source for {value_fn!r}: {source!r}"
+    candidate = source[idx:]
+    for end in range(len(candidate), 0, -1):
+        snippet = candidate[:end]
+        try:
+            parsed = ast.parse(snippet, mode="eval")
+        except SyntaxError:
+            continue
+        if isinstance(parsed.body, ast.Lambda):
+            return parsed.body
+    raise AssertionError(
+        f"Could not isolate a parseable lambda expression for {value_fn!r} "
+        f"from source: {source!r}"
+    )
+
+
+def _string_literals_returned(value_fn: Any) -> set[str]:
+    """Every string-literal value ``value_fn`` can return.
+
+    Handles both plain ``def`` functions (walk every ``ast.Return`` node)
+    and lambdas — whose body has no ``Return`` node at all, since it is a
+    bare expression, so the expression itself (and any ternary branches
+    within it) is inspected directly.
+
+    Fails loudly (an AssertionError naming ``value_fn``) if the source
+    cannot be retrieved or parsed, rather than swallowing the exception and
+    silently reporting no findings for a spec the scan can no longer see
+    into.
+    """
+    try:
+        source = textwrap.dedent(inspect.getsource(value_fn))
+    except (OSError, TypeError) as exc:
+        raise AssertionError(
+            f"Could not retrieve source for value_fn {value_fn!r}: {exc}"
+        ) from exc
+
+    if getattr(value_fn, "__name__", None) == "<lambda>":
+        lambda_node = _extract_lambda_expr(source, value_fn)
+        return _literal_strings_in_expr(lambda_node.body)
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise AssertionError(
+            f"Could not parse source for value_fn {value_fn!r}: {exc}\n{source}"
+        ) from exc
+
+    literals: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Return) and node.value is not None:
+            literals |= _literal_strings_in_expr(node.value)
+    return literals
+
+
+class TestEnumSensorOptionsCoverage:
+    """Every ENUM sensor's literal value_fn returns must be declared options."""
+
+    def test_enum_sensor_literal_returns_are_declared_options(self) -> None:
+        """Regression guard for issue #1162.
+
+        For every sensor spec with ``device_class is SensorDeviceClass.ENUM``,
+        every string literal its ``value_fn`` can return must be a member of
+        the spec's declared ``options`` tuple — otherwise HA's SensorEntity
+        raises ValueError instead of publishing the state the first time that
+        branch fires in production.
+        """
+        all_specs = (*_STANDARD_SPECS, *_DIAGNOSTIC_SPECS)
+        enum_specs = [
+            spec for spec in all_specs if spec.device_class is SensorDeviceClass.ENUM
+        ]
+        assert enum_specs, (
+            "Expected at least one ENUM sensor spec to scan. An empty list "
+            "means the scan mechanism itself broke (e.g. every value_fn "
+            "became a functools.partial), not that there is nothing left to "
+            "check — a vacuous pass here would hide that."
+        )
+
+        failures = []
+        for spec in enum_specs:
+            literals = _string_literals_returned(spec.value_fn)
+            undeclared = literals - set(spec.options or ())
+            if undeclared:
+                failures.append(
+                    f"{spec.suffix!r} value_fn returns literal(s) "
+                    f"{sorted(undeclared)} not present in its declared "
+                    f"options {spec.options!r}"
+                )
+        assert not failures, "\n".join(failures)
