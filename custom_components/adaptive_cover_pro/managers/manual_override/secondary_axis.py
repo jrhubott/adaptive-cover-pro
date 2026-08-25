@@ -147,12 +147,13 @@ class SecondaryAxisCheck:
     (blinds) both axes' checks for the cycle — a True result here suppresses
     only this axis's own delta verdict and does NOT consume: the caller's
     independent axis check still runs afterward. This matters for a
-    suppression source that is anchored to THIS axis's own dispatch alone
-    (e.g. venetian's tilt-only publish-lag window) with no coupling to the
-    other axis at all — folding it into ``suppression`` would silently blind
-    the other axis's manual detection any time this axis happened to verify
-    near its last commanded value, reintroducing the cross-axis blinding
-    issue #930 (finding #2) fixed.
+    suppression source anchored to THIS axis's own dispatch alone (e.g.
+    venetian's tilt-only publish-lag window): a tilt-only send does not
+    *command* the other axis, though mechanical back-drive can still move it
+    slightly, so folding this source into ``suppression`` would blind the
+    other axis's check on that same publish instead of letting it evaluate a
+    back-driven value on its own merits — reintroducing the cross-axis
+    blinding issue #930 (finding #2) fixed.
     """
 
     # ``None`` (issue #1006) means ACP has no DISPATCHED value to police on this

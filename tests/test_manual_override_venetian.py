@@ -100,9 +100,16 @@ def _make_sequencer_suppression(
     BOTH halves of production's OR onto ``SecondaryAxisCheck`` — the shared
     ``suppression=seq.is_in_suppression_with_cap`` term AND the tilt-only
     ``single_axis_suppression=seq.is_in_tilt_publish_lag`` term (issue #1329)
-    — exactly as ``VenetianPolicy.secondary_axis_check`` composes them.
-    Without the second half these tests exercise only the position-anchored
-    term and silently stop reaching ``is_in_tilt_publish_lag`` at all.
+    — the same effective terms ``VenetianPolicy.secondary_axis_check`` wires
+    in production (``suppression=self.primary_axis_suppression``,
+    ``single_axis_suppression=self.is_in_tilt_suppression``), not the
+    identical callables: by the point ``evaluate`` reaches
+    ``single_axis_suppression``, ``primary_axis_suppression`` has already run
+    once via ``suppression=`` and returned False, so ``is_in_tilt_suppression``'s
+    only live disjunct there is ``is_in_tilt_publish_lag`` — the callable this
+    helper wires directly. Without the second half these tests exercise only
+    the position-anchored term and silently stop reaching
+    ``is_in_tilt_publish_lag`` at all.
 
     ``stamp_age_seconds`` backdates the suppression stamp so callers can land
     outside the post-settle cap-grace tail while still inside the overall
@@ -315,6 +322,10 @@ def test_tilt_drift_during_in_transit_close_is_ignored_regardless_of_delta() -> 
             attribute="current_tilt_position",
             label="tilt",
             suppression=seq.is_in_suppression_with_cap,
+            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+            # this term is always False — it does not exercise the #1329
+            # tilt-only window; that bound coverage lives in
+            # tests/test_issue_1329_tilt_only_publish_lag.py.
             single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
@@ -348,6 +359,10 @@ def test_tilt_drift_during_in_transit_open_is_ignored_regardless_of_delta() -> N
             attribute="current_tilt_position",
             label="tilt",
             suppression=seq.is_in_suppression_with_cap,
+            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+            # this term is always False — it does not exercise the #1329
+            # tilt-only window; that bound coverage lives in
+            # tests/test_issue_1329_tilt_only_publish_lag.py.
             single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
@@ -380,6 +395,10 @@ def test_tilt_drift_inside_post_settle_grace_is_ignored() -> None:
             attribute="current_tilt_position",
             label="tilt",
             suppression=seq.is_in_suppression_with_cap,
+            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+            # this term is always False — it does not exercise the #1329
+            # tilt-only window; that bound coverage lives in
+            # tests/test_issue_1329_tilt_only_publish_lag.py.
             single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
@@ -499,6 +518,10 @@ def test_late_publish_burst_after_real_settle_does_not_trip_override() -> None:
             attribute="current_tilt_position",
             label="tilt",
             suppression=seq.is_in_suppression_with_cap,
+            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+            # this term is always False — it does not exercise the #1329
+            # tilt-only window; that bound coverage lives in
+            # tests/test_issue_1329_tilt_only_publish_lag.py.
             single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )

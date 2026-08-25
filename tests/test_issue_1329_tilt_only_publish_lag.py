@@ -262,7 +262,10 @@ def test_is_in_tilt_publish_lag_time_elapsed_at_lag_boundary_returns_false() -> 
     entity_id = "cover.venetian_time_at_lag_boundary"
     policy, _hass = _make_attached_policy(backrotate_publish_lag_seconds=90)
     policy._sequencer._tilt_sent_at[entity_id] = dt.datetime.now(dt.UTC)
-    _pin_elapsed(policy._sequencer, 90.0)
+    # Derived from the sequencer's own window, not a second hardcoded ``90``,
+    # so the pin and the configured window can't drift apart by hand.
+    lag_seconds = policy._sequencer._backrotate_publish_lag_seconds
+    _pin_elapsed(policy._sequencer, lag_seconds)
 
     assert policy._sequencer.is_in_tilt_publish_lag(entity_id, delta=0.0) is False
 
@@ -276,11 +279,27 @@ def test_is_in_tilt_publish_lag_time_elapsed_just_under_lag_boundary_returns_tru
     from both sides — this alone can't distinguish ``>`` from ``>=``, but
     together with the exact-boundary test it proves the transition happens
     exactly at ``lag_seconds``, not one tick either side of it.
+
+    ``_tilt_sent_at`` is set to real "now" just above, so REAL elapsed time
+    at assertion time is also ~0s — comfortably under the window even if
+    ``_pin_elapsed`` silently stopped shadowing ``_seconds_since``. That would
+    make the behavioural assertion below pass for the wrong reason, so the
+    guard assertion proves the pin actually took effect before trusting it.
     """
     entity_id = "cover.venetian_time_under_lag_boundary"
     policy, _hass = _make_attached_policy(backrotate_publish_lag_seconds=90)
     policy._sequencer._tilt_sent_at[entity_id] = dt.datetime.now(dt.UTC)
-    _pin_elapsed(policy._sequencer, 89.999)
+    # Derived from the sequencer's own window, not a second hardcoded ``90``,
+    # so the pin and the configured window can't drift apart by hand.
+    lag_seconds = policy._sequencer._backrotate_publish_lag_seconds
+    pinned_elapsed = lag_seconds - 0.001
+    _pin_elapsed(policy._sequencer, pinned_elapsed)
+
+    # Guard: prove the shadow is live before trusting the assertion below.
+    assert (
+        policy._sequencer._seconds_since(policy._sequencer._tilt_sent_at[entity_id])
+        == pinned_elapsed
+    )
 
     assert policy._sequencer.is_in_tilt_publish_lag(entity_id, delta=0.0) is True
 
@@ -339,7 +358,9 @@ async def test_tilt_only_publish_at_lag_boundary_trips_override() -> None:
     entity_id = "cover.venetian_call_path_time_boundary"
     policy, _hass = _make_attached_policy(backrotate_publish_lag_seconds=90)
     check = await _dispatch_tilt_and_build_check(policy, entity_id)
-    _pin_elapsed(policy._sequencer, 90.0)
+    # Derived from the sequencer's own window, not a second hardcoded ``90``,
+    # so the pin and the configured window can't drift apart by hand.
+    _pin_elapsed(policy._sequencer, policy._sequencer._backrotate_publish_lag_seconds)
 
     new_state = SimpleNamespace(attributes={"current_tilt_position": 81})  # delta 4%
     result = check.evaluate(entity_id, new_state, manual_threshold=3)
