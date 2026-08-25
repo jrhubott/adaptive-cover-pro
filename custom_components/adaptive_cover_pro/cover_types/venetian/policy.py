@@ -953,16 +953,32 @@ class VenetianPolicy(CoverTypePolicy, register=True):
     def is_in_tilt_suppression(self, entity_id: str, delta: float = 0.0) -> bool:
         """Suppress back-rotate drift only when ``delta`` is plausibly motor drift.
 
-        Delegates to the sequencer's delta-aware gate. Large deltas inside the
-        window are user moves, not motor drift, and fall through to the
-        manual-override numeric path (issue #33 follow-on). The ``delta``
-        default matches the base signature so the method is interchangeable
-        with other policies when passed as a ``SecondaryAxisCheck.suppression``
-        callback.
+        This is the TILT-axis gate — the real gate consulted by
+        :meth:`secondary_axis_check`'s ``suppression`` callback. It ORs two
+        independent windows so a tilt-only send is never left unguarded
+        (issue #1329):
+
+        * :meth:`primary_axis_suppression` — the position-anchored window
+          (motor back-rotate cap + command grace) shared with the position
+          axis. Unmodified by this method; a tilt-only send that never
+          stamped a position command simply finds this term closed.
+        * ``sequencer.is_in_tilt_publish_lag`` — a SEPARATE window anchored to
+          ACP's own last tilt dispatch (``_tilt_sent_at``), delta-capped at
+          ``VENETIAN_TILT_VERIFY_TOLERANCE``. This is what actually protects
+          a routine tilt-only send once the position window is closed (or was
+          never opened at all).
+
+        Large deltas outside both windows are user moves, not motor drift,
+        and fall through to the manual-override numeric path (issue #33
+        follow-on). The ``delta`` default matches the base signature so the
+        method is interchangeable with other policies when passed as a
+        ``SecondaryAxisCheck.suppression`` callback.
         """
         if self._sequencer is None:
             return False
-        return self._sequencer.is_in_suppression_with_cap(entity_id, delta)
+        return self.primary_axis_suppression(
+            entity_id, delta
+        ) or self._sequencer.is_in_tilt_publish_lag(entity_id, delta)
 
     def primary_axis_suppression(self, entity_id: str, delta: float = 0.0) -> bool:
         """Apply the tilt-axis publish-lag window to the position axis too.
@@ -1182,7 +1198,23 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         (issue #33 Phase 5 cross-axis): the motor back-rotate window
         OR'd with the command-grace period. Sharing one callback across
         both axes keeps the publish-lag and grace logic from drifting per
-        CODING_GUIDELINES.md § "No Code Duplication".
+        CODING_GUIDELINES.md § "No Code Duplication". A True result here
+        means the POSITION axis may be co-drifting from the same physical
+        motor action, so ``SecondaryAxisCheck.evaluate`` consumes (blinds)
+        both axes' checks together for this cycle.
+
+        ``single_axis_suppression`` wires :meth:`is_in_tilt_suppression`
+        (issue #1329) — the tilt-only publish-lag window, anchored to ACP's
+        own last tilt DISPATCH (``_tilt_sent_at``) rather than a position
+        command. A tilt-only send never touches the carriage, so unlike
+        ``suppression`` above a True result here must NOT blind the position
+        axis: ``evaluate`` consults it only as a narrower, single-axis
+        fallback right before it would otherwise declare a tilt manual move,
+        and its match does not consume the cycle (issue #930 finding #2 — the
+        position axis must keep evaluating independently). At the point
+        ``evaluate`` reaches it, ``suppression`` above has already returned
+        False, so in practice this behaves as
+        ``sequencer.is_in_tilt_publish_lag`` alone.
 
         ``excursion_match`` wires the drift-reset endpoint guard (issue #927)
         onto the TILT axis only. It is value-based (matches the raw published
@@ -1201,6 +1233,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             attribute="current_tilt_position",
             label="tilt",
             suppression=self.primary_axis_suppression,
+            single_axis_suppression=self.is_in_tilt_suppression,
             excursion_match=(
                 self._sequencer.is_reset_excursion_publish
                 if self._sequencer is not None
