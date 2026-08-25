@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
-from collections.abc import Callable
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -87,14 +86,23 @@ def _make_sequencer_suppression(
     stamp_age_seconds: float = 0.0,
     settled_now: bool = False,
     settled_age_seconds: float = 0.0,
-) -> Callable[[str, float], bool]:
-    """Build a real ``DualAxisSequencer`` and return its bound delta-cap gate.
+) -> DualAxisSequencer:
+    """Build a real ``DualAxisSequencer`` wired for the tilt-suppression gate.
 
     Closes the integration gap the lambda-stub helpers leave open (issue #33
     follow-on): wires ``stamp_position_command`` and the ``_get_state``
-    callback together so the cap behaves exactly as ``VenetianPolicy.is_in_tilt_suppression``
-    does in production. ``state`` should be ``"opening"``/``"closing"`` to
-    model an in-transit cycle, or ``"stopped"`` to model a settled cycle.
+    callback together so ``seq.is_in_suppression_with_cap`` behaves exactly as
+    ``VenetianPolicy.is_in_tilt_suppression``'s position-anchored term does in
+    production. ``state`` should be ``"opening"``/``"closing"`` to model an
+    in-transit cycle, or ``"stopped"`` to model a settled cycle.
+
+    Returns the sequencer itself (not a bound method) so callers can wire
+    BOTH halves of production's OR onto ``SecondaryAxisCheck`` — the shared
+    ``suppression=seq.is_in_suppression_with_cap`` term AND the tilt-only
+    ``single_axis_suppression=seq.is_in_tilt_publish_lag`` term (issue #1329)
+    — exactly as ``VenetianPolicy.secondary_axis_check`` composes them.
+    Without the second half these tests exercise only the position-anchored
+    term and silently stop reaching ``is_in_tilt_publish_lag`` at all.
 
     ``stamp_age_seconds`` backdates the suppression stamp so callers can land
     outside the post-settle cap-grace tail while still inside the overall
@@ -125,7 +133,7 @@ def _make_sequencer_suppression(
         seq._stamp_settled(entity_id)
         if settled_age_seconds > 0:
             seq._settled_at[entity_id] -= dt.timedelta(seconds=settled_age_seconds)
-    return seq.is_in_suppression_with_cap
+    return seq
 
 
 def test_tilt_drift_inside_suppression_window_is_ignored() -> None:
@@ -293,7 +301,7 @@ def test_tilt_drift_during_in_transit_close_is_ignored_regardless_of_delta() -> 
     entity_id = "cover.venetian_kitchen_close"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(entity_id=entity_id, state="closing")
+    seq = _make_sequencer_suppression(entity_id=entity_id, state="closing")
 
     mgr.handle_state_change(
         states_data=_make_event(entity_id, position=86, tilt=0),
@@ -306,7 +314,8 @@ def test_tilt_drift_during_in_transit_close_is_ignored_regardless_of_delta() -> 
             expected=100,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            suppression=seq.is_in_suppression_with_cap,
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
@@ -325,7 +334,7 @@ def test_tilt_drift_during_in_transit_open_is_ignored_regardless_of_delta() -> N
     entity_id = "cover.venetian_office_open"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(entity_id=entity_id, state="opening")
+    seq = _make_sequencer_suppression(entity_id=entity_id, state="opening")
 
     mgr.handle_state_change(
         states_data=_make_event(entity_id, position=17, tilt=100),
@@ -338,7 +347,8 @@ def test_tilt_drift_during_in_transit_open_is_ignored_regardless_of_delta() -> N
             expected=60,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            suppression=seq.is_in_suppression_with_cap,
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
@@ -356,7 +366,7 @@ def test_tilt_drift_inside_post_settle_grace_is_ignored() -> None:
     entity_id = "cover.venetian_post_settle_grace"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(entity_id=entity_id, state="stopped")
+    seq = _make_sequencer_suppression(entity_id=entity_id, state="stopped")
 
     mgr.handle_state_change(
         states_data=_make_event(entity_id, position=50, tilt=0),
@@ -369,7 +379,8 @@ def test_tilt_drift_inside_post_settle_grace_is_ignored() -> None:
             expected=80,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            suppression=seq.is_in_suppression_with_cap,
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
@@ -396,7 +407,7 @@ def test_tilt_drift_after_settle_grace_with_large_delta_trips_override() -> None
     entity_id = "cover.venetian_post_settle_user_move"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(
+    seq = _make_sequencer_suppression(
         entity_id=entity_id,
         state="stopped",
         stamp_age_seconds=VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS + 5.0,
@@ -415,7 +426,14 @@ def test_tilt_drift_after_settle_grace_with_large_delta_trips_override() -> None
             expected=80,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            # Issue #1329 (MUST-FIX 2): wired so this guard genuinely reaches
+            # ``is_in_tilt_publish_lag`` — see the module docstring's note on
+            # ``_make_sequencer_suppression``. ``_tilt_sent_at`` is never
+            # populated here (no ``update_tilt_only`` call), so this term is
+            # always False and the assertion below is unchanged: the delta=95
+            # user-twist must still trip on the position-anchored cap alone.
+            suppression=seq.is_in_suppression_with_cap,
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
@@ -462,7 +480,7 @@ def test_late_publish_burst_after_real_settle_does_not_trip_override() -> None:
     entity_id = "cover.venetian_publish_lag"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(
+    seq = _make_sequencer_suppression(
         entity_id=entity_id,
         state="stopped",
         stamp_age_seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0,
@@ -480,7 +498,8 @@ def test_late_publish_burst_after_real_settle_does_not_trip_override() -> None:
             expected=100,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            suppression=seq.is_in_suppression_with_cap,
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
@@ -508,7 +527,7 @@ def test_real_user_twist_after_publish_lag_still_trips_override() -> None:
     entity_id = "cover.venetian_real_user_twist"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(
+    seq = _make_sequencer_suppression(
         entity_id=entity_id,
         state="stopped",
         stamp_age_seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0,
@@ -527,7 +546,14 @@ def test_real_user_twist_after_publish_lag_still_trips_override() -> None:
             expected=100,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            # Issue #1329 (MUST-FIX 2): wired so this guard genuinely reaches
+            # ``is_in_tilt_publish_lag`` (see ``_make_sequencer_suppression``'s
+            # docstring). ``_tilt_sent_at`` is never populated here (no
+            # ``update_tilt_only`` call), so this term is always False — the
+            # delta=95 user-twist trips solely on the position-anchored cap
+            # having expired, unchanged from before this wiring.
+            suppression=seq.is_in_suppression_with_cap,
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
