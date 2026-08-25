@@ -138,6 +138,22 @@ class SecondaryAxisCheck:
     time-based grace window happens to be open at the same instant. The record
     is trajectory-tracked, not one-shot-popped: an endpoint publish marks it and
     a target-return publish consumes it (#930).
+
+    ``single_axis_suppression`` (issue #1329) is an optional, narrower
+    suppression callback consulted only as a last resort, right before
+    ``evaluate`` would otherwise declare a manual move on THIS axis alone.
+    Unlike ``suppression`` — whose True result implies the OTHER axis may be
+    co-drifting from the same physical command and therefore consumes
+    (blinds) both axes' checks for the cycle — a True result here suppresses
+    only this axis's own delta verdict and does NOT consume: the caller's
+    independent axis check still runs afterward. This matters for a
+    suppression source anchored to THIS axis's own dispatch alone (e.g.
+    venetian's tilt-only publish-lag window): a tilt-only send does not
+    *command* the other axis, though mechanical back-drive can still move it
+    slightly, so folding this source into ``suppression`` would blind the
+    other axis's check on that same publish instead of letting it evaluate a
+    back-driven value on its own merits — reintroducing the cross-axis
+    blinding issue #930 (finding #2) fixed.
     """
 
     # ``None`` (issue #1006) means ACP has no DISPATCHED value to police on this
@@ -154,6 +170,10 @@ class SecondaryAxisCheck:
     # one-shot-popped): endpoint publish marks, target-return consumes
     # (issue #927/#930).
     excursion_match: Callable[[str, float], bool] | None = None
+    # Non-consuming counterpart to ``suppression`` — see the class docstring
+    # (issue #1329). Checked only immediately before the numeric manual
+    # verdict would otherwise fire.
+    single_axis_suppression: Callable[[str, float], bool] | None = None
     # AUTHORITATIVE note on the wire/logical mismatch (issue #1227) — callers
     # (``VenetianPolicy``/``DayNightShadePolicy.secondary_axis_check``) should
     # point back here rather than re-deriving this explanation.
@@ -298,6 +318,29 @@ class SecondaryAxisCheck:
         # must not simultaneously read as a user touch. This axis used ``>=``,
         # which made the two axes return opposite verdicts on that one value.
         if delta > effective_threshold:
+            # Issue #1329: a narrower, non-consuming fallback checked only
+            # right before declaring this axis manual. Unlike ``suppression``
+            # above, a True result here does NOT imply the other axis is
+            # co-drifting (e.g. venetian's tilt-only publish-lag window never
+            # touches the position axis at all) — consumed stays False so the
+            # caller's independent axis check still runs this cycle (#930
+            # finding #2: a genuine move on the OTHER axis must still trip).
+            if (
+                self.single_axis_suppression is not None
+                and self.single_axis_suppression(entity_id, delta)
+            ):
+                return SecondaryAxisResult(
+                    event_name="manual_override_rejected_tilt_suppression",
+                    event_kwargs={
+                        "our_state": self.expected,
+                        "new_position": reported,
+                        "effective_threshold": effective_threshold,
+                        "reason": (
+                            f"{self.label} delta {delta:.1f}% within venetian "
+                            "tilt-only publish-lag window; suppressing tilt check only"
+                        ),
+                    },
+                )
             return SecondaryAxisResult(
                 consumed=True,
                 is_manual=True,

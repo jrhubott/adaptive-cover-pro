@@ -575,26 +575,44 @@ async def test_tilt_on_target_plus_position_back_drive_does_not_trip_manual_over
 async def test_tilt_only_update_does_not_stamp_suppression_window(
     svc, hass, attached_policy
 ):
-    """Issue #33 follow-on: tilt-only updates must NOT extend the back-rotate window.
+    """Issue #33 follow-on / #1329: the POSITION window stays untouched, the
+    axis' OWN publish-lag window opens.
 
-    The window protects the *position-axis* settle and the tilt-induced back-drive
-    that follows. A tilt-only send from ``maybe_update_tilt_only`` doesn't move
-    the carriage, so it must not refresh the window — otherwise a user opening
-    the blind during the (now extended) window is silently consumed as motor
-    drift, stranding reconciliation at the user-driven position.
+    The POSITION-axis window protects the position-axis settle and the
+    tilt-induced back-drive that follows a POSITION command. A tilt-only send
+    from ``maybe_update_tilt_only`` doesn't move the carriage, so it must not
+    refresh that window — otherwise a user opening the blind during the (now
+    extended) window is silently consumed as motor drift, stranding
+    reconciliation at the user-driven position.
+
+    Separately (issue #1329), a tilt-only send DOES open its own narrower
+    publish-lag window — anchored to ``_tilt_sent_at``, delta-capped at
+    ``VENETIAN_TILT_VERIFY_TOLERANCE`` — so the actuator's own delayed
+    republish of the tilt it just settled at isn't misread as a manual
+    override. ``is_in_tilt_suppression`` (the combined predicate) reflects
+    that window immediately after dispatch.
     """
     entity_id = "cover.venetian_morning"
     hass.states.get.return_value = _state_with_position(50)
 
     # Seed _last_tilt so maybe_update_tilt_only doesn't short-circuit on None.
     attached_policy._last_tilt = 70
+    # Grace already expired: isolates the second assertion below to the NEW
+    # tilt-only publish-lag window rather than the (also-true, unrelated) 5s
+    # command grace this send also (re)starts.
+    attached_policy._grace_mgr.is_in_command_grace_period = MagicMock(
+        return_value=False
+    )
 
     await attached_policy.maybe_update_tilt_only(
         entity_id, current_position=50, context=None, reason="solar"
     )
 
-    # New contract: tilt-only path leaves the window untouched.
-    assert attached_policy.is_in_tilt_suppression(entity_id, delta=0.0) is False
+    # The POSITION-axis window is untouched — a tilt-only send never stamps it.
+    assert attached_policy._sequencer.is_in_suppression(entity_id) is False
+    # But the axis' OWN tilt-only publish-lag window (issue #1329) is now
+    # open, protecting against the actuator's own delayed republish.
+    assert attached_policy.is_in_tilt_suppression(entity_id, delta=0.0) is True
 
 
 @pytest.mark.asyncio

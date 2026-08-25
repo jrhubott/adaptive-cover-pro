@@ -474,6 +474,48 @@ class DualAxisSequencer:
             return True
         return delta <= VENETIAN_BACKROTATE_MAX_DELTA_PERCENT
 
+    def is_in_tilt_publish_lag(self, entity_id: str, delta: float) -> bool:
+        """Absorb an actuator's late re-publish of the tilt ACP itself just commanded.
+
+        Issue #1329: a tilt-ONLY send (``update_tilt_only``) deliberately never
+        calls ``stamp_position_command`` — that stamp is shared with the
+        position axis via ``is_in_suppression_with_cap`` and popping
+        ``_settled_at`` would corrupt the ``moving → settled`` anchor
+        ``run_sequence`` depends on (issue #33 follow-on). So a routine
+        tilt-only send has no position-axis window to fall back on; once the
+        5s command grace expires it is otherwise completely unguarded against
+        the actuator's own late re-publish of the tilt it just settled at.
+
+        This is a SEPARATE window, anchored to ``_tilt_sent_at`` (ACP's own
+        last tilt dispatch) rather than ``_suppression_at`` (the position
+        command stamp), so it can never widen the position axis' suppression.
+        Two conditions must BOTH hold — this is a strict AND, not an OR — for
+        the caller to treat a publish as ACP's own settling rather than a
+        manual move:
+
+        * ``_seconds_since(_tilt_sent_at[entity_id]) < self._backrotate_publish_lag_seconds``
+          — the publish must land within the user's configured
+          ``venetian_backrotate_publish_lag`` window of ACP's own tilt send.
+        * ``delta <= VENETIAN_TILT_VERIFY_TOLERANCE`` — the cap is
+          deliberately the *verify* tolerance, not the looser
+          ``VENETIAN_BACKROTATE_MAX_DELTA_PERCENT`` the position-axis window
+          uses: ``_verify_and_record_tilt`` already declares a publish within
+          this band "arrived on target", so ACP cannot distinguish a small
+          user nudge from its own settling even in principle. Six times
+          tighter than the position axis' 30% cap.
+
+        Returns ``False`` (not suppressed) when no tilt has ever been sent for
+        this entity, when the window has elapsed, or when the delta exceeds
+        the verify tolerance — in every one of those cases the manual-override
+        path runs as normal.
+        """
+        stamp = self._tilt_sent_at.get(entity_id)
+        if stamp is None:
+            return False
+        if self._seconds_since(stamp) >= self._backrotate_publish_lag_seconds:
+            return False
+        return delta <= VENETIAN_TILT_VERIFY_TOLERANCE
+
     def is_reset_excursion_publish(self, entity_id: str, new_value: float) -> bool:
         """Suppress the late state publishes of a drift-reset excursion trajectory (#927/#930).
 
@@ -820,7 +862,6 @@ class DualAxisSequencer:
         # confirms it lands on the actuator (issue #33). Discard preemptively
         # in case a prior cycle marked the entity verified.
         self._tilt_targets_verified.discard(entity_id)
-        self._tilt_sent_at[entity_id] = dt.datetime.now(dt.UTC)
         # Restart the grace window so the tilt-axis change isn't read as a
         # user touch by manual_override detection.
         self._grace_mgr.start_command_grace_period(entity_id)
@@ -858,6 +899,14 @@ class DualAxisSequencer:
                 trigger=reason,
             )
             return False
+
+        # Issue #1329: record the publish-lag anchor only once the move really
+        # went out — matching the #927 precedent for the drift-reset endpoint
+        # stamp. Written here (after the successful async_call), not before
+        # it, so a failed send leaves no stale stamp that would open
+        # ``is_in_tilt_publish_lag``'s window for a tilt ACP never actually
+        # commanded.
+        self._tilt_sent_at[entity_id] = dt.datetime.now(dt.UTC)
 
         # A tilt frame keys the radio and the command queue never gated it
         # (issue #1189). The post-settle tail runs OUTSIDE the slot on purpose —
