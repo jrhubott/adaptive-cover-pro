@@ -664,6 +664,14 @@ class VenetianSlice:
     # emits no tilt at all so coupled-axis covers stay on the open endpoint.
     tilt_skip_mode: str
     venetian_mode: str
+    # Scope of the tilt-only carriage pin (issue #1330):
+    # ``all_automatic_control`` (default, back-compat) pins the carriage closed
+    # for every automatic winner; ``sun_tracking_only`` narrows the pin to
+    # solar-tracking wins (winning ``ControlMethod == SOLAR``) so cloud and
+    # climate decisions move the carriage. Consumed by ``VenetianPolicy`` as a
+    # plain value threaded through ``attach()`` — unlike ``tilt_reset_scope``
+    # it is read by the policy itself, never by the sequencer mid-cycle.
+    tilt_only_scope: str
     # Accumulated commanded tilt-% change that triggers a mechanical drift
     # reset (issue #663). 0 disables. Consumed by ``DualAxisSequencer`` via a
     # live ``get_tilt_reset_threshold`` lambda threaded through ``attach()``.
@@ -903,6 +911,7 @@ class RuntimeConfig:
             CONF_VENETIAN_MODE,
             CONF_VENETIAN_POST_SETTLE_HOLD,
             CONF_VENETIAN_POST_SETTLE_MODE,
+            CONF_VENETIAN_TILT_ONLY_SCOPE,
             CONF_VENETIAN_TILT_RESET_DIRECTION,
             CONF_VENETIAN_TILT_RESET_SCOPE,
             CONF_VENETIAN_TILT_RESET_THRESHOLD,
@@ -939,6 +948,7 @@ class RuntimeConfig:
             DEFAULT_VENETIAN_MODE,
             DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
             DEFAULT_VENETIAN_POST_SETTLE_MODE,
+            DEFAULT_VENETIAN_TILT_ONLY_SCOPE,
             DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
             DEFAULT_VENETIAN_TILT_RESET_SCOPE,
             DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
@@ -1084,6 +1094,9 @@ class RuntimeConfig:
                     CONF_VENETIAN_TILT_SKIP_MODE, DEFAULT_VENETIAN_TILT_SKIP_MODE
                 ),
                 venetian_mode=options.get(CONF_VENETIAN_MODE, DEFAULT_VENETIAN_MODE),
+                tilt_only_scope=options.get(
+                    CONF_VENETIAN_TILT_ONLY_SCOPE, DEFAULT_VENETIAN_TILT_ONLY_SCOPE
+                ),
                 tilt_reset_threshold=options.get(
                     CONF_VENETIAN_TILT_RESET_THRESHOLD,
                     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,

@@ -2004,6 +2004,23 @@ VENETIAN_MODE_TILT_ONLY = "tilt_only"  # hold at 0%, track tilt only
 DEFAULT_VENETIAN_MODE = VENETIAN_MODE_POSITION_AND_TILT  # default mode
 VENETIAN_MODES = (VENETIAN_MODE_POSITION_AND_TILT, VENETIAN_MODE_TILT_ONLY)
 
+# Scope of the tilt-only carriage pin (issue #1330). ``all_automatic_control``
+# keeps the original behaviour (the carriage is pinned closed for every
+# automatic winner). ``sun_tracking_only`` narrows the pin to solar-tracking
+# wins (winning ControlMethod == SOLAR), so cloud-suppression and climate
+# decisions move the carriage normally — the door-access case in #1330.
+# Venetian-only enum. The ``sun_tracking_only`` string is deliberately shared
+# with VENETIAN_TILT_RESET_SCOPE_SOLAR: same user-facing vocabulary, different
+# option namespace and different behaviour. Do NOT alias one to the other.
+CONF_VENETIAN_TILT_ONLY_SCOPE = "venetian_tilt_only_scope"  # one of below
+VENETIAN_TILT_ONLY_SCOPE_ALL = "all_automatic_control"  # every winner (default)
+VENETIAN_TILT_ONLY_SCOPE_SOLAR = "sun_tracking_only"  # solar tracking only
+DEFAULT_VENETIAN_TILT_ONLY_SCOPE = VENETIAN_TILT_ONLY_SCOPE_ALL  # back-compat
+VENETIAN_TILT_ONLY_SCOPES = (
+    VENETIAN_TILT_ONLY_SCOPE_ALL,
+    VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+)
+
 
 # =============================================================================
 # 22. Debug & Diagnostics

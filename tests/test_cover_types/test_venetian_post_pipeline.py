@@ -187,6 +187,27 @@ class TestPostPipelineResolveTiltOnlyMode:
         assert out.tilt is None
         assert "venetian_mode" in [s.handler for s in out.decision_trace]
 
+    def test_tilt_only_pins_carriage_for_cloud_winner(self):
+        """A CLOUD win is pinned closed under the default scope (issue #1330).
+
+        ``CLOUD`` is neither explicit user intent nor ``DEFAULT``, so the pin
+        fires on it exactly as it does on ``SUMMER`` above. That was always
+        true but had never been asserted — every existing pin test uses
+        ``SUMMER`` as its non-exempt winner. This is the characterization
+        lock for the default ``all_automatic_control`` scope: the #1330
+        option must leave this behaviour untouched for anyone who does not
+        opt in (open issue #175 wants exactly this).
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        out = policy.post_pipeline_resolve(
+            _make_result(ControlMethod.CLOUD, position=72), **_non_solar_kwargs()
+        )
+        assert out.position == 0
+        assert "venetian_mode" in [s.handler for s in out.decision_trace]
+
     def test_tilt_only_does_not_pin_group_scene_winner(self):
         """Issue #1153 round-2 finding 1: GROUP_SCENE is explicit user intent.
 
@@ -1290,3 +1311,140 @@ class TestPostPipelineResolveWeatherTilt:
             _make_result(ControlMethod.WEATHER, position=0), **_non_solar_kwargs()
         )
         assert out.tilt is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #1330 — scoping the tilt-only carriage pin
+#
+# ``venetian_tilt_only_scope`` narrows the pin to solar-tracking wins. The
+# reporter's tilt-only venetian is on a door: a CLOUD win pins the carriage
+# closed and physically blocks access on every overcast day. The option is
+# opt-in and defaults to ``all_automatic_control`` because open issue #175 is
+# the literal inverse request — that user WANTS the carriage held down when
+# it clouds over.
+# ---------------------------------------------------------------------------
+
+
+class TestTiltOnlyScope:
+    """``sun_tracking_only`` releases the carriage for non-solar winners."""
+
+    def test_tilt_only_releases_cloud_winner_under_sun_tracking_only(self):
+        """The #1330 headline: an opted-in install's door unblocks on cloud.
+
+        The carriage rises to the cloud handler's own position. ``tilt``
+        stays ``None`` — ``CloudSuppressionHandler`` deliberately sets no
+        tilt on the ``cloudy_position`` branch and ``_engine_tilt_suppressed``
+        blocks the engine fallback for every non-SOLAR winner — so the slats
+        hold their last angle. That is the documented caveat, not a defect.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_MODE_TILT_ONLY,
+            VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+        )
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        policy._tilt_only_scope = VENETIAN_TILT_ONLY_SCOPE_SOLAR
+        out = policy.post_pipeline_resolve(
+            _make_result(ControlMethod.CLOUD, position=72), **_non_solar_kwargs()
+        )
+        assert out.position == 72
+        assert out.tilt is None
+        assert "venetian_mode" not in [s.handler for s in out.decision_trace]
+
+    def test_tilt_only_still_pins_solar_winner_under_sun_tracking_only(self):
+        """Narrowing the scope must not disable tilt-only's whole point.
+
+        A SOLAR win is exactly the case ``sun_tracking_only`` keeps: carriage
+        closed, slats steering the light.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_MODE_TILT_ONLY,
+            VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+        )
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        policy._tilt_only_scope = VENETIAN_TILT_ONLY_SCOPE_SOLAR
+        out = policy.post_pipeline_resolve(
+            _make_result(ControlMethod.SOLAR, position=72), **_solar_kwargs()
+        )
+        assert out.position == 0
+        assert "venetian_mode" in [s.handler for s in out.decision_trace]
+
+    def test_tilt_only_releases_summer_winner_under_sun_tracking_only(self):
+        """The documented SIDE EFFECT, pinned so it cannot regress silently.
+
+        ``sun_tracking_only`` is not a cloud-only exemption: it releases every
+        non-SOLAR winner the three existing exemptions did not already
+        release, which on a venetian means CLOUD plus the three climate
+        methods (SUMMER / WINTER / EXTREME_HEAT). ``GLARE_ZONE`` cannot win
+        here — ``supports_glare_zones`` is ``False`` on this policy.
+
+        That breadth is intentional and is stated in the option's
+        ``data_description``. This test exists so a later "fix" that quietly
+        narrows the option to CLOUD alone has to argue with a failing
+        assertion rather than sliding past review.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_MODE_TILT_ONLY,
+            VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+        )
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        policy._tilt_only_scope = VENETIAN_TILT_ONLY_SCOPE_SOLAR
+        out = policy.post_pipeline_resolve(
+            _make_result(ControlMethod.SUMMER, position=72), **_non_solar_kwargs()
+        )
+        assert out.position == 72
+        assert "venetian_mode" not in [s.handler for s in out.decision_trace]
+
+    def test_tilt_only_scope_defaults_to_all_automatic_control(self):
+        """A policy built without ``attach()`` behaves exactly as it did.
+
+        This is the executable proof behind every pin test in this file:
+        they all construct a bare ``VenetianPolicy()`` and never set a scope,
+        so ``__init__``'s seed is what keeps them green.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_TILT_ONLY_SCOPE_ALL,
+        )
+
+        assert VenetianPolicy()._tilt_only_scope == VENETIAN_TILT_ONLY_SCOPE_ALL
+
+    def test_attach_forwards_tilt_only_scope(self):
+        """``attach()`` carries the option from RuntimeConfig onto the policy.
+
+        A plain value, not a lambda: the scope is read by the policy itself
+        inside the update cycle, not by the sequencer mid-cycle (which is the
+        only reason ``get_tilt_reset_scope`` is a callable). Kept beside the
+        rest of the #1330 tests, following the drift-reset feature file's
+        convention of co-locating a feature's const / schema / attach /
+        behaviour tests.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_TILT_ONLY_SCOPE_ALL,
+            VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+        )
+
+        attach_kwargs = {
+            "hass": MagicMock(),
+            "logger": MagicMock(),
+            "grace_mgr": MagicMock(),
+            "get_current_position": lambda _eid: None,
+            "set_commanded_position": lambda *_: None,
+            "position_tolerance": 5,
+            "is_dry_run": lambda: False,
+        }
+
+        policy = VenetianPolicy()
+        policy.attach(
+            **attach_kwargs, venetian_tilt_only_scope=VENETIAN_TILT_ONLY_SCOPE_SOLAR
+        )
+        assert policy._tilt_only_scope == VENETIAN_TILT_ONLY_SCOPE_SOLAR
+
+        # Omitting the kwarg must leave __init__'s back-compat seed alone.
+        untouched = VenetianPolicy()
+        untouched.attach(**attach_kwargs)
+        assert untouched._tilt_only_scope == VENETIAN_TILT_ONLY_SCOPE_ALL
