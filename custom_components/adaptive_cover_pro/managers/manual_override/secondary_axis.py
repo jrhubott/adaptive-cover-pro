@@ -76,6 +76,57 @@ def resolve_dispatched_secondary_expected(
     return result.tilt
 
 
+def resolve_single_axis_suppression(
+    sequencer: Any,
+    entity_id: str,
+    delta: float,
+    primary_axis_suppression: Callable[[str, float], bool],
+) -> bool:
+    """Compose the secondary axis' own suppression verdict from its two windows.
+
+    Single source of the issue #1329/#1333 composition rule, shared by every
+    multi-axis policy's ``is_in_tilt_suppression`` — venetian's tilt axis and
+    day/night-shade's blend axis, the two policies that drive the same
+    ``DualAxisSequencer``. Extracted for exactly the reason
+    :func:`resolve_dispatched_secondary_expected` (issue #1006) was, in this
+    same module: the formula is cover-type-agnostic (it operates purely on the
+    shared sequencer plus an injected per-policy callable), so mirroring it in
+    two policies would let the two drift. The suppression *decision* stays a
+    policy method on each subclass; only this boolean composition lives here.
+
+    ORs two windows, in this order:
+
+    * ``primary_axis_suppression(entity_id, delta)`` — the caller's own
+      position-anchored window (back-rotate + command grace), re-evaluated so
+      the composed predicate is correct when called directly. In the one
+      production call path this disjunct is always False by the time it runs:
+      ``SecondaryAxisCheck.evaluate`` already tried the identical callable as
+      ``suppression=`` and falls through to ``single_axis_suppression`` only
+      when that returned False.
+    * ``sequencer.is_in_tilt_publish_lag(entity_id, delta)`` — the SEPARATE
+      window anchored to ACP's own last secondary-axis dispatch
+      (``_tilt_sent_at``) and delta-capped at ``VENETIAN_TILT_VERIFY_TOLERANCE``.
+      This is the term that actually guards a routine secondary-axis-only send
+      once the position window is closed (or was never opened at all).
+
+    Returns ``False`` with no sequencer attached — the base
+    ``CoverTypePolicy.is_in_tilt_suppression`` contract for a policy that has
+    no dual-axis machinery wired.
+
+    NON-CONSUMING CONTRACT: this result is for ``single_axis_suppression=``
+    wiring ONLY; never wire it to ``suppression=``; a True result must never
+    produce ``consumed=True``. The publish-lag term is anchored to THIS axis'
+    own dispatch alone, which does not command the other axis, so consuming on
+    it would blind the other axis' independent check and reintroduce the
+    cross-axis blinding issue #930 (finding #2) fixed.
+    """
+    if sequencer is None:
+        return False
+    return primary_axis_suppression(
+        entity_id, delta
+    ) or sequencer.is_in_tilt_publish_lag(entity_id, delta)
+
+
 def effective_manual_threshold(user_threshold: int | None) -> int:
     """Resolve the effective manual-override threshold for a delta comparison.
 
@@ -147,13 +198,14 @@ class SecondaryAxisCheck:
     (blinds) both axes' checks for the cycle — a True result here suppresses
     only this axis's own delta verdict and does NOT consume: the caller's
     independent axis check still runs afterward. This matters for a
-    suppression source anchored to THIS axis's own dispatch alone (e.g.
-    venetian's tilt-only publish-lag window): a tilt-only send does not
-    *command* the other axis, though mechanical back-drive can still move it
-    slightly, so folding this source into ``suppression`` would blind the
-    other axis's check on that same publish instead of letting it evaluate a
-    back-driven value on its own merits — reintroducing the cross-axis
-    blinding issue #930 (finding #2) fixed.
+    suppression source anchored to THIS axis's own dispatch alone (venetian's
+    tilt-only publish-lag window, and day/night-shade's blend-only one —
+    issue #1333 — both composed by :func:`resolve_single_axis_suppression`):
+    such a send does not *command* the other axis, though mechanical
+    back-drive can still move it slightly, so folding this source into
+    ``suppression`` would blind the other axis's check on that same publish
+    instead of letting it evaluate a back-driven value on its own merits —
+    reintroducing the cross-axis blinding issue #930 (finding #2) fixed.
     """
 
     # ``None`` (issue #1006) means ACP has no DISPATCHED value to police on this
@@ -171,8 +223,9 @@ class SecondaryAxisCheck:
     # (issue #927/#930).
     excursion_match: Callable[[str, float], bool] | None = None
     # Non-consuming counterpart to ``suppression`` — see the class docstring
-    # (issue #1329). Checked only immediately before the numeric manual
-    # verdict would otherwise fire.
+    # (issues #1329 venetian tilt / #1333 day/night-shade blend, both wiring
+    # their policy's ``is_in_tilt_suppression`` here). Checked only immediately
+    # before the numeric manual verdict would otherwise fire.
     single_axis_suppression: Callable[[str, float], bool] | None = None
     # AUTHORITATIVE note on the wire/logical mismatch (issue #1227) — callers
     # (``VenetianPolicy``/``DayNightShadePolicy.secondary_axis_check``) should

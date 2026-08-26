@@ -84,6 +84,7 @@ from ...engine.covers import AdaptiveVerticalCover, VenetianCoverCalculation
 from ...managers.manual_override import (
     SecondaryAxisCheck,
     resolve_dispatched_secondary_expected,
+    resolve_single_axis_suppression,
 )
 from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
@@ -979,12 +980,15 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         follow-on). The ``delta`` default matches the base signature so the
         method is interchangeable with other policies when passed as a
         ``SecondaryAxisCheck.single_axis_suppression`` callback.
+
+        The OR-composition itself lives in the shared
+        :func:`resolve_single_axis_suppression` (issue #1333) — day/night-shade's
+        blend axis, driving the same sequencer, composes the identical two
+        windows and delegates to the same helper.
         """
-        if self._sequencer is None:
-            return False
-        return self.primary_axis_suppression(
-            entity_id, delta
-        ) or self._sequencer.is_in_tilt_publish_lag(entity_id, delta)
+        return resolve_single_axis_suppression(
+            self._sequencer, entity_id, delta, self.primary_axis_suppression
+        )
 
     def primary_axis_suppression(self, entity_id: str, delta: float = 0.0) -> bool:
         """Apply the tilt-axis publish-lag window to the position axis too.
