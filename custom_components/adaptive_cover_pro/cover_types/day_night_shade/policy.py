@@ -51,6 +51,7 @@ from ...const import (
     DEFAULT_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
     DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT,
     DEFAULT_DAY_NIGHT_OPACITY_SHEER,
+    DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     POSITION_CLOSED,
     POSITION_OPEN,
     VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS,
@@ -66,6 +67,7 @@ from ...managers.cover_command.transit import transit_wire_sign
 from ...managers.manual_override import (
     SecondaryAxisCheck,
     resolve_dispatched_secondary_expected,
+    resolve_single_axis_suppression,
 )
 from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
@@ -1684,6 +1686,15 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             invert_tilt=kwargs.get("invert_tilt"),
             get_min_change=kwargs.get("get_min_change"),
             get_enforce_delta_at_endpoints=kwargs.get("get_enforce_delta_at_endpoints"),
+            # Issue #1333: the coordinator hands this to EVERY policy's
+            # ``attach``. Dropping it left a day/night sequencer pinned to the
+            # built-in default no matter what the user configured — and this is
+            # the option that sizes the blend publish-lag window
+            # ``is_in_tilt_suppression`` now consults.
+            backrotate_publish_lag_seconds=kwargs.get(
+                "backrotate_publish_lag_seconds",
+                DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+            ),
             mark_air_busy=kwargs.get("mark_air_busy"),
         )
         self._schedule_refresh_after = kwargs.get("schedule_refresh_after")
@@ -1694,10 +1705,24 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         return self._sequencer
 
     def is_in_tilt_suppression(self, entity_id: str, delta: float = 0.0) -> bool:
-        """Delegate the back-rotate suppression gate to the sequencer."""
-        if self._sequencer is None:
-            return False
-        return self._sequencer.is_in_suppression_with_cap(entity_id, delta)
+        """Suppress blend drift only when ``delta`` is plausibly ACP's own settling.
+
+        This is the BLEND-axis gate — wired to :meth:`secondary_axis_check`'s
+        ``single_axis_suppression`` callback, NOT ``suppression=`` (which stays
+        :meth:`primary_axis_suppression`). It ORs two windows so a blend-only
+        send is never left unguarded (issue #1333, the day/night half of
+        #1329): the position-anchored back-rotate/grace window, and the
+        SEPARATE publish-lag window anchored to ACP's own last blend dispatch
+        (``_tilt_sent_at``) and capped at the verify tolerance. Model A drives
+        the same ``DualAxisSequencer`` venetian does, so both policies compose
+        the identical pair via :func:`resolve_single_axis_suppression`; see
+        ``VenetianPolicy.is_in_tilt_suppression`` for the per-disjunct
+        rationale and ``SecondaryAxisCheck`` (authoritative) for why this seam
+        must stay non-consuming.
+        """
+        return resolve_single_axis_suppression(
+            self._sequencer, entity_id, delta, self.primary_axis_suppression
+        )
 
     def primary_axis_suppression(self, entity_id: str, delta: float = 0.0) -> bool:
         """Apply the blend-axis publish-lag window to the position axis too."""
@@ -1721,6 +1746,21 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         changed. When no blend has been dispatched (empty anchor) the helper
         returns ``None`` and the check yields no independent blend
         manual-detection. ``entity_id`` carries the per-entity anchor context.
+
+        ``single_axis_suppression`` wires :meth:`is_in_tilt_suppression`
+        (issue #1333, the day/night half of #1329) — the blend-only publish-lag
+        window, anchored to ACP's own last blend DISPATCH (``_tilt_sent_at``)
+        rather than a position command, which is what guards a routine
+        blend-only send once the position window is closed or was never opened.
+        Unlike ``suppression`` above, a True result here must NOT blind the
+        position axis: a blend-only send never *commands* the carriage, so
+        because this seam is non-consuming the position axis' own check still
+        runs on that same publish and evaluates any back-driven
+        ``current_position`` on its own merits (issue #930 finding #2).
+        ``evaluate`` consults it only as a narrower, single-axis fallback right
+        before it would otherwise declare a blend manual move — by which point
+        ``suppression`` has already returned False, so in practice it behaves
+        as ``sequencer.is_in_tilt_publish_lag`` alone.
         """
         # Single-carriage models (B, C) have no physical blend axis to check.
         if not self._drives_dual_axis():
@@ -1734,6 +1774,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             attribute="current_tilt_position",
             label="tilt",
             suppression=self.primary_axis_suppression,
+            single_axis_suppression=self.is_in_tilt_suppression,
             # Inverse-tilt normalisation (issue #1227) — see
             # ``SecondaryAxisCheck.inverted`` for the wire/logical rationale.
             # Model A drives the SAME sequencer venetian does, so it owes the
