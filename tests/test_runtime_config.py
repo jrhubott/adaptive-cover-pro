@@ -393,6 +393,45 @@ def test_runtime_config_threads_publish_lag_into_sequencer() -> None:
     assert rc_custom.venetian.backrotate_publish_lag_seconds == 75.0
 
 
+@pytest.mark.unit
+def test_venetian_tilt_only_scope_defaults_to_all_automatic_control() -> None:
+    """Issue #1330: an entry with no such key keeps today's carriage pin.
+
+    This is the layer that protects EXISTING config entries — they were
+    written before the option existed, so ``options.get`` must land on the
+    back-compat default rather than anything narrower.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        DEFAULT_VENETIAN_TILT_ONLY_SCOPE,
+        VENETIAN_TILT_ONLY_SCOPE_ALL,
+    )
+
+    rc = RuntimeConfig.from_options({})
+    assert rc.venetian.tilt_only_scope == DEFAULT_VENETIAN_TILT_ONLY_SCOPE
+    assert rc.venetian.tilt_only_scope == VENETIAN_TILT_ONLY_SCOPE_ALL
+
+
+@pytest.mark.unit
+def test_venetian_tilt_only_scope_read_from_options() -> None:
+    """Issue #1330: the narrowed scope round-trips through ``VenetianSlice``."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_ONLY_SCOPE,
+        VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+    )
+
+    rc = RuntimeConfig.from_options(
+        {CONF_VENETIAN_TILT_ONLY_SCOPE: VENETIAN_TILT_ONLY_SCOPE_SOLAR}
+    )
+    assert rc.venetian.tilt_only_scope == VENETIAN_TILT_ONLY_SCOPE_SOLAR
+    # The #808 drift-reset scope shares the "sun_tracking_only" string but is
+    # a separate option: setting one must not move the other.
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_TILT_RESET_SCOPE_ALL,
+    )
+
+    assert rc.venetian.tilt_reset_scope == VENETIAN_TILT_RESET_SCOPE_ALL
+
+
 # ---------------------------------------------------------------------------
 # Daytime gate slice (issue #632)
 # ---------------------------------------------------------------------------

@@ -36,6 +36,7 @@ from ...const import (
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_POST_SETTLE_MODE,
+    CONF_VENETIAN_TILT_ONLY_SCOPE,
     CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_SCOPE,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
@@ -53,6 +54,7 @@ from ...const import (
     DEFAULT_VENETIAN_MODE,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
     DEFAULT_VENETIAN_POST_SETTLE_MODE,
+    DEFAULT_VENETIAN_TILT_ONLY_SCOPE,
     DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
     DEFAULT_VENETIAN_TILT_RESET_SCOPE,
     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
@@ -72,6 +74,9 @@ from ...const import (
     VENETIAN_MODE_TILT_ONLY,
     VENETIAN_MODES,
     VENETIAN_POST_SETTLE_MODES,
+    VENETIAN_TILT_ONLY_SCOPE_ALL,
+    VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+    VENETIAN_TILT_ONLY_SCOPES,
     VENETIAN_TILT_RESET_DIRECTIONS,
     VENETIAN_TILT_RESET_SCOPE_ALL,
     VENETIAN_TILT_RESET_SCOPE_SOLAR,
@@ -215,6 +220,10 @@ def _venetian_extras_schema() -> dict:
             CONF_VENETIAN_MODE, default=DEFAULT_VENETIAN_MODE
         ): _venetian_select(VENETIAN_MODES, "venetian_mode"),
         vol.Optional(
+            CONF_VENETIAN_TILT_ONLY_SCOPE,
+            default=DEFAULT_VENETIAN_TILT_ONLY_SCOPE,
+        ): _venetian_select(VENETIAN_TILT_ONLY_SCOPES, "venetian_tilt_only_scope"),
+        vol.Optional(
             CONF_VENETIAN_POST_SETTLE_HOLD,
             default=DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
         ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
@@ -287,6 +296,9 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self._tilt_skip_above: int = DEFAULT_VENETIAN_TILT_SKIP_ABOVE
         self._tilt_skip_mode: str = DEFAULT_VENETIAN_TILT_SKIP_MODE
         self._venetian_mode: str = DEFAULT_VENETIAN_MODE
+        # Tilt-only carriage-pin scope (issue #1330); overwritten by
+        # attach(). Defaults to the back-compat "pin every winner" scope.
+        self._tilt_only_scope: str = DEFAULT_VENETIAN_TILT_ONLY_SCOPE
         self._last_tilt: int | None = None
         # Drift-reset scope gate (issue #808); replaced by the live lambda in
         # attach(). Defaults to the back-compat "count every tilt send" scope.
@@ -374,7 +386,21 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             ],
             VENETIAN_MODE_TILT_ONLY: L["geometry.venetian.mode_tilt_only"],
         }.get(venetian_mode, venetian_mode)
-        mode_line = [L["geometry.slat.mode"].format(v=_mode_label)]
+        mode_text = L["geometry.slat.mode"].format(v=_mode_label)
+        # Scope suffix appears only when tilt-only is narrowed to sun-tracking
+        # wins (#1330); the default all_automatic_control keeps today's exact
+        # single-line phrasing. Double-gated on the mode too, so a
+        # position_and_tilt install never renders a line about a pin it has no
+        # use for.
+        if (
+            venetian_mode == VENETIAN_MODE_TILT_ONLY
+            and config.get(
+                CONF_VENETIAN_TILT_ONLY_SCOPE, DEFAULT_VENETIAN_TILT_ONLY_SCOPE
+            )
+            == VENETIAN_TILT_ONLY_SCOPE_SOLAR
+        ):
+            mode_text += " — " + L["geometry.venetian.tilt_only_scope_solar"]
+        mode_line = [mode_text]
         inverse_tilt_line = (
             [L["geometry.venetian.inverse_tilt"]]
             if config.get(CONF_INVERSE_TILT)
@@ -549,6 +575,30 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             return True
         return cover is None or not cover.direct_sun_valid
 
+    def _tilt_only_pin_applies(self, result: PipelineResult) -> bool:
+        """Whether the tilt-only carriage pin is in scope for this winner (#1330).
+
+        ``all_automatic_control`` (default) pins every winner the three
+        exemptions in :meth:`_pin_tilt_only_carriage` did not already
+        release. ``sun_tracking_only`` narrows the pin to solar-tracking
+        wins, so cloud-suppression and climate decisions move the carriage
+        normally — the door-access case in #1330, and what
+        ``venetian_mode``'s own shipped description has always promised.
+
+        Deliberately mirrors :meth:`_drift_reset_eligible` (#808): same
+        vocabulary, same back-compat default, and the same rule that the
+        ``== ControlMethod.SOLAR`` decision lives inside ``cover_types/``.
+        This is the file's third ``== SOLAR`` comparison
+        (``_engine_tilt_suppressed``, ``_drift_reset_eligible``, this one).
+        They read different objects and answer different questions — "may
+        the engine compute a tilt", "may this send accumulate drift", "is
+        the carriage pin in scope" — so they stay separate.
+        """
+        return (
+            self._tilt_only_scope == VENETIAN_TILT_ONLY_SCOPE_ALL
+            or result.control_method == ControlMethod.SOLAR
+        )
+
     def _pin_tilt_only_carriage(
         self,
         result: PipelineResult,
@@ -585,12 +635,31 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         tilt-only install. This is deliberately a separate condition rather
         than a member of ``_EXPLICIT_USER_POSITION_METHODS``: DEFAULT is not
         explicit user intent, it is the absence of any handler intent.
+
+        Finally, the whole pin is gated on :meth:`_tilt_only_pin_applies`
+        (issue #1330) — a fourth INDEPENDENT, option-gated clause, following
+        the #1153 ``DEFAULT`` precedent rather than growing
+        ``_EXPLICIT_USER_POSITION_METHODS`` (``CLOUD`` and the climate
+        methods are automatic handlers, not explicit user positions, so
+        putting them in that frozenset would make its name a lie and change
+        behaviour for everyone). Under the shipped default the predicate
+        short-circuits ``True`` on the scope value BEFORE it reads
+        ``control_method``, so the clause is ``not True`` → ``False`` and
+        this ``if`` reduces to exactly the three-term expression it has
+        always been. That is why every pin test in
+        ``test_venetian_post_pipeline.py`` — all of which build a bare
+        ``VenetianPolicy()`` — stays green untouched. Note this leaves the
+        file holding three ``== ControlMethod.SOLAR`` comparisons
+        (``_engine_tilt_suppressed``, ``_drift_reset_eligible``,
+        ``_tilt_only_pin_applies``); they answer three different questions
+        and must not be merged.
         """
         if (
             self._venetian_mode != VENETIAN_MODE_TILT_ONLY
             or result.control_method in _EXPLICIT_USER_POSITION_METHODS
             or result.control_method == ControlMethod.DEFAULT
             or result.tilt_only_contribution_active
+            or not self._tilt_only_pin_applies(result)
         ):
             return position
         trace.append(
@@ -942,6 +1011,8 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             self._tilt_skip_mode = str(kwargs["venetian_tilt_skip_mode"])
         if "venetian_mode" in kwargs:
             self._venetian_mode = str(kwargs["venetian_mode"])
+        if "venetian_tilt_only_scope" in kwargs:
+            self._tilt_only_scope = str(kwargs["venetian_tilt_only_scope"])
         # Coordinator wake callback for deferred-tilt flushing (issue #756).
         self._schedule_refresh_after = kwargs.get("schedule_refresh_after")
 

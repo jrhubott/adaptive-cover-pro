@@ -593,6 +593,59 @@ def test_geometry_venetian_drift_reset_shows_close_direction():
     assert "(via close)" in summary
 
 
+def test_geometry_venetian_tilt_only_scope_line_hidden_by_default():
+    """Issue #1330: the default scope leaves the mode line exactly as it was.
+
+    An install that has not opted in must render a byte-identical summary,
+    so the option is invisible until it is set.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_MODE,
+        VENETIAN_MODE_TILT_ONLY,
+    )
+
+    cfg = {CONF_VENETIAN_MODE: VENETIAN_MODE_TILT_ONLY}
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "mode: tilt only" in summary
+    assert "sun-tracking wins only" not in summary
+
+
+def test_geometry_venetian_tilt_only_scope_line_shown_when_narrowed():
+    """Issue #1330: the narrowed scope is appended to the mode line."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_MODE,
+        CONF_VENETIAN_TILT_ONLY_SCOPE,
+        VENETIAN_MODE_TILT_ONLY,
+        VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+    )
+
+    cfg = {
+        CONF_VENETIAN_MODE: VENETIAN_MODE_TILT_ONLY,
+        CONF_VENETIAN_TILT_ONLY_SCOPE: VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "mode: tilt only — sun-tracking wins only" in summary
+
+
+def test_geometry_venetian_tilt_only_scope_line_hidden_in_position_and_tilt_mode():
+    """Issue #1330: the suffix is double-gated on the operating mode too.
+
+    The scope only governs the tilt-only carriage pin, so a
+    ``position_and_tilt`` install must never see a line about a pin it has
+    no use for — even with a stale narrowed value left in its options from
+    an earlier experiment.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_ONLY_SCOPE,
+        VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+    )
+
+    cfg = {CONF_VENETIAN_TILT_ONLY_SCOPE: VENETIAN_TILT_ONLY_SCOPE_SOLAR}
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "mode: position and tilt" in summary
+    assert "sun-tracking wins only" not in summary
+
+
 def test_geometry_oscillating_awning_shows_housing_offset():
     """Oscillating-awning summary renders the housing offset when configured."""
     from custom_components.adaptive_cover_pro.const import CONF_AWNING_HOUSING_OFFSET
