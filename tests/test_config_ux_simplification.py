@@ -627,7 +627,7 @@ class TestWeatherStateDefault:
     def test_weather_state_default_excludes_cloudy(self):
         from custom_components.adaptive_cover_pro.config_fields import FIELD_SPECS
 
-        assert ["sunny", "partlycloudy", "clear"] == DEFAULT_WEATHER_STATE
+        assert DEFAULT_WEATHER_STATE == ["sunny", "partlycloudy", "clear"]
         assert "cloudy" not in DEFAULT_WEATHER_STATE
 
         # `is` (not `==`) is deliberate: voluptuous wraps a non-callable
