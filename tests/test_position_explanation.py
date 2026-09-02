@@ -11,7 +11,11 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import ClimateStrategy, ControlMethod
+from custom_components.adaptive_cover_pro.const import (
+    ClimateStrategy,
+    ControlMethod,
+    ReasonCode,
+)
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
@@ -22,6 +26,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverState,
 )
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+from custom_components.adaptive_cover_pro.reason_i18n import Reason
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -108,6 +113,7 @@ def _make_pr(
     default_position: int = 50,
     is_sunset_active: bool = False,
     configured_sunset_pos=None,
+    is_safety: bool = False,
 ) -> PipelineResult:
     """Build a PipelineResult with sensible defaults for explanation tests."""
     return PipelineResult(
@@ -121,6 +127,7 @@ def _make_pr(
         default_position=default_position,
         is_sunset_active=is_sunset_active,
         configured_sunset_pos=configured_sunset_pos,
+        is_safety=is_safety,
     )
 
 
@@ -653,7 +660,9 @@ class TestBuildPositionExplanation:
             default_position=30, is_sunset_active=True, configured_sunset_pos=30
         )
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
+            _base_ctx(
+                pipeline_result=pr, check_adaptive_time=False, clock_window_open=False
+            )
         )
         assert "sunset position" in result.lower()
         assert "30%" in result
@@ -663,11 +672,194 @@ class TestBuildPositionExplanation:
         """Outside time window, no sunset_pos → shows 'default position' label."""
         pr = _make_pr(default_position=100, is_sunset_active=False)
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
+            _base_ctx(
+                pipeline_result=pr, check_adaptive_time=False, clock_window_open=False
+            )
         )
         assert "default position" in result.lower()
         assert "100%" in result
         assert "commands paused" in result
+
+    def test_explanation_names_a_licensed_winner_outside_the_window(self, builder):
+        """A safety winner IS commanding out here — say so, and say what it sent.
+
+        The closed-clock early return fires on every cycle without consulting
+        ``acts_outside_clock_window``, so whenever weather (or a priority-100
+        slot, or an admitted #943-B bound) holds the outside-window licence the
+        explanation reports the *default/sunset* position and claims "commands
+        paused" while a command is on the wire. The reporter's own diagnostics
+        showed exactly that contradiction next to a dispatched ``open_cover``.
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.WEATHER,
+            reason="weather override active — position 100%",
+            position=100,
+            default_position=0,
+            is_safety=True,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                pipeline_result=pr, check_adaptive_time=False, clock_window_open=False
+            )
+        )
+        assert "weather override active" in result.lower()
+        assert "commands paused" not in result
+
+    def test_explanation_names_an_admitted_constraint_outside_the_window(self, builder):
+        """The narrowed early return also covers the OTHER outside-window licence.
+
+        ``acts_outside_clock_window`` is an OR over two flags, and the safety
+        leg above is only half of it. An admitted #943-item-B bound — an
+        opted-in slot's floor that actually clamped on a closed-clock cycle —
+        licenses a DEFAULT winner to reach the hardware with
+        ``is_safety`` deliberately False (#1226/#1165 keep the two flags from
+        ever being co-written). Its ``reason_payload`` describes the clamp
+        edge, not a dispatched override, so it exercises a different render
+        shape than the weather case; without this the widened blast radius of
+        the gate change rests on one control method.
+        """
+        pr = PipelineResult(
+            position=30,
+            control_method=ControlMethod.DEFAULT,
+            reason_payload=Reason(
+                ReasonCode.REGISTRY_CEILING_LOWERED,
+                {"from_pos": 100, "to_pos": 30, "label": "Sleep mode"},
+            ),
+            raw_calculated_position=100,
+            default_position=100,
+            is_safety=False,
+            outside_window_constraint_active=True,
+        )
+        # The two licences are separate fields but one predicate, and it is the
+        # predicate the gate reads.
+        assert pr.acts_outside_clock_window is True
+
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                pipeline_result=pr, check_adaptive_time=False, clock_window_open=False
+            )
+        )
+        assert "ceiling lowered" in result.lower()
+        assert "30%" in result
+        assert "commands paused" not in result
+        # The default position (100%) is what the old unconditional return
+        # would have reported instead of the clamp edge.
+        assert "default position" not in result.lower()
+
+    def test_gate_dark_clock_open_reports_actual_winner(self, builder):
+        """Gate reads dark but the user's clock window is still open (issue #1310).
+
+        ``check_adaptive_time``/``is_active`` folds in the daytime gate, so it
+        goes False the moment a configured gate sensor reads dark — even while
+        ``clock_window_open`` (start/end clock only) is still True and the real
+        dispatch guard (``coordinator.clock_window_open`` at
+        ``coordinator.py``) is NOT blocking anything this cycle. The old guard
+        keyed off ``check_adaptive_time`` alone and would report the default
+        position with a false "commands paused" instead of the pipeline
+        winner's real reason.
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.DEFAULT,
+            reason="default position 30% — gate dark",
+            default_position=30,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                pipeline_result=pr,
+                check_adaptive_time=False,
+                clock_window_open=True,
+            )
+        )
+        assert "commands paused" not in result
+        assert "default position 30% — gate dark" in result
+
+    def test_manual_winner_survives_the_closed_clock_note(self, builder):
+        """A MANUAL winner on a genuinely closed clock keeps its own account.
+
+        ``_determine_control_status`` answers MANUAL_OVERRIDE here — the
+        ``_METHOD_TO_STATUS`` early return fires before the clock check, and
+        ``sensor._control_status_attrs`` / triage rule 23 both key on that
+        answer, so it is deliberate. The explanation used to replace the
+        winner's reason with the generic default/sunset note, leaving the two
+        fields telling different stories about the same cycle.
+
+        Nothing IS dispatched out here (``coordinator`` skips the position
+        update once ``clock_window_open`` is False without a licence), so
+        "commands paused" is true and must survive too — both truths, not
+        either one.
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.MANUAL,
+            reason="manual override active — holding 45% (solar would-be 62%)",
+            position=62,
+            raw_calculated_position=62,
+            default_position=50,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                pipeline_result=pr,
+                check_adaptive_time=False,
+                clock_window_open=False,
+            )
+        )
+        # The real winner leads the chain — not a default/sunset position it
+        # never resolved.
+        assert result.split(" → ")[0] == (
+            "manual override active — holding 45% (solar would-be 62%)"
+        )
+        # …and the paused half of the truth is still stated.
+        assert "commands paused" in result
+
+    def test_motion_winner_survives_the_closed_clock_note(self, builder):
+        """Same for a MOTION winner — the other ``_METHOD_TO_STATUS`` entry.
+
+        Outside the clock window ``MotionTimeoutHandler`` always takes its
+        return-to-default branch (the hold branch gates on ``in_time_window``),
+        so the *position* the old note reported happened to be right — but the
+        "occupancy timeout" attribution was thrown away while ``control_status``
+        still said ``motion_timeout``.
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.MOTION,
+            reason="occupancy timeout active — default position 30%",
+            position=30,
+            default_position=30,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                pipeline_result=pr,
+                check_adaptive_time=False,
+                clock_window_open=False,
+            )
+        )
+        assert result.split(" → ")[0] == (
+            "occupancy timeout active — default position 30%"
+        )
+        assert "commands paused" in result
+
+    def test_default_winner_still_collapses_to_the_closed_clock_note(self, builder):
+        """The DEFAULT winner keeps the collapsed one-liner (the counterpart).
+
+        Its own reason says nothing the note does not already say — the note
+        was written for exactly this winner — so it is the one control method
+        that still renders alone. Pins the narrowing so a future widening
+        cannot quietly turn every night into a two-clause chain (the EN/DE
+        byte-identical locks in ``test_reason_localization`` depend on it).
+        """
+        pr = _make_pr(
+            control_method=ControlMethod.DEFAULT,
+            reason="no active condition — default position 40%",
+            position=40,
+            default_position=40,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                pipeline_result=pr,
+                check_adaptive_time=False,
+                clock_window_open=False,
+            )
+        )
+        assert result == "Outside time window → default position 40% (commands paused)"
 
     def test_sunset_offset_with_sunset_position(self, builder):
         """In window, is_sunset_active=True → reason from default handler mentions sunset."""
@@ -827,6 +1019,7 @@ class TestPositionExplanationChangeDetection:
         coord._weather_readings = None
         coord._pipeline_result = _make_pr()
         type(coord).check_adaptive_time = PropertyMock(return_value=True)
+        type(coord).clock_window_open = PropertyMock(return_value=True)
         type(coord).after_start_time = PropertyMock(return_value=True)
         type(coord).before_end_time = PropertyMock(return_value=True)
         coord._time_mgr = MagicMock()
@@ -844,6 +1037,8 @@ class TestPositionExplanationChangeDetection:
         coord.config_entry = MagicMock()
         coord.config_entry.options = {}
         coord._resolved_options = {}
+        coord._climate_provider = MagicMock()
+        coord._climate_provider.read_irradiance_unit.return_value = None
         coord.hass = MagicMock()
         coord.hass.config_entries.async_entries.return_value = []
         coord.hass.states.get.return_value = None

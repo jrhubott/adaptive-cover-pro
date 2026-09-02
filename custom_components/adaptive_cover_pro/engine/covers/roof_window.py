@@ -9,7 +9,7 @@ vertical wall.
 
 The engine subclasses :class:`AdaptiveVerticalCover` and reuses its edge-case
 handling, window-depth/sill effective-distance pipeline, ``cos(gamma)`` clamp,
-safety margin, and final clamp to the travel length. Only the projection and the
+and final clamp to the travel length. Only the projection and the
 illumination / ridge gates change.
 
 Geometry (vectors in a frame whose ``d̂_h`` is the down-slope *horizontal*
@@ -40,13 +40,16 @@ from math import atan, cos, degrees, radians, sin, tan
 import numpy as np
 
 from ...config_types import RoofWindowConfig
+from ...const import VERTICAL_GLASS_PITCH_DEG as _VERTICAL_GLASS_PITCH_DEG
 from ..sun_geometry import foreshortened_slope
 from .vertical import AdaptiveVerticalCover
 
-# --- Numeric guards (file-local) ---
+# --- Numeric guards ---
 # Pitch (from horizontal) at which the glass is vertical and the geometry
-# collapses to the vertical engine exactly.
-VERTICAL_GLASS_PITCH_DEG = 90.0
+# collapses to the vertical engine exactly. Promoted to ``const.py`` on its
+# third consumer (#1237 gave ``AdaptiveGeneralCover`` a ``plane_tilt_deg``);
+# re-exported here so this module's existing importers keep resolving it.
+VERTICAL_GLASS_PITCH_DEG = _VERTICAL_GLASS_PITCH_DEG
 # Minimum |slope denominator| (s·n scaled by cos elev·cos Δazi) before the
 # projection divides. The denominator is the cosine of the angle of incidence
 # normalised by the FOV foreshortening; it is strictly positive across the
@@ -149,6 +152,11 @@ class AdaptiveRoofWindowCover(AdaptiveVerticalCover):
     def roof_height_above(self) -> float:
         """Along-slope roof above the window in metres (0 disables ridge gate)."""
         return self.roof_config.roof_height_above
+
+    @property
+    def plane_tilt_deg(self) -> float:
+        """Pitched glass: the working plane IS the roof plane (#1237)."""
+        return self.roof_pitch
 
     # ------------------------------------------------------------------
     # Sun-on-glass geometry
@@ -265,6 +273,25 @@ class AdaptiveRoofWindowCover(AdaptiveVerticalCover):
         Returns ``(base_height, cos_gamma, cos_gamma_clamped, path_length)`` so
         the inherited ``calculate_position`` trace stays populated. At β=90° this
         returns the vertical drop unchanged (bit-for-bit regression anchor).
+
+        ``sill_height`` semantics on a pitched plane (discussion #1283): this
+        class does not override sill handling — the inherited
+        ``AdaptiveVerticalCover.calculate_position`` computes ``sill_offset =
+        _elevation_offset(sill_height, sol_elev, gamma)`` and subtracts it from
+        ``effective_distance`` *before* that value reaches this method. So
+        ``sill_height`` is currently interpreted as a vertical height above the
+        floor in the same horizontal frame the vertical engine uses (not a
+        distance measured along the pitched glass), and it is applied through
+        the same perpendicular ``_elevation_offset`` fix as the vertical case;
+        only the already sill-adjusted ``effective_distance`` gets re-projected
+        onto the slope here. #1283's fix to ``_elevation_offset`` (path length
+        → perpendicular offset) therefore moved this pitched-plane path in the
+        same opening direction it moved the vertical case — strictly closer to
+        correct, at every β < 90°, not just at the β=90° anchor. β=90° is
+        pinned bit-for-bit against the vertical engine (including with
+        ``sill_height`` > 0) by
+        ``test_pitch_90_matches_vertical_position`` in
+        ``tests/test_cover_types/test_roof_window.py``.
 
         For β<90° the down-slope shadow is ``effective_distance · (s·t)/(s·n)``.
         Factoring numerator and denominator by ``cos(elev)·cos Δazi`` expresses

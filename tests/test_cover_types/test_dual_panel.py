@@ -262,6 +262,62 @@ def _resolve(
     return policy.post_pipeline_resolve(result, cover=_sunset_cover(sunset_valid), **kw)
 
 
+def test_front_entity_is_cached_before_the_pipeline_runs() -> None:
+    """``sync_runtime_options`` primes the front designation, like day/night (#1179).
+
+    The registry asks ``entities_move_independently`` — and, when coupled,
+    ``hold_reference_position`` — BEFORE ``post_pipeline_resolve`` has run, so a
+    front designation that only landed at the post-pipeline seam would make the
+    very first cycle of every restart answer as though no front were configured.
+    The coordinator drives this hook from ``_update_options``, ahead of the
+    pipeline.
+    """
+    policy = DualPanelPolicy()
+    assert policy._front_entity is None
+
+    policy.sync_runtime_options(_opts())
+    assert policy._front_entity == _FRONT
+    # The back's wire-space cache is primed by the same seam, so a pre-pipeline
+    # caller never resolves the back against a stale inverse flag (#996/#1035).
+    assert policy._back_inverse is False
+
+    policy.sync_runtime_options(_opts(inverse=True))
+    assert policy._back_inverse is True
+
+
+class TestHoldReferencePosition:
+    """The front panel's read is the window's coverage, or there is none (#1179)."""
+
+    def test_front_read_is_the_reference(self) -> None:
+        policy = DualPanelPolicy()
+        policy.sync_runtime_options(_opts())
+        assert (
+            policy.hold_reference_position({_FRONT: 40, _BACK: 100}, inverted=False)
+            == 40
+        )
+
+    def test_front_read_is_un_flipped_on_an_inverse_install(self) -> None:
+        policy = DualPanelPolicy()
+        policy.sync_runtime_options(_opts())
+        assert (
+            policy.hold_reference_position({_FRONT: 40, _BACK: 100}, inverted=True)
+            == 60
+        )
+
+    def test_no_front_designated_has_no_reference(self) -> None:
+        policy = DualPanelPolicy()
+        policy.sync_runtime_options(_opts(front=None))
+        assert policy.hold_reference_position({_BACK: 100}, inverted=False) is None
+
+    def test_an_unreadable_front_has_no_reference(self) -> None:
+        policy = DualPanelPolicy()
+        policy.sync_runtime_options(_opts())
+        assert (
+            policy.hold_reference_position({_FRONT: None, _BACK: 100}, inverted=False)
+            is None
+        )
+
+
 class TestResolveFrontPassThrough:
     """The front sheer panel always dispatches its adaptive position verbatim."""
 

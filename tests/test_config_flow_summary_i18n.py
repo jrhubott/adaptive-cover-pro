@@ -54,11 +54,17 @@ SUMMARY_I18N_DIR = (
 def test_labels_override_text_appears_and_template_fills() -> None:
     """A non-default labels dict overrides text AND a templated line still
     fills its format fields.
+
+    The ``rules.custom`` template's slot identifier is filled via a
+    ``{label}`` field (issue #1190) rather than a bare ``{slot}`` — the
+    resolved label REPLACES the slot number outright, and with no
+    ``custom_position_name_5`` configured it resolves to the default
+    ``custom.slot_label_default`` fragment ("Custom #5").
     """
     overrides = {
         "headers.your_cover": "MEINE BESCHATTUNG",
         "rules.custom": (
-            "CUSTOM #{slot} if {trigger} on -> {target}{cp_min}{tilt_note}{safety}"
+            "CUSTOM {label} if {trigger} on -> {target}{cp_min}{tilt_note}{safety}"
         ),
         "custom.trigger_sensors": "any of {n} sensors",
     }
@@ -73,7 +79,7 @@ def test_labels_override_text_appears_and_template_fills() -> None:
     # Overridden header text appears.
     assert "MEINE BESCHATTUNG" in summary
     # Templated custom-position line filled its fields from config.
-    assert "CUSTOM #5 if any of 2 sensors on -> 80%" in summary
+    assert "CUSTOM Custom #5 if any of 2 sensors on -> 80%" in summary
 
 
 # ---------------------------------------------------------------------------

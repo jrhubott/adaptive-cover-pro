@@ -151,6 +151,7 @@ class DiagnosticsRecorder:
         pipeline_bypass_auto_control: bool | None = None,
         decision_trace_at_call: list | None = None,
         gates_evaluated: dict | None = None,
+        queue_fields: dict | None = None,
     ) -> None:
         """Update last_cover_action and push a ``cover_command_sent`` event.
 
@@ -158,6 +159,10 @@ class DiagnosticsRecorder:
         ``PerEntityState.target`` for this entity — used as ``position`` in
         the snapshot when the cover lacks set_position (open/close routing
         records 0 or 100, not the requested state).
+
+        ``queue_fields`` carries the command-queue outcome for this dispatch
+        (issue #1189) and is merged in ONLY for a queued cover, so an unqueued
+        cover's record keeps exactly the shape it had before the queue existed.
         """
         ts = dt.datetime.now(dt.UTC).isoformat()
         position = state if supports_position else recorded_target
@@ -184,20 +189,23 @@ class DiagnosticsRecorder:
             "decision_trace_at_call": decision_trace_at_call,
             "gates_evaluated": gates_evaluated,
         }
+        if queue_fields:
+            self.last_cover_action.update(queue_fields)
         if self._event_buffer is not None:
-            self._event_buffer.record(
-                {
-                    "ts": ts,
-                    "event": "cover_command_sent",
-                    "entity_id": entity,
-                    "service": service,
-                    "position": position,
-                    "calculated_position": state,
-                    "inverse_state_applied": inverse_state,
-                    "supports_position": supports_position,
-                    "trigger": trigger,
-                    "target_source": target_source,
-                    "force": force,
-                    "is_safety": is_safety,
-                }
-            )
+            event = {
+                "ts": ts,
+                "event": "cover_command_sent",
+                "entity_id": entity,
+                "service": service,
+                "position": position,
+                "calculated_position": state,
+                "inverse_state_applied": inverse_state,
+                "supports_position": supports_position,
+                "trigger": trigger,
+                "target_source": target_source,
+                "force": force,
+                "is_safety": is_safety,
+            }
+            if queue_fields:
+                event.update(queue_fields)
+            self._event_buffer.record(event)

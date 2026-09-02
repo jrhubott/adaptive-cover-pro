@@ -21,8 +21,12 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     DecisionStep,
     PipelineResult,
 )
-from custom_components.adaptive_cover_pro.sensor import _cover_position_value
+from custom_components.adaptive_cover_pro.sensor import (
+    _cover_position_attrs,
+    _cover_position_value,
+)
 
+from tests._helpers.cover_position_sensor import make_cover_position_sensor
 from tests.test_pipeline.conftest import make_snapshot
 
 # ---------------------------------------------------------------------------
@@ -118,10 +122,26 @@ def test_handler_returns_none_when_override_inactive() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_sensor_stub(states: dict) -> MagicMock:
-    """Build a minimal mock of _ACPSensor with the given states dict."""
+def _make_sensor_stub(
+    states: dict,
+    *,
+    position_constraint_applied: bool | None = False,
+) -> MagicMock:
+    """Build a minimal mock of _ACPSensor with the given states dict.
+
+    ``position_constraint_applied`` must be set explicitly: on a bare
+    ``MagicMock`` the attribute is a truthy Mock, which would send every case
+    down the clamped branch and pass for the wrong reason. ``None`` stands for
+    "no pipeline result yet" (the pre-first-cycle read).
+    """
     s = MagicMock()
     s.data.states = states
+    if position_constraint_applied is None:
+        s.coordinator._pipeline_result = None
+    else:
+        s.coordinator._pipeline_result.position_constraint_applied = (
+            position_constraint_applied
+        )
     return s
 
 
@@ -147,6 +167,121 @@ def test_sensor_cover_position_value_handles_held_position_zero() -> None:
     """held_position=0 must be returned (0 is not None — explicit is-not-None check)."""
     s = _make_sensor_stub({"state": 75, "held_position": 0})
     assert _cover_position_value(s) == 0
+
+
+# ---------------------------------------------------------------------------
+# 9a. Sensor helper — a bound that clamped the hold (issue #1175)
+# ---------------------------------------------------------------------------
+
+
+def test_sensor_clamped_hold_reports_the_dispatched_target() -> None:
+    """A bound that clamped the hold sent a command; report where it sent it.
+
+    The issue's repro: a min-mode floor at 80 outranking manual override
+    clamps a cover held at 50, and the registry clears ``skip_command`` in the
+    same breath. 80 is dispatched, so 80 is the target position — not the
+    pre-clamp read the hold no longer holds (#1175).
+    """
+    s = _make_sensor_stub(
+        {"state": 80, "held_position": 50}, position_constraint_applied=True
+    )
+    assert _cover_position_value(s) == 80
+
+
+def test_sensor_unclamped_hold_still_reports_the_held_position() -> None:
+    """No bound clamped, so the hold is genuinely holding — #534/#809 guard."""
+    s = _make_sensor_stub(
+        {"state": 20, "held_position": 50}, position_constraint_applied=False
+    )
+    assert _cover_position_value(s) == 50
+
+
+def test_sensor_clamped_hold_to_zero_reports_zero() -> None:
+    """A ceiling clamping a hold to 0 reports 0, not the held read."""
+    s = _make_sensor_stub(
+        {"state": 0, "held_position": 50}, position_constraint_applied=True
+    )
+    assert _cover_position_value(s) == 0
+
+
+def test_sensor_cover_position_value_without_pipeline_result_keeps_held() -> None:
+    """Before the first cycle there is no result to consult; keep the held read."""
+    s = _make_sensor_stub(
+        {"state": 20, "held_position": 50}, position_constraint_applied=None
+    )
+    assert _cover_position_value(s) == 50
+
+
+def _make_attrs_sensor(
+    states: dict,
+    *,
+    position_constraint_applied: bool,
+    positions: dict[str, int | None] | None = None,
+):
+    """Shared stub, wired for the attribute surfaces that read the target.
+
+    ``lift_travel_metres`` gets a real 2 m so ``_compute_distance_attrs``
+    actually runs instead of short-circuiting to None.
+    """
+    return make_cover_position_sensor(
+        states=states,
+        positions=positions,
+        pipeline_result=SimpleNamespace(
+            position_constraint_applied=position_constraint_applied,
+            reason_payload=None,
+            reason="x",
+        ),
+        lift_travel_metres=2.0,
+    )
+
+
+def test_distance_attrs_follow_the_dispatched_target_when_clamped() -> None:
+    """``target_distance`` is derived from the same value the sensor reports.
+
+    Both Target Position surfaces read one helper, so a clamped hold cannot
+    report 80 % while its distance still describes the pre-clamp 50 % (#1175).
+    """
+    s = _make_attrs_sensor(
+        {"control": "manual", "state": 80, "held_position": 50},
+        position_constraint_applied=True,
+    )
+    attrs = _cover_position_attrs(s)
+    # 80 % of a 2 m window, not the 1.0 m the held 50 % would have given.
+    assert attrs["target_distance"] == 1.6
+
+
+def test_distance_attrs_follow_the_held_position_when_holding() -> None:
+    """An unclamped hold keeps deriving the distance from the held read."""
+    s = _make_attrs_sensor(
+        {"control": "manual", "state": 80, "held_position": 50},
+        position_constraint_applied=False,
+    )
+    attrs = _cover_position_attrs(s)
+    assert attrs["target_distance"] == 1.0
+
+
+def test_all_at_target_measures_against_the_held_position_when_holding() -> None:
+    """Covers parked where the hold holds them ARE at target.
+
+    Measuring against the raw ``state`` compares them to the solar value the
+    hold merely shadows, so a perfectly-held group read as "not at target".
+    """
+    s = _make_attrs_sensor(
+        {"control": "manual", "state": 20, "held_position": 50},
+        position_constraint_applied=False,
+        positions={"cover.a": 50, "cover.b": 51},
+    )
+    assert _cover_position_attrs(s)["all_at_target"] is True
+
+
+def test_all_at_target_measures_against_the_dispatched_target_when_clamped() -> None:
+    """Once a bound clamps, the covers are judged against where it sent them."""
+    s = _make_attrs_sensor(
+        {"control": "manual", "state": 80, "held_position": 50},
+        position_constraint_applied=True,
+        positions={"cover.a": 50, "cover.b": 51},
+    )
+    assert _cover_position_attrs(s)["all_at_target"] is False
 
 
 # ---------------------------------------------------------------------------

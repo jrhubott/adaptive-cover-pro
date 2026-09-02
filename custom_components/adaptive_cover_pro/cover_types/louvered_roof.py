@@ -109,6 +109,14 @@ class LouveredRoofPolicy(CoverTypePolicy, register=True):
         """Louvered-roof geometry page."""
         return "Configuration-Louvered-Roof"
 
+    def shaded_glass_fraction(self, position: float) -> float | None:  # noqa: ARG002
+        """No area-coverage axis — the lamellae rotate, they don't uncover (#1236).
+
+        Same reasoning as ``TiltPolicy``: the single axis is a slat angle, so
+        there is no covered share of the aperture to blend against.
+        """
+        return None
+
     def display_label(self, labels: dict[str, str] | None = None) -> str:
         """User-facing label for louvered roofs."""
         L = {**COVER_TYPE_LABELS_EN, **(labels or {})}

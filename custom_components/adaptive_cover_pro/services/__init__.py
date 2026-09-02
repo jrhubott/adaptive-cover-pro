@@ -374,7 +374,7 @@ def _disable(
     coord._cancel_motion_timeout()  # noqa: SLF001
     coord._cancel_weather_timeout()  # noqa: SLF001
     coord._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
-    coord._cmd_svc.clear_safety_targets()  # noqa: SLF001
+    coord._cmd_svc.revoke_safety_verdicts()  # noqa: SLF001
     _set_enabled(coord, False, service, outcome)
 
 

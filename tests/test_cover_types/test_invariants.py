@@ -417,11 +417,12 @@ def test_controls_cover_default_true() -> None:
     """``controls_cover`` defaults True; only virtual entry types opt out.
 
     The base default is ``True`` so adding the discriminator didn't require
-    touching every policy. ``cover_building_profile`` is the one shipped
-    virtual entry type that registers no platforms and has no axes, so it is
-    the sole policy allowed to report ``False``. Pinning both directions
-    keeps the cover-contract suites and cover-only menus exercising every
-    real cover type and guards against a real cover accidentally opting out.
+    touching every policy. ``cover_building_profile`` and
+    ``cover_command_queue`` are the shipped virtual entry types that register no
+    platforms and have no axes, so they are the only policies allowed to report
+    ``False``. Pinning both directions keeps the cover-contract suites and
+    cover-only menus exercising every real cover type and guards against a real
+    cover accidentally opting out.
     """
     from custom_components.adaptive_cover_pro.cover_types.base import CoverTypePolicy
 
@@ -429,7 +430,7 @@ def test_controls_cover_default_true() -> None:
 
     from custom_components.adaptive_cover_pro.cover_types import POLICY_REGISTRY
 
-    expected_non_cover = {"cover_building_profile"}
+    expected_non_cover = {"cover_building_profile", "cover_command_queue"}
     for cover_type, policy_cls in POLICY_REGISTRY.items():
         if cover_type in expected_non_cover:
             assert (
@@ -514,14 +515,68 @@ def test_a_policy_that_overrides_a_dispatch_hook_opts_out_or_says_why() -> None:
 
 
 @pytest.mark.unit
-def test_the_coupled_cover_types_are_judged_as_one_unit() -> None:
-    """The shipped answers, pinned: day/night and dual panel are coupled.
+def test_hold_reference_position_defaults_to_none(policy: CoverTypePolicy) -> None:
+    """The reduction hook's base answer is "no single position" (#1179).
 
-    Both derive one entity's target from another's (or fold a second axis into
-    the position wire), so a floor that moves one of their entities moves the
-    whole geometry. Naming them explicitly keeps the derived predicate honest —
-    a refactor that made either look "untouched" would flip this.
+    ``_judge_position_axis`` consults it only for a coupled cover type, and
+    ``None`` there keeps that instance on the legacy summary mean. A policy that
+    has been handed no runtime options knows nothing about its own entity roles,
+    so it must give that answer rather than invent an anchor — which is also the
+    permanent answer for every policy whose entities are just covers.
     """
-    assert get_policy("cover_day_night_shade").entities_move_independently() is False
-    assert get_policy("cover_dual_panel").entities_move_independently() is False
+    assert policy.hold_reference_position({}, inverted=False) is None
+    assert policy.hold_reference_position({"cover.a": 40}, inverted=True) is None
+
+
+@pytest.mark.unit
+def test_day_night_coupling_is_per_control_model() -> None:
+    """Coupling is a property of the CONTROL MODEL, not of the policy class (#1179).
+
+    Model B folds coverage and fabric into one wire and Model C derives its
+    middle rail from the bottom rail, so a bound that moves either instance moves
+    the whole geometry. Model A does none of that: ``resolve_entity_target``
+    returns its argument before touching anything, ``dispatch_order_key`` returns
+    its constant, and ``post_pipeline_resolve`` only fills the blend. Its shades
+    are ordinary covers, and the class-level answer was pinning the derived
+    gate's false negative rather than a real coupling.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DAY_NIGHT_CONTROL_MODEL,
+        DAY_NIGHT_MODEL_DUAL_ENTITY,
+        DAY_NIGHT_MODEL_POSITION_TILT,
+        DAY_NIGHT_MODEL_SPLIT_RANGE,
+    )
+
+    expected = {
+        DAY_NIGHT_MODEL_POSITION_TILT: True,
+        DAY_NIGHT_MODEL_SPLIT_RANGE: False,
+        DAY_NIGHT_MODEL_DUAL_ENTITY: False,
+    }
+    for model, independent in expected.items():
+        policy = get_policy("cover_day_night_shade")
+        policy.sync_runtime_options({CONF_DAY_NIGHT_CONTROL_MODEL: model})
+        assert policy.entities_move_independently() is independent, model
+
+
+@pytest.mark.unit
+def test_dual_panel_coupling_follows_the_front_designation() -> None:
+    """The dual panel is coupled exactly while it has a front panel (#1179).
+
+    With a front designated, every other bound entity is the blackout back and
+    its target is an absolute substitution the pipeline position never reaches —
+    one window, one coverage. With no front the policy degrades to a plain
+    vertical blind, every hook is identity, and its entities are as independent
+    as any blind's, so it must say so rather than inherit the derived answer for
+    a remap it is not performing.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_DUAL_PANEL_FRONT_ENTITY
+
+    with_front = get_policy("cover_dual_panel")
+    with_front.sync_runtime_options({CONF_DUAL_PANEL_FRONT_ENTITY: "cover.sheer"})
+    assert with_front.entities_move_independently() is False
+
+    no_front = get_policy("cover_dual_panel")
+    no_front.sync_runtime_options({})
+    assert no_front.entities_move_independently() is True
+
     assert get_policy("cover_blind").entities_move_independently() is True

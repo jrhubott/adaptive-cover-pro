@@ -53,6 +53,7 @@ def _make_coordinator(
     in_startup_grace_period: bool = False,
     state_change_data_entity: str = "cover.test",
     state_change_data_position: int = 50,
+    winner_name: str | None = "solar",
 ):
     """Build a minimal mock coordinator for state-change handler tests."""
     coordinator = MagicMock()
@@ -63,12 +64,20 @@ def _make_coordinator(
     coordinator.logger = MagicMock()
     coordinator.state_change = True
     coordinator.cover_state_change = True
+    coordinator.pipeline_winner_name = winner_name
 
     if pipeline_result is None:
         pipeline_result = _make_pipeline_result()
     coordinator._pipeline_result = pipeline_result
     coordinator._pipeline_bypasses_auto_control = pipeline_result.bypass_auto_control
     coordinator._pipeline_is_safety_handler = pipeline_result.is_safety
+    # Derived from the same result the real coordinator reads (#943 item B), so
+    # the mock keeps the production ``is_safety OR constraint_admitted`` shape
+    # rather than leaving a truthy MagicMock attribute that would open every
+    # outside-the-clock-window guard in this file.
+    coordinator._pipeline_acts_outside_clock_window = (
+        pipeline_result.acts_outside_clock_window
+    )
 
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
     coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
@@ -1034,8 +1043,41 @@ class TestStateChangeWithSafetyHandlerBypass:
         assert reason == ControlMethod.WEATHER.value
 
     @pytest.mark.asyncio
-    async def test_non_safety_handler_uses_solar_as_reason(self):
-        """Non-safety handlers (solar, default, manual) use 'solar' as reason string."""
+    async def test_non_safety_handler_uses_pipeline_winner_name_as_reason(self):
+        """Non-safety winners use the real pipeline winner name as reason (#1263).
+
+        Climate's LOW_LIGHT branch deliberately reports ``control_method=DEFAULT``
+        (issue #33), so the dispatch reason must come from ``pipeline_winner_name``
+        (which reads the decision trace's matched step) rather than from
+        ``control_method`` — otherwise the climate-driven move still logs and
+        reports as something other than "climate".
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=50,
+            control_method=ControlMethod.DEFAULT,
+            bypass_auto_control=False,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.test"],
+            pipeline_result=result,
+            winner_name="climate",
+        )
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator, state=50, options={}
+        )
+
+        call = coordinator._cmd_svc.apply_position.call_args
+        reason = call.args[2]
+        assert reason == "climate"
+
+    @pytest.mark.asyncio
+    async def test_non_safety_solar_winner_still_uses_solar_as_reason(self):
+        """Regression guard: a genuine solar win still reports 'solar' as reason."""
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
@@ -1048,6 +1090,7 @@ class TestStateChangeWithSafetyHandlerBypass:
         coordinator = _make_coordinator(
             entities=["cover.test"],
             pipeline_result=result,
+            winner_name="solar",
         )
 
         await AdaptiveDataUpdateCoordinator.async_handle_state_change(

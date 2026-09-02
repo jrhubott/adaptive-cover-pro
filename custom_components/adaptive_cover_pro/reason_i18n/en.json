@@ -75,7 +75,9 @@
     "hold_position_carried": "tilt clamp commands the cover — position held at {position}% (not the would-be {shadow_pos}%)",
     "tilt_bound_active": "tilt bound {low_label}–{high_label} active by {label}; awaiting the resolved tilt",
     "tilt_bound_inactive": "tilt bound {low_label}–{high_label} inactive by {label}; resolved tilt {tilt}% already within",
-    "tilt_clamped": "tilt clamped from {from_tilt}% to {to_tilt}% by {label}"
+    "tilt_clamped": "tilt clamped from {from_tilt}% to {to_tilt}% by {label}",
+    "constraint_outside_window": "bound {low_label}–{high_label} ({axis}) from {label} not applied — outside the time window, where only min/max constraints set to stay active apply",
+    "tilt_bound_enforced": "tilt bound {low_label}–{high_label} enforced at {tilt}% by {label} (nothing resolved a tilt this cycle)"
   },
   "builder": {
     "unknown": "Unknown",
@@ -112,6 +114,7 @@
     "no_glare_zones": "no active glare zones or sun outside acceptance angle",
     "cloud_skipped": "cloud suppression skipped (sun outside acceptance angle)",
     "cloud_inactive": "cloud suppression inactive (direct sun present or feature disabled)",
+    "cloud_deferred_extreme_heat": "cloud suppression deferred — extreme-heat hold takes precedence",
     "weather_not_active": "weather override not active",
     "custom_not_active": "custom position #{slot} not active",
     "always_matches": "always matches",

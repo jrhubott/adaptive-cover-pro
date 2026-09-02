@@ -83,6 +83,7 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.slat.mode": "mode: {v}",
     "geometry.slat.angle_0": "0% angle {v}°",
     "geometry.slat.angle_100": "100% angle {v}°",
+    "geometry.slat.horizontal_percent": "horizontal at {v}%",
     # Oscillating awning.
     "geometry.oscillating.arm": "{v}m arm",
     "geometry.oscillating.sweep": "sweep {lo}°–{hi}°",
@@ -108,6 +109,7 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     ),
     "geometry.venetian.mode_position_and_tilt": "position and tilt",
     "geometry.venetian.mode_tilt_only": "tilt only",
+    "geometry.venetian.tilt_only_scope_solar": "sun-tracking wins only",
     "geometry.venetian.inverse_tilt": "Inverse tilt",
     "geometry.venetian.max_tilt": "max tilt {max_tilt}%",
     "geometry.venetian.min_tilt": "min tilt {min_tilt}%",

@@ -28,10 +28,10 @@
     "template_value": "[template]"
   },
   "rules": {
-    "weather": "🌧️ Weather safety: if {wx_condition} → covers retract to {weather_pos}%{weather_min}{delay}{bypass}",
+    "weather": "🌧️ Weather safety: if {wx_condition} → covers retract to {weather_pos}%{weather_min}{weather_tilt}{delay}{bypass}",
     "manual": "✋ Manual override: pauses automatic control when you move the cover{detail}",
-    "custom_tilt_only": "🎯 Custom #{slot}: if {trigger} is on → tilt only (slat fixed at {slat}%; position driven by sun tracking)",
-    "custom": "🎯 Custom #{slot}: if {trigger} is on → {target}{cp_min}{tilt_note} — bypasses delta gates and auto-control{safety}",
+    "custom_tilt_only": "🎯 {label}: if {trigger} is on → tilt only (slat fixed at {slat}%; position driven by sun tracking)",
+    "custom": "🎯 {label}: if {trigger} is on → {target}{cp_min}{tilt_note} — bypasses delta gates and auto-control{safety}",
     "motion": "🚶 Occupancy: if no occupancy for {motion_timeout}s ({sources}) → {action}",
     "cloud": "☁️ Cloud suppression: skips sun tracking{cloud} → {fallback}",
     "climate": "🌡️ Climate mode: adjusts strategy for heating/cooling{detail}",
@@ -75,21 +75,33 @@
     "tilt_bound_min": ", tilt at least {min}%",
     "tilt_bound_max": ", tilt at most {max}%",
     "tilt_bound_range": ", tilt {min}–{max}%",
-    "no_position_claim": "the calculated position"
+    "no_position_claim": "the calculated position",
+    "outside_window": "🕗 {label}: min/max constraints stay active outside the time window (the slot still never drives a position out there).",
+    "scope_to_window": "🕗 {label}: only applies within the time window — once the window closes the slot stands down and the end-of-window position applies.",
+    "slot_label_default": "Custom #{slot}"
   },
   "warnings": {
-    "custom_position_bound_conflict": "⚠️ Custom #{slot}: the maximum ({max}%) is below the minimum ({min}%) — the minimum wins and the maximum is ignored.",
-    "custom_tilt_only_conflict": "⚠️ Custom #{slot}: tilt only is on — Use as minimum / Use My position are ignored for this slot.",
+    "custom_position_bound_conflict": "⚠️ {label}: the maximum ({max}%) is below the minimum ({min}%) — the minimum wins and the maximum is ignored.",
+    "custom_tilt_only_conflict": "⚠️ {label}: tilt only is on — Use as minimum / Use My position are ignored for this slot.",
+    "custom_tilt_only_bounds_discarded": "⚠️ {label}: slat fixed at {slat}% — the configured tilt bounds are ignored for this slot.",
+    "custom_tilt_only_no_effect": "⚠️ {label}: tilt only is on with no slat angle and no tilt bounds configured — this slot has no effect.",
+    "custom_outside_window_no_bounds": "⚠️ {label}: keep constraints active outside the time window is on, but this slot configures no minimum or maximum — the setting has no effect. Only min/max claims stay active out there; an exact position never does.",
+    "custom_outside_window_redundant": "⚠️ {label}: keep constraints active outside the time window is on, but priority 100 already acts outside the window (and past automatic control and the delta gates) — the setting changes nothing here.",
+    "custom_scope_to_window_no_fixed_claim": "⚠️ {label}: only apply within the time window is on, but this slot names no exact position and does not use My position — the setting has no effect. It scopes the exact-position claim only; whether a min/max bound survives the window is decided by keep constraints active outside time window instead.",
+    "custom_scope_to_window_safety_ignored": "⚠️ {label}: only apply within the time window is on, but priority 100 is safety — acting outside the window is what that priority means, so the setting is ignored here.",
+    "custom_scope_to_window_needs_return": "⚠️ {label}: \"Move covers to current default position when end time is reached\" is OFF — the slot stands down at end time but nothing repositions the cover, so it stays where the slot left it. Turn that toggle on.",
     "motion_hold_no_sensors": "⚠️ hold_position mode is set but no occupancy sources are configured — the setting has no effect until an occupancy source is added",
     "cloudy_pos_ignored": "⚠️ Cloudy position ({pos}%) configured but cloud suppression is disabled — value will be ignored.",
     "sun_track_min_below_floor": "⚠️ Sun-tracking min {sun_min}% < min position {min_pos}% — always-on floor dominates; sun-tracking floor will be raised to {min_pos}%.",
     "mode2_min_position": "⚠️ Tilt MODE2 + min position {min_pos}% — in MODE2 the open (horizontal) slat angle IS 50%, so any min position ≥ 50 collapses every climate/glare-control decision to the floor and the cover stops blocking heat.",
     "somfy_my_unset": "⚠️ Somfy My preset is enabled for one or more targets but My Preset Value is not set — falls back to configured %.",
     "proxy_no_min": "⚠️ Proxy cover is enabled but no custom-position slot has Use as minimum on — the managed cover will not clamp.",
-    "custom_and_no_sensors": "⚠️ Custom #{slot}: combine mode AND is set but no trigger sensors are configured — the template alone activates the slot.",
+    "custom_and_no_sensors": "⚠️ {label}: combine mode AND is set but no trigger sensors are configured — the template alone activates the slot.",
     "group_empty": "⚠️ This group has no members — it will not command anything.",
     "forecast_source_no_weather_entity": "⚠️ Outdoor-temperature source is forecast-based but no weather entity is configured — the forecast will silently fall back to the live reading. Configure a weather entity in Weather, Light & Cloud.",
-    "travel_time_unmeasurable": "⚠️ {entities} report an assumed state, so their travel time cannot be measured and none has been entered — dashboards will not show them moving. Enter a time under Calibration → Travel Time."
+    "travel_time_unmeasurable": "⚠️ {entities} report an assumed state, so their travel time cannot be measured and none has been entered — dashboards will not show them moving. Enter a time under Calibration → Travel Time.",
+    "weather_window_scoped": "⚠️ Weather safety only acts inside the time window — outside it the cover follows the end-of-window / sunset position instead, and weather will not protect it overnight.",
+    "weather_tilt_min_mode": "⚠️ A weather safety tilt is set but minimum position mode is on — in minimum mode weather only raises a position floor for another rule to satisfy and never sets the slats, so the tilt is ignored."
   },
   "motion": {
     "template_source": "occupancy template",
@@ -105,6 +117,7 @@
     "coverage": "cloud > {thresh}%",
     "coverage_no_thresh": "cloud ({entity})",
     "weather_in": "weather not in {{{states}}}",
+    "weather_fallback": " (falls back to {weather})",
     "when": " when {parts}",
     "fallback_cloudy": "cloudy position {pos}%",
     "fallback_default": "default ({default_pos}%)",
@@ -219,6 +232,9 @@
     "travel_time": "Travel time: {done}/{total} covers",
     "travel_time_manual": "Travel time: {done}/{total} covers ({manual} entered by hand)"
   },
+  "movement": {
+    "queue": "🚦 Commands serialized on queue \"{queue}\" ({gap}s gap)"
+  },
   "my": {
     "entities_enabled": "🎛️ My-preset entities: enabled",
     "entities_disabled": "🎛️ My-preset entities: disabled",
@@ -263,7 +279,8 @@
       "spacing": "spacing {v}cm",
       "mode": "mode: {v}",
       "angle_0": "0% angle {v}°",
-      "angle_100": "100% angle {v}°"
+      "angle_100": "100% angle {v}°",
+      "horizontal_percent": "horizontal at {v}%"
     },
     "oscillating": {
       "arm": "{v}m arm",
@@ -290,6 +307,7 @@
       "skip_tilt_suppress": "suppress tilt at/above {skip_above}% (no neutral send)",
       "mode_position_and_tilt": "position and tilt",
       "mode_tilt_only": "tilt only",
+      "tilt_only_scope_solar": "sun-tracking wins only",
       "inverse_tilt": "Inverse tilt",
       "max_tilt": "max tilt {max_tilt}%",
       "min_tilt": "min tilt {min_tilt}%",

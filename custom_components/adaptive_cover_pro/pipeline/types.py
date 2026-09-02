@@ -14,6 +14,7 @@ from ..const import (
     GroupIntentKind,
     GroupScene,
 )
+from ..position_utils import InterpolationCurve
 from ..reason_i18n import Reason, render_en
 
 if TYPE_CHECKING:
@@ -124,6 +125,37 @@ def derive_axis_mode(
     return AxisConstraintMode.NONE
 
 
+def is_bounded_mode(mode: AxisConstraintMode) -> bool:
+    """Whether an axis mode names a BOUND (a min, a max, or both).
+
+    The complement of "claims nothing" and "drives an exact value" — the one
+    distinction the whole #943 bound machinery turns on, so it is written once.
+    ``axis_constraints._bounded`` refuses to build a constraint for anything
+    else, ``_window_eligible`` admits nothing else outside the clock window, and
+    the config summary asks it through :attr:`CustomPositionSensorState.has_bounded_claim`
+    to tell a user whether the outside-window checkbox will do anything at all.
+    """
+    return mode not in (AxisConstraintMode.NONE, AxisConstraintMode.FIXED)
+
+
+def has_fixed_tilt(*, tilt_only: bool, tilt: int | None) -> bool:
+    """Whether a slot's ``tilt_only`` flag names an actual FIXED tilt claim.
+
+    ``tilt_only`` conflates two different claims: it *always* disclaims the
+    position axis (issue #514 — see :attr:`CustomPositionSensorState.position_mode`,
+    which keys on the bare flag and is unaffected by this predicate), but it
+    only outranks ``tilt_min``/``tilt_max`` bounds on the tilt axis when it
+    also names a slat angle. ``tilt_only=True`` with ``tilt=None`` is a
+    *vacuous* FIXED claim — before issue #1215 that vacuous claim still won
+    the precedence, silently discarding a configured ``tilt_min``/``tilt_max``
+    and leaving the slot completely inert. Callers that need the FIXED-vs-
+    bounds precedence (:attr:`CustomPositionSensorState.tilt_mode`, the
+    snapshot-builder tilt-bound wipe, and the config-summary rendering
+    branch) must test this predicate, not the bare ``tilt_only`` flag.
+    """
+    return tilt_only and tilt is not None
+
+
 @dataclass(frozen=True, slots=True)
 class CustomPositionSensorState:
     """Per-slot trigger reading carried in the pipeline snapshot.
@@ -198,11 +230,43 @@ class CustomPositionSensorState:
     # same pre-inversion canonical space as ``position`` / ``tilt``.
     #
     # ``position_max`` is normalized off on the ``use_my`` path (hardware-pinned)
-    # and by ``tilt_only``; ``tilt_min`` / ``tilt_max`` are normalized off by
-    # ``tilt_only`` (a FIXED tilt claim wins over bounds on the same axis).
+    # and by ``tilt_only``; ``tilt_min`` / ``tilt_max`` are normalized off only
+    # when the slot names an actual fixed slat angle (``has_fixed_tilt``) — a
+    # real FIXED tilt claim wins over bounds on the same axis. A bare
+    # ``tilt_only`` flag with no configured slat angle is a vacuous claim and
+    # leaves ``tilt_min`` / ``tilt_max`` intact (issue #1215).
     position_max: int | None = None
     tilt_min: int | None = None
     tilt_max: int | None = None
+
+    # Opt-in: keep this slot's BOUNDED claims binding once the user's start/end
+    # clock window has closed (issue #943 item B). Read straight off
+    # ``custom_position_outside_window_N``; absent = False = today's behaviour.
+    #
+    # Orthogonal to every normalization above. It grants no new claim — it only
+    # says an existing bound survives the clock — so it is deliberately NOT
+    # wiped by ``has_fixed_tilt`` / ``tilt_only`` / ``use_my``: those decide
+    # WHICH claims exist, this decides WHEN the surviving ones still bind.
+    # ``pipeline.axis_constraints._window_eligible`` is the single place that
+    # reads it, and it admits only non-FIXED kinds: a slot that DRIVES a
+    # position outside the window is the #215/#216/#223 defect class.
+    outside_window: bool = False
+
+    # Opt-in: stand this slot's FIXED claim down once the user's start/end clock
+    # window has closed (issue #1318). Read straight off
+    # ``custom_position_scope_to_window_N``; absent = False = today's behaviour,
+    # which is what #895 asked for and shipped (a sleep-mode slot must survive
+    # the end-of-window transition). The two users want opposite outcomes from
+    # one code path, so it is a per-slot choice rather than a new default.
+    #
+    # The exact INVERSE polarity of ``outside_window`` above, and disjoint from
+    # it in claim class: that key extends BOUNDED claims past the clock and
+    # never admits a FIXED one; this key withdraws a FIXED claim at the clock
+    # and never touches a bound. A slot may set both — they govern different
+    # claims — so neither normalizes the other away.
+    # ``handlers.custom_position.CustomPositionHandler._scoped_out_of_window``
+    # is the single place that reads it.
+    scope_to_window: bool = False
 
     # Whether this cycle's read was usable (issue #1005). True when at least one
     # bound sensor reported a non-invalid state (not unavailable/unknown/missing)
@@ -230,6 +294,10 @@ class CustomPositionSensorState:
 
         ``tilt_only`` wins the whole slot: it fixes the slat angle and lets the
         position pipeline drive the carriage, so it claims nothing here.
+        Deliberately keyed on the bare flag, unlike :attr:`tilt_mode` (issue
+        #1215) — a tilt-only slot disclaims the position axis whether or not
+        it also names a slat angle, so this must NOT route through
+        :func:`has_fixed_tilt`.
         """
         if self.tilt_only:
             return AxisConstraintMode.NONE
@@ -243,18 +311,56 @@ class CustomPositionSensorState:
     def tilt_mode(self) -> AxisConstraintMode:
         """This slot's derived claim on the tilt axis (issue #943).
 
-        ``tilt_only`` is an exact (``FIXED``) tilt claim and wins over the
-        bounds — mirroring the precedence it already has over ``min_mode`` /
-        ``use_my``. A tilt-only slot with no configured slat angle claims
-        nothing (pre-#943 behavior, preserved).
+        A real FIXED tilt claim (``tilt_only`` *with* a configured slat
+        angle) wins over the bounds — mirroring the precedence it already has
+        over ``min_mode`` / ``use_my``. A tilt-only slot with no configured
+        slat angle makes no FIXED claim (issue #1215): it falls through to
+        the same bound derivation as any other slot, so a constraint-only
+        "tilt_only + tilt_min" slot still emits its floor instead of going
+        silently inert.
         """
-        if self.tilt_only:
-            return (
-                AxisConstraintMode.FIXED
-                if self.tilt is not None
-                else AxisConstraintMode.NONE
-            )
+        if has_fixed_tilt(tilt_only=self.tilt_only, tilt=self.tilt):
+            return AxisConstraintMode.FIXED
         return derive_axis_mode(fixed=None, low=self.tilt_min, high=self.tilt_max)
+
+    @property
+    def has_bounded_claim(self) -> bool:
+        """Whether this slot contributes at least one min/max BOUND to either axis.
+
+        The question the outside-window opt-in turns on (#943 item B), asked of
+        the slot itself so the config-flow summary does not re-derive which
+        claims survive normalization from the raw wire format. That copy drifted
+        immediately: it did not know that ``use_my`` disclaims the position axis
+        outright, so a ``min_mode`` + ``use_my`` slot was told its constraints
+        stay active overnight when ``axis_constraints._gather_all`` emits
+        nothing for it.
+
+        Mirrors that gather exactly — position claims are skipped for a
+        ``use_my`` slot, and ``FIXED`` on either axis is not a bound — by
+        routing through the same :attr:`position_mode` / :attr:`tilt_mode`
+        derivations the snapshot builder's output is read through.
+        """
+        return (
+            not self.use_my and is_bounded_mode(self.position_mode)
+        ) or is_bounded_mode(self.tilt_mode)
+
+    @property
+    def has_fixed_claim(self) -> bool:
+        """Whether this slot DRIVES the position axis to a value of its own.
+
+        The mirror of :attr:`has_bounded_claim`, and the question three
+        separate seats ask: ``CustomPositionHandler.evaluate``'s deferral to
+        the axis-constraint composition pass, the #1318 window gate, and the
+        config-flow summary's warning that the gate has nothing to act on.
+        Asked of the slot itself for the same reason the bounded question is —
+        a hand-rolled copy of "is this FIXED?" in the summary is exactly the
+        drift ``has_bounded_claim`` was extracted to stop.
+
+        ``use_my`` is a FIXED claim even though :attr:`position_mode` never
+        says so: the My path is hardware-pinned, ignores constraint semantics
+        entirely, and always claims the axis.
+        """
+        return self.use_my or self.position_mode is AxisConstraintMode.FIXED
 
     @property
     def slot_name(self) -> str | None:
@@ -351,6 +457,37 @@ class PipelineSnapshot:
     # the handler returns max(configured, raw_calculated) instead of always returning configured.
     weather_override_min_mode: bool = False
 
+    # Slat angle to command while the weather override holds the full-override
+    # seat (issue #1297). None = name no tilt, so a dual-axis policy falls back
+    # to its engine path and the slats are left alone — the pre-#1297
+    # behaviour, and what makes the option shippable with no migration.
+    #
+    # Deliberately NOT read by the min-mode floor: in min mode the handler
+    # defers and a lower-priority handler wins the seat, and a handler the
+    # pipeline explicitly outprioritized must never drive the tilt axis
+    # (#1153, registry.py:891-897). The config summary warns instead.
+    weather_override_tilt: int | None = None
+
+    # When False, the weather override is scoped to the user's operational
+    # window and stops acting once it closes (issue #1308). Weather is the one
+    # override with no window gate, and its ``is_safety`` flag is the
+    # outside-window dispatch licence — so a user running it as a comfort rule
+    # (rain → raise an interior blind) had no way to stop it firing at 03:00
+    # short of disabling the feature outright.
+    #
+    # Read by BOTH weather seats, which is why it lives here rather than in
+    # either of them: ``WeatherOverrideHandler.evaluate`` (the exact-position
+    # retraction) and ``axis_constraints._gather_all`` (the min-mode floor's
+    # ``outside_window`` claim). Gating only the first would leave min-mode
+    # users with a checkbox that does nothing.
+    #
+    # Both seats pair it with ``clock_window_open``, NEVER ``in_time_window``:
+    # the latter folds in the daytime gate, which reads dark mid-clock on a
+    # gate-configured install (#656/#632), and treating that as "outside the
+    # window" would strip storm protection from a 10:00 winter morning.
+    # Defaults True so every existing entry composes byte-identically.
+    weather_outside_window: bool = True
+
     # WeatherOverrideHandler's EFFECTIVE priority, resolved from the 🔀 Handler
     # Priorities step at snapshot build. Carried on the snapshot because the
     # weather floor is composed by the pure `axis_constraints` pass, which has no
@@ -367,6 +504,16 @@ class PipelineSnapshot:
     # existing tests that construct PipelineSnapshot without this field continue
     # to pass.
     in_time_window: bool = True
+
+    # True when the user's start/end CLOCK window is open, IGNORING the daytime
+    # gate — ``TimeWindowManager.clock_window_open``, not ``is_active``. The two
+    # deliberately disagree at night on a gate-configured install (#656), and
+    # every guard that decides whether a cover may be *moved* speaks this one:
+    # "outside the user's clock" means ACP stays hands-off (#215/#216), while
+    # "the gate reads dark" merely means the default position is the night one.
+    # ``gather_axis_constraints`` filters on this field, so a snapshot that
+    # leaves it True composes byte-identically to pre-#943-item-B behaviour.
+    clock_window_open: bool = True
 
     # True when the Motion Control switch is enabled.  MotionTimeoutHandler
     # checks this field and passes through (returns None) when it is False,
@@ -421,7 +568,9 @@ class PipelineSnapshot:
     # manual-override / group-lock holds as a presentation value. It is a
     # *summary*: no per-cover decision consumes it — the registry judges each
     # held cover against its own entry in ``cover_positions`` below (#1174).
-    # This is a RAW cover-frame read — see position_axis_inverted below.
+    # This is a RAW cover-frame read — see position_axis_inverted and
+    # interp_curve below for the two transforms standing between it and the
+    # logical frame every user-facing bound is expressed in.
     current_cover_position: int | None = None
 
     # Per-entity RAW cover-frame positions — the same frame and the same source
@@ -437,10 +586,33 @@ class PipelineSnapshot:
     # (inverse-state configured and not suppressed by interpolation, per
     # ``cover_types.base.axis_inverted``). A handler that puts a raw cover read
     # such as ``current_cover_position`` into ``PipelineResult.position`` must
-    # convert it to the logical frame first (``position_utils.flip_if``),
-    # because ``coordinator.state`` maps every winner through
-    # ``_to_cover_frame`` on the way out — no flag exempts one (#1028 / #1036).
+    # convert it to the logical frame first, because ``coordinator.state`` maps
+    # every winner through ``_to_cover_frame`` on the way out — no flag exempts
+    # one (#1028 / #1036).
+    #
+    # The two handlers that do this — ``motion_timeout``'s hold and
+    # ``group_lock``'s freeze — convert with ``position_utils.flip_if``, i.e.
+    # with THIS FLAG ALONE. That is the whole map only while no curve is
+    # configured; under one, ``_to_cover_frame`` re-interpolates the held motor
+    # read and the published target drifts. Pre-existing, unchanged by #1230,
+    # and stated in place at ``motion_timeout.py`` since #1028, which reserves
+    # it to #925. The registry's hold judge is the one caller that takes the
+    # FULL inverse, via ``position_utils.from_cover_frame`` — that helper folds
+    # this flag together with ``interp_curve`` below (#1230).
     position_axis_inverted: bool = False
+
+    # This install's position calibration curve, or None when interpolation is
+    # switched off. The other half of the same frame question
+    # ``position_axis_inverted`` answers: ``coordinator._to_cover_frame`` maps a
+    # logical value to the wire by interpolating and THEN inverting, so undoing
+    # it needs both halves and inversion alone is not the whole map (#1230).
+    # Carried as plain data so the pure pipeline can un-map a raw read without
+    # reaching for a coordinator; the registry consumes it via
+    # ``position_utils.from_cover_frame``, the inverse of that whole chain.
+    # ``None`` on a legacy / test snapshot means "no curve", which reduces that
+    # helper to exactly ``flip_if`` and leaves every uncalibrated install
+    # byte-identical.
+    interp_curve: InterpolationCurve | None = None
 
     # The CoverTypePolicy chosen at coordinator startup. Handlers should consult
     # this for cover-type-aware decisions (axis routing, intent → position
@@ -498,6 +670,18 @@ class PipelineSnapshot:
     # test are byte-identical. When present, each flag wins over the raw
     # comparison for its crossing.
     climate_temp_flags: ClimateTempFlags | None = None
+
+    # Already-gated, already-resolved extreme-heat condition (issue #1272).
+    # Resolved once per cycle by SnapshotBuilder via the same
+    # ``engine.climate_crossings.resolve_extreme_heat_active`` helper
+    # ``ClimateCoverData.is_extreme_heat`` delegates to (smoothed flag when
+    # present, else the raw outside-temperature crossing) — AND gated on
+    # ``climate_mode_enabled`` (the master Climate Mode switch), which
+    # ``climate_temp_flags`` alone does not carry. CloudSuppressionHandler
+    # reads this directly to defer to the extreme-heat hold; never recompute
+    # it elsewhere. Defaults False so snapshots that don't set it behave
+    # exactly as before.
+    climate_extreme_heat_active: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -561,7 +745,12 @@ class HoldClampVerdict:
     (``CoverTypePolicy.entities_move_independently``). That is what makes
     ``target`` safe to hand straight to ``coordinator._entity_target``: a policy
     that would remap it per entity, or rewrite it after the pipeline, produces
-    no verdicts at all and keeps its shared-target path.
+    no verdicts at all and keeps its shared-target path — including when it
+    names its own position through ``CoverTypePolicy.hold_reference_position``
+    (#1179). A coupled type's clamped value is ONE abstract position, and it has
+    to ride ``PipelineResult.position`` so ``post_pipeline_resolve`` and
+    ``resolve_entity_target`` expand it exactly once; a verdict would bypass the
+    first and double-apply the second.
     """
 
     #: This cover's own position, a RAW cover-frame read (matching the frame
@@ -574,13 +763,19 @@ class HoldClampVerdict:
     #: group has to carry. False means the hold stands and the coordinator
     #: writes a hold-skip record instead.
     released: bool
-    #: Where that command sends this cover, as a LOGICAL (pre-inversion,
-    #: pre-interpolation) position — the same frame ``PipelineResult.position``
-    #: speaks, so the coordinator maps it through the one ``_to_cover_frame``
-    #: seam. Equals the bound edge that bound THIS cover when a position bound
-    #: moved it, and this cover's own position when none did — which is what
-    #: makes a tilt-forced command a positional no-op. Always resolved, and
-    #: read only while ``released``.
+    #: Where that command sends this cover, on the LOGICAL (un-inverted) side of
+    #: the #1036 conversion. Equals the bound edge that bound THIS cover when a
+    #: position bound moved it, and this cover's own position when none did —
+    #: which is what makes a tilt-forced command a positional no-op. Always
+    #: resolved, and read only while ``released``.
+    #:
+    #: Those two cases are NOT the same frame once a calibration curve is
+    #: configured, and the coordinator must not map them through one transform:
+    #: a bound edge is a configured value the curve still owes a mapping, while
+    #: a cover's own read is already a device-frame number that only had the
+    #: inversion undone. ``coordinator._verdict_dispatch_target`` owns that
+    #: split; ``_to_cover_frame`` alone re-mapped the reads and moved covers no
+    #: bound had touched.
     target: int
 
 
@@ -598,6 +793,9 @@ class PositionAxisJudgment:
     #: winner's own ``position``; for a hold, the *violating* cover's position
     #: (lowest when a floor raised, highest when a ceiling lowered) so the
     #: clamp trace step reads as a real cover rather than a mean nobody sits at.
+    #: For a coupled hold that judged nothing, the policy's own reference (#1179)
+    #: — the value ``_release_hold_for_tilt_clamp`` carries when the other axis
+    #: forces a dispatch.
     effective_winner_pos: int
     #: ``effective_winner_pos`` after the composed bounds, i.e. the shared
     #: clamp target the trace and ``PipelineResult.position`` carry.
@@ -617,8 +815,9 @@ class PositionAxisJudgment:
     lower_from: int | None
     #: Per-cover dispatch verdicts, or ``None`` for a computed winner, for a
     #: snapshot carrying no per-entity positions, and for a cover type whose
-    #: entities do not move independently — all of which keep the cycle on the
-    #: singular pre-#1174 path.
+    #: entities do not move independently — whether that type named its own
+    #: reference position (#1179) or fell back to the summary mean. All of those
+    #: keep the cycle on the singular pre-#1174 path.
     verdicts: Mapping[str, HoldClampVerdict] | None
 
 
@@ -684,6 +883,24 @@ class PipelineResult:
     # `coordinator.state` interpolates/inverts a clamped winner exactly like any
     # other (issue #1036 removed the #469 carve-out that skipped both).
     position_constraint_applied: bool = False
+
+    # When True, this cycle's clock window was CLOSED and an outside-window-
+    # eligible constraint actually bound something (issue #943 item B) — a
+    # position clamp fired, a tilt clamp fired, or the registry resolved an
+    # unresolved tilt to a bound edge. It licenses exactly one thing: this
+    # result may reach the hardware outside the user's start/end clock window.
+    #
+    # Explicitly NOT ``is_safety``. That flag additionally bypasses the
+    # automatic-control switch, bypasses the delta gates on its own account,
+    # survives ``clear_non_safety_targets()``, and never yields on an
+    # ``outranking`` tie — none of which a min/max clamp has any business
+    # inheriting. Keeping them separate is also what preserves ``is_safety``'s
+    # one-writer lifetime (#1226/#1165).
+    #
+    # Only ever True while the window is closed, which is what leaves the
+    # end-of-window sweep semantics (#215/#216) untouched: an in-window booking
+    # never carries it, so nothing new survives the sweep.
+    outside_window_constraint_active: bool = False
 
     # Composed tilt bounds that could not be applied during evaluation because
     # the winner had no tilt to clamp yet (issue #943). Tilt can resolve *after*
@@ -776,6 +993,25 @@ class PipelineResult:
     # Lovelace card can localize it. None on legacy results that still carry only
     # an English ``reason`` string (handlers migrate in later dispatches).
     reason_payload: Reason | None = None
+
+    @property
+    def acts_outside_clock_window(self) -> bool:
+        """Whether this result may reach a cover outside the user's clock window.
+
+        The live-result half of the shared admission rule, consumed by the three
+        coordinator dispatch guards. The OR itself lives once, in
+        :func:`pipeline.axis_constraints.may_act_outside_clock_window`, which
+        the per-entity booked record reaches through its own identically-named
+        property (CODING_GUIDELINES § No Duplication).
+        """
+        # Local import: ``axis_constraints`` imports this module, so a
+        # module-level import here would close the cycle.
+        from .axis_constraints import may_act_outside_clock_window  # noqa: PLC0415
+
+        return may_act_outside_clock_window(
+            is_safety=self.is_safety,
+            constraint_admitted=self.outside_window_constraint_active,
+        )
 
     def __post_init__(self) -> None:
         """Derive the English ``reason`` from ``reason_payload`` when unset."""

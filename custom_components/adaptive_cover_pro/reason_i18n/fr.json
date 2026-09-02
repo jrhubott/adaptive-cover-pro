@@ -75,7 +75,9 @@
     "hold_position_carried": "la limite d'inclinaison commande la couverture — position maintenue à {position}% (et non la valeur théorique de {shadow_pos}%)",
     "tilt_bound_active": "limite d'inclinaison {low_label}–{high_label} active par {label} ; en attente de l'inclinaison résolue",
     "tilt_bound_inactive": "limite d'inclinaison {low_label}–{high_label} inactive par {label} ; inclinaison résolue {tilt}% déjà dans la plage",
-    "tilt_clamped": "inclinaison limitée de {from_tilt}% à {to_tilt}% par {label}"
+    "tilt_clamped": "inclinaison limitée de {from_tilt}% à {to_tilt}% par {label}",
+    "constraint_outside_window": "limite {low_label}–{high_label} ({axis}) de {label} non appliquée — hors de la plage horaire, seules les limites minimum/maximum réglées pour rester actives s'appliquent",
+    "tilt_bound_enforced": "limite d'inclinaison {low_label}–{high_label} appliquée à {tilt}% par {label} (aucune inclinaison résolue lors de ce cycle)"
   },
   "builder": {
     "unknown": "Inconnu",
@@ -112,6 +114,7 @@
     "no_glare_zones": "aucune zone d'éblouissement active ou soleil en dehors de l'angle d'acceptation",
     "cloud_skipped": "suppression nuages ignorée (soleil en dehors de l'angle d'acceptation)",
     "cloud_inactive": "suppression nuages inactive (soleil direct présent ou fonction désactivée)",
+    "cloud_deferred_extreme_heat": "suppression nuages différée — le maintien chaleur extrême est prioritaire",
     "weather_not_active": "dérogation météo non active",
     "custom_not_active": "position personnalisée #{slot} non active",
     "always_matches": "toujours valide",

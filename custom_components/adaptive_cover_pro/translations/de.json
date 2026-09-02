@@ -45,7 +45,8 @@
           "create_new": "Neue Beschattung erstellen",
           "create_building_profile": "Gebäudeprofil erstellen",
           "duplicate_existing": "Von vorhandener Beschattung duplizieren",
-          "create_group": "Beschattungsgruppe erstellen"
+          "create_group": "Beschattungsgruppe erstellen",
+          "create_command_queue": "Befehlswarteschlange erstellen"
         }
       },
       "create_new": {
@@ -81,6 +82,12 @@
           "window_depth": "Fenstertiefe (Laibung)",
           "sill_height": "Fensterbretthöhe",
           "window_width": "Fensterbreite",
+          "solar_properties_enabled": "Solare Eigenschaften beschreiben (Schätzung)",
+          "solar_cover_side": "Montageseite der Beschattung",
+          "solar_cover_shade": "Farbtiefe der Beschattung",
+          "solar_g_total": "Gesamtenergiedurchlassgrad (g), geschlossen",
+          "solar_g_glazing": "Energiedurchlassgrad der Verglasung (g), unbeschattet",
+          "glass_area": "Glasfläche (optional)",
           "length_awning": "Markisenlänge",
           "angle": "Markisenwinkel",
           "slat_depth": "Lamellentiefe",
@@ -131,7 +138,9 @@
           "dual_panel_blackout_triggers": "Verdunkelungs-Auslöser",
           "awning_shade_mode": "Markisen-Beschattungsmodus",
           "day_night_concurrent_rail_travel": "Schienen gemeinsam bewegen (Dual-Entity-Modell)",
-          "day_night_external_command_interlock": "Nicht erreichbare Schienenbefehle korrigieren (Dual-Entity-Modell)"
+          "day_night_external_command_interlock": "Nicht erreichbare Schienenbefehle korrigieren (Dual-Entity-Modell)",
+          "tilt_horizontal_percent": "Neigungsprozentsatz bei horizontal",
+          "venetian_tilt_only_scope": "Nur-Neigung-Umfang"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -139,18 +148,24 @@
           "window_depth": "Tiefe des Fensterausbruchs/Rahmens von der Wandoberfläche. In der von Home Assistant konfigurierten Einheit angezeigt. Optionaler Parameter für erweiterte Genauigkeit — auf 0 (Standard) stellen, um zu deaktivieren. Typische Werte: Bündige Montage = 0,05 m / 2 in, Standard-Rahmen = 0,10 m / 4 in, Tiefe Ausnehmung = 0,15 m / 6 in. Messen Sie von der äußeren Wandoberfläche bis zur inneren Kante des Fensterrahmens. Der Fensterausbruch wirft seinen eigenen Schatten über die Oberseite des Glases — den gleichen Bereich, den die Beschattung von oben schützt. Wenn dieser Schatten allein bereits alles abdeckt, was die Beschattung andernfalls hätte abdecken müssen, kann die Beschattung vollständig geöffnet werden. Darunter macht der Fensterausbruch keinen Unterschied für die berechnete Position.",
           "sill_height": "Höhe vom Boden bis zur Unterseite Ihres Fensters. In der von Home Assistant konfigurierten Einheit angezeigt. Stellen Sie auf 0 (Standard) für bodenebene Fenster oder wenn unbekannt. Beispiel: Für eine Fensterbank 1 m / 39 in über dem Boden geben Sie diesen Wert ein. Verbessert die Berechnungsgenauigkeit für erhöhte Fenster — ohne sie schließt sich die Jalousie leicht mehr als nötig. Bereich: 0–50 m / 0–1968 in. Messen Sie vom Boden bis zur unteren Kante des Glasbereichs (der Fensterbank). Hinweis: Fensterhöhe wird weiterhin von unten bis oben des Glases gemessen — dies sind unabhängige Messungen.",
           "window_width": "Breite der Fensteröffnung. In der von Home Assistant konfigurierten Einheit angezeigt. Wird von Blendungszonen verwendet, um zu bestimmen, welche Bodenzonen basierend auf dem horizontalen Sonnenwinkel direktes Sonnenlicht erhalten können. Messen Sie die Innenbreite des Glasbereichs. Beispiele: Standard-Fenster = 0,9–1,2 m / 35–47 in, Doppelfenster = 1,5–1,8 m / 59–71 in, Terrassentür = 2,0–3,0 m / 79–118 in. Nur relevant, wenn Blendungszonen aktiviert sind.",
+          "solar_properties_enabled": "Einschalten, um zu beschreiben, wie viel Sonnen-WÄRME dieser Fensteraufbau durchlässt, damit die Diagnose sie schätzen kann. Standardmäßig aus und rein informativ — am Fahrverhalten der Beschattung ändert sich dadurch nichts. Alle Werte sind Schätzungen aus veröffentlichten Bandbreiten für Verglasungen und Beschattungsstoffe, keine Messungen an Ihrer Hardware.",
+          "solar_cover_side": "Wo die Beschattung relativ zur Scheibe hängt. **Außen**: vor der Verglasung, sodass aufgenommene Wärme nach draußen abgestrahlt wird — meist zwei- bis dreimal wirksamer gegen solare Wärme. **Innen**: im Raum, sodass das Sonnenlicht die Scheibe bereits passiert hat und der größte Teil der vom Stoff aufgenommenen Wärme drinnen bleibt.",
+          "solar_cover_shade": "Wie dunkel der Stoff optisch ist. **Hell** reflektiert den größten Teil des auftreffenden Lichts; **Dunkel** nimmt den größten Teil auf. Wird zusammen mit der Montageseite verwendet, um einen geschätzten Energiedurchlassgrad aus den veröffentlichten Bandbreiten nachzuschlagen. Wird ignoriert, wenn Sie unten einen Gesamtenergiedurchlassgrad eintragen.",
+          "solar_g_total": "Optional: der Energiedurchlassgrad des vollständig geschlossenen Aufbaus (g-Wert, 0,0–1,0), falls Ihr Stoff- oder Beschattungsdatenblatt einen angibt. Leer lassen, um die Schätzung aus Montageseite und Farbtiefe oben zu verwenden. 0,0 bedeutet vollständig undurchlässig für Sonnenenergie und ist ein echter Wert, nicht „nicht gesetzt“.",
+          "solar_g_glazing": "Energiedurchlassgrad der Scheibe allein, mit vollständig zurückgefahrener Beschattung (g-Wert, 0,0–1,0). Der Standardwert 0,70 ist typisch für gängige Zweifachverglasung; Einfachverglasung liegt näher bei 0,85, moderne Dreifach- oder Sonnenschutzverglasung eher bei 0,35–0,50. Sehen Sie im Datenblatt der Verglasung nach, falls vorhanden.",
+          "glass_area": "Optional: die Glasfläche dieses Fensters in Quadratmetern, die ausschließlich der Sensor „Geschätzter solarer Wärmeeintrag“ verwendet. Leer lassen, um die Fläche aus Fensterhöhe und -breite oben abzuleiten — das ergibt das Rohbaumaß, von dem ein Rahmen typischerweise 10–25 % wegnimmt; tragen Sie hier eine gemessene Glasfläche ein, wenn Sie einen genaueren Wert möchten. Erforderlich für Beschattungstypen, die nicht sowohl Fensterhöhe als auch -breite erfassen (Markisen, reine Lamellenjalousien, Schiebevorhänge, Lamellendächer) — sonst wird der Wärmeeintrag als unbekannt gemeldet.",
           "length_awning": "Maximale Ausfahrlänge Ihrer Markise bei vollständiger Ausdehnung. In der von Home Assistant konfigurierten Einheit angezeigt. Messen Sie vom Befestigungspunkt bis zum Ende des Tuchs, wenn es vollständig ausgefahren ist. Beispiele: Standard-Terrasse-Markise = 2,0–3,0 m / 79–118 in, Kleine Fenster-Markise = 1,0–1,5 m / 39–59 in, Großer Gewerbebereich = 4,0 m / 157 in oder mehr. Wird verwendet, um zu berechnen, wie weit die Markise ausfahren muss, um die Sonne zu blockieren.",
           "angle": "Winkel der Markise im ausgefahrenen Zustand (0-45°). 0° = Horizontal/flach (maximale Abdeckung), 15° = leichte Neigung (typisch für Drainage), 30° = steile Neigung (großer Sonnenwinkel), 45° = sehr steil (selten verwendet). Überprüfen Sie die Spezifikationen des Markisenherstellers. Die meisten Markisen sind 0-15°. Beeinflusst die Schattenberechnung für ordnungsgemäße Sonnenblockerung.",
           "slat_depth": "Breite jeder Lamelle (messen Sie eine Lamelle von vorne nach hinten). In der von Home Assistant konfigurierten Einheit angezeigt. Häufige Größen: Mini-Jalousien = 2,5 cm / 1 in, Standard-Jalousien = 5 cm / 2 in, Breite Lamellen = 6,5–7,5 cm / 2,5–3 in. Messen Sie eine einzelne Lamelle mit einem Lineal für eine genaue Sonnenschutzberechnung.",
           "slat_distance": "Vertikaler Abstand zwischen den Lamellenmitten. In der von Home Assistant konfigurierten Einheit angezeigt. Messen Sie von der Mitte einer Lamelle zur Mitte der nächsten Lamelle (vertikal). Normalerweise etwas mehr als die Lamellenbreite, um Überlappung beim Schließen zu ermöglichen. Häufig: 3–8 cm / 1,2–3 in je nach Jalousientyp. Wird verwendet, um den optimalen Neigungswinkel zu berechnen.",
           "venetian_tilt_skip_above": "Wenn die Beschattung über diese Position (0–100%) angefordert wird, wird der Neigungsbefehl übersprungen. Bei hohen Positionen fahren die Lamellen in das Gehäuse zurück und eine Neigung ist physikalisch bedeutungslos. Standard 95%. Erhöhen Sie den Wert, wenn Ihre Jalousie oben korrekt gekippt wird; verringern Sie ihn, wenn versucht wird, vollständig geöffnete Jalousien zu kippen.",
-          "venetian_mode": "Wie die Jalousie mit Lamellen beide Achsen nutzt, wenn die Sonne im Verfolgungsfenster ist. **Position und Neigung** (Standard): Die Beschattung wird auf die berechnete Position abgesenkt und die Lamellen neigen sich zum optimalen Winkel — am besten für kombinierte Beschattung und Privatsphäre. **Nur Neigung**: Die Beschattung bleibt geschlossen (Position 0 %) und nur der Lamellenwinkel folgt der Sonne — am besten, wenn Sie immer vollständige Abdeckung wünschen und Blendung kontinuierlich über die Neigung kontrollieren möchten.",
+          "venetian_mode": "Wie die Jalousie beide Achsen nutzt. **Position und Neigung** (Standard): Die Jalousie senkt sich auf die berechnete Position und die Lamellen neigen sich zum optimalen Winkel — ideal für kombinierte Verschattung und Privatsphäre. **Nur Neigung**: Die Jalousie bleibt geschlossen (Position 0 %) und nur der Lamellenwinkel folgt der Sonne — ideal, wenn Sie immer volle Abdeckung wünschen und kontinuierliche Blendungskontrolle über Neigung möchten. Standardmäßig hält der Modus „Nur Neigung\" die Jalousie bei jeder automatischen Entscheidung geschlossen, nicht nur bei der Sonnenverfolgung; verwenden Sie **Nur-Neigung-Umfang**, um es auf Sonnenverfolgungs-Entscheidungen zu beschränken.",
           "inverse_tilt": "Invertiert nur die Neigungsachse. Aktivieren Sie diese Option, wenn Ihre Hardware den Wert 0 für \"Lamellen offen\" und 100 für \"Lamellen geschlossen\" sendet, was dem Erwartungswert der Integration entspricht. Dies gilt nur für die Neigungsachse (Lamellen) — die Positionsachse wird separat durch \"Zustand invertieren\" gesteuert. Die meisten Beschattungen benötigen dies nicht. Nützlich für KNX- oder Somfy-Hardware, bei der die Neigungsrichtung der HA-Konvention entgegengesetzt verdrahtet ist.",
           "max_tilt": "Obergrenze für den maximalen Neigungswinkel der Lamellen (0–100). Niedrigere Werte verhindern, dass Lamellen Winkelpositionen erreichen, die direktes Sonnenlicht ins Zimmer reflektieren. Standard: 100 (keine Obergrenze). Beispiel: Stellen Sie 70 ein, wenn vollständig geöffnete Lamellen zu Spitzensonnenzeiten Blendungen verursachen.",
           "min_tilt": "Untergrenze für die minimale Neigungswinkel der Lamellen (0–100). Höhere Werte verhindern, dass Lamellen vollständig schließen – nützlich für Jalousien, die bei 0% das gesamte Licht blockieren. Standard: 0 (keine Untergrenze). Beispiel: Stellen Sie 10 ein, wenn Ihre Jalousien bei 0% vollständig dunkel werden und Sie immer etwas Licht durchlassen möchten.",
           "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s.",
           "venetian_backrotate_publish_lag": "Wie lange (in Sekunden) die Integration eine verspätete Statusmeldung der Position von Ihrem Aktor toleriert, bevor sie als echte Benutzerberührung behandelt wird. Standard 45 s eignet sich für Somfy IO über Tahoma. Erhöhen Sie auf 60–120 s, wenn Ihre Hardware (langsamer KNX-Bus, Fibaro/Shelly-Neuveröffentlichung) die aktuelle_Position lange nach dem physischen Stopp der Beschattung meldet – Symptom sind fehlerhafte 'manual_override_set'-Ereignisse, die etwa 30–90 s nach einem befohlenen Bewegungsbefehl ausgelöst werden. Verringern Sie nur, wenn Sie einen ungewöhnlich schnellen Aktor haben und eine straffere Erkennungsfehlertoleranz möchten. Bereich 15–180 s.",
-          "arm_length": "Länge des Schwenkarmes einer Fallarmmarkise, vom Wandpivot bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
+          "arm_length": "Länge des Fallarmes einer Fallarmmarkise, vom Wanddrehpunkt bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
           "awning_min_angle": "Armwinkel, wenn die Markise vollständig geschlossen/eingezogen ist (0–180°). Normalerweise 0° = Arm vertikal an der Wand. Definiert den Anfang des Schwenkbereichs.",
           "awning_max_angle": "Armwinkel, wenn die Markise vollständig offen ist (0–180°). Der Arm schwenkt linear vom geschlossenen Winkel zu diesem Wert über 0–100% Öffnung. Beispiel: ein Schwenkbereich von 175° ≈ 1,75° pro 1%.",
           "awning_housing_offset": "Vertikaler Versatz des Armpivots über die Oberkante des Fensters (0–1 m). Zusammen mit Fensterhöhe und Armlänge zur Lokalisierung des Pivots verwendet. Setzen Sie auf 0, wenn das Gehäuse bündig mit der Fensteroberkante sitzt.",
@@ -189,7 +204,9 @@
           "dual_panel_blackout_triggers": "Wenn das **Verdunkelungspaneel** schließt. **Wärme**: Klima-Sommer / extreme Hitze Block. **Datenschutz**: Sonnenuntergangsfenster. **Nacht**: Sonne unter dem Horizont. Wählen Sie eine beliebige Kombination – das Verdunkelungspaneel öffnet sich, wenn keiner der ausgewählten Auslöser aktiv ist. Die beiden Paneele sind unabhängig.",
           "awning_shade_mode": "Ob die Markise das Fenster-Glas oder den gesamten Bereich davor beschattet. **Fenster beschatten** (Standard): Gerade weit genug ausfahren, um die direkte Sonne vom Fenster fernzuhalten, und einfahren, wenn die Sonne zur Seite des Fensters wandert – am besten zur Verringerung von Blendung und Wärmeeintrag am Glas. **Bereich davor beschatten (Terrasse)**: Vollständig ausgefahren bleiben, wenn die Sonne vor der Markise steht, um eine Terrasse oder einen Sitzbereich statt des Fensters zu beschatten.",
           "day_night_concurrent_rail_travel": "Nur für das Modell **Zwei Schienen-Entitäten**: ob die beiden Schienen gleichzeitig fahren dürfen. **Aus (Standard, empfohlen):** Die nachfolgende Schiene wartet, bis die führende Schiene ihr Ziel vollständig freigegeben hat, bevor sie sich überhaupt bewegt. Langsamer — die Beschattung braucht zwei Fahrtdauern statt eine — aber immer korrekt, weil sie auf einer tatsächlich gelesenen Position handelt statt auf einer Vermutung, dass ein Motor gestartet ist. **An:** Die nachfolgende Schiene beginnt, sobald die führende Schiene bestätigt unterwegs ist und vor ihr liegt, damit die Beschattung ihre Position in einer Fahrtdauer erreicht. ⚠️ **Nur für erfahrene Benutzer — diese Einstellung ist die Ursache der meisten gemeldeten Doppelschienen-Probleme.** Die Bestätigung, dass die führende Schiene gestartet hat, setzt voraus, dass Ihre Motoren einen `opening`/`closing` Zustand oder Zwischenpositionen veröffentlichen, während sie fahren. Viele tun das nicht: einige melden überhaupt nichts zwischen dem Befehl und der Ankunft, was Adaptive Cover Pro zwingt, eine Bewegung zu vermuten, die es nicht sieht. Wenn diese Vermutung falsch ist, wird die nachfolgende Schiene in eine Schiene freigegeben, die sich nicht bewegt hat, was einen Motor blockieren, seinen Überstrom-Schutz auslösen oder seine Kalibrierung verlieren kann. Aktivieren Sie dies nur, wenn Sie Ihre Schienen beobachten können und bestätigen können, dass sie während der gesamten Bewegung ihren Abstand einhalten.",
-          "day_night_external_command_interlock": "Nur für das Modell **Zwei Schienen-Entitäten**: was passiert, wenn ein Befehl versucht, eine Schiene in den Bereich zu fahren, den die andere Schiene besetzt. Zwei Arten von Befehlen landen dort. Ein Befehl, der **direkt an eine Schienen-Entität gesendet wird** — von einem Dashboard, einem Skript oder einer Handfernbedienung — läuft nie über Adaptive Cover Pro, also wird nichts sequenziert und der Motor verweigert ihn entweder oder bleibt auf halbem Weg stecken. Ein Befehl, der **über Adaptive Cover Pro gesendet wird** — der Schieber der Karte pro Schiene, die `set_position` / `set_axes` Dienste, die optionale Proxy-Beschattung, die My-Position-Taste — wird stattdessen von der Schienen-Freigabe-Prüfung zurückgehalten, was sicher ist, aber bedeutet, dass sich nichts bewegt. **An** (Standard): Die blockierende Schiene wird zuerst aus dem Weg gefahren und Ihr Befehl wird dann erneut gesendet, damit er tatsächlich ausgeführt wird; danach aktivieren beide Schienen die manuelle Übersteuerung. ⚠️ Das bedeutet, dass Adaptive Cover Pro möglicherweise die Schiene bewegt, die Sie nicht angesteuert haben. **Aus**: Der Befehl bleibt genau so, wie er gesendet wurde — er erreicht möglicherweise einfach sein Ziel nicht oder geschieht gar nicht — und eine Warnung wird protokolliert. Die automatische Sonnennachführung braucht dies nie: Sie berechnet beide Schienen aus einer Position und bewegt sie zusammen, also fragt sie nie nach einem Ort, den eine Schiene nicht erreichen kann."
+          "day_night_external_command_interlock": "Nur für das Modell **Zwei Schienen-Entitäten**: was passiert, wenn ein Befehl versucht, eine Schiene in den Bereich zu fahren, den die andere Schiene besetzt. Zwei Arten von Befehlen landen dort. Ein Befehl, der **direkt an eine Schienen-Entität gesendet wird** — von einem Dashboard, einem Skript oder einer Handfernbedienung — läuft nie über Adaptive Cover Pro, also wird nichts sequenziert und der Motor verweigert ihn entweder oder bleibt auf halbem Weg stecken. Ein Befehl, der **über Adaptive Cover Pro gesendet wird** — der Schieber der Karte pro Schiene, die `set_position` / `set_axes` Dienste, die optionale Proxy-Beschattung, die My-Position-Taste — wird stattdessen von der Schienen-Freigabe-Prüfung zurückgehalten, was sicher ist, aber bedeutet, dass sich nichts bewegt. **An** (Standard): Die blockierende Schiene wird zuerst aus dem Weg gefahren und Ihr Befehl wird dann erneut gesendet, damit er tatsächlich ausgeführt wird; danach aktivieren beide Schienen die manuelle Übersteuerung. ⚠️ Das bedeutet, dass Adaptive Cover Pro möglicherweise die Schiene bewegt, die Sie nicht angesteuert haben. **Aus**: Der Befehl bleibt genau so, wie er gesendet wurde — er erreicht möglicherweise einfach sein Ziel nicht oder geschieht gar nicht — und eine Warnung wird protokolliert. Die automatische Sonnennachführung braucht dies nie: Sie berechnet beide Schienen aus einer Position und bewegt sie zusammen, also fragt sie nie nach einem Ort, den eine Schiene nicht erreichen kann.",
+          "tilt_horizontal_percent": "Optionaler dritter Kalibrierungspunkt für Winkel angeben: der Neigungsprozentsatz, den die Beschattung anzeigt, wenn die Lamellen genau horizontal (90°) sind. 0 = deaktiviert, sodass die Skala direkt vom 0%-Winkel zum 100%-Winkel läuft. Stellen Sie ihn ein, wenn die Lamellen irgendwo anders als in der Mitte ihres gemeldeten Verfahrens horizontal erreicht werden – die Skala verwendet dann zwei gerade Segmente, die an diesem Punkt zusammentreffen, z. B. 0° bei 0%, horizontal bei 50% und 130° bei 100%. Erfordert, dass die 0%- und 100%-Winkel auf gegenüberliegenden Seiten von 90° liegen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist.",
+          "venetian_tilt_only_scope": "Für welche Entscheidungen der Modus „Nur Neigung\" den Behang geschlossen hält. Wird nur verwendet, wenn der Betriebsmodus **Nur Neigung** ist. **Alle automatischen Entscheidungen** (Standard): Die Jalousie wird bei jeder automatischen Entscheidung geschlossen gehalten (0 %) — Sonnenverfolgung, Wolkenunterdrückung und Klima — so wie der Modus „Nur Neigung\" schon immer funktioniert hat. **Nur Sonnenverfolgung**: Die Jalousie wird nur dann geschlossen gehalten, wenn die Sonnenverfolgung gewinnt; Wolkenunterdrückungs- und Klimaentscheidungen (Sommer / Winter / extreme Hitze) bewegen den Behang normal. Wählen Sie dies, wenn eine Jalousie im reinen Neigungsbetrieb eine Tür oder einen Gehweg bedeckt, die an bewölkten Tagen nicht blockiert bleiben darf. Hinweis: Bei einem Wolkenunterdrückungsgewinn hebt sich der Behang, aber die Lamellen behalten ihren letzten Winkel bei — Wolkenunterdrückung sendet keinen Neigungsbefehl. Manuelle Entscheidungen, benutzerdefinierte Positionen, Wetter, Bewegung und Entscheidungen außerhalb des Zeitfensters bewegen den Behang bereits unter beiden Einstellungen."
         }
       },
       "duplicate_select": {
@@ -280,11 +297,24 @@
           "member_covers": "Einfache Beschattungen werden direkt mit dem Szenenziel angesteuert. Eine Beschattung, die bereits von einem ausgewählten Mitglied gesteuert wird, wird übersprungen.",
           "group_area": "Optional: Beschattungen in diesem Bereich treten der Gruppe automatisch bei und die Mitgliedschaft folgt Registrierungsänderungen. Kombiniert mit den obigen Listen."
         }
+      },
+      "create_command_queue": {
+        "title": "Befehlswarteschlange erstellen",
+        "description": "Eine Befehlswarteschlange lässt Beschattungen abwechselnd senden, damit One-Way-Radio-Backends (Somfy RTS, RFXtrx) keine Rahmen durch Kollisionen verlieren. Beschattungen treten bei, indem sie diese Warteschlange auf ihrer Seite \"Bewegung & Zeitplan\" nennen. Das Erstellen dieses Eintrags ist optional - eine benannte Warteschlange serialisiert bereits mit dem Standard-Abstand; hier können Sie diesen Abstand ändern und sehen, wer beigetreten ist. [Weitere Informationen]({learn_more})",
+        "data": {
+          "name": "Name der Warteschlange",
+          "command_queue_gap": "Abstand zwischen Befehlen"
+        },
+        "data_description": {
+          "name": "Beschattungen verweisen auf diese Warteschlange nach Name in ihren Einstellungen \"Bewegung & Zeitplan\". Der Vergleich ignoriert Groß- und Kleinschreibung sowie zusätzliche Leerzeichen.",
+          "command_queue_gap": "Sekunden, die die Warteschlange nach jeder Übertragung einer Beschattung in dieser Warteschlange aktiv bleibt, bevor die nächste Beschattung gehen darf. Standard: 5 Sekunden."
+        }
       }
     },
     "abort": {
       "user_cancelled": "Aktion vom Benutzer abgebrochen",
-      "source_not_found": "Die Quellbeschattung existiert nicht mehr."
+      "source_not_found": "Die Quellbeschattung existiert nicht mehr.",
+      "already_configured": "Eine Befehlswarteschlange mit diesem Namen existiert bereits. Beschattungen verweisen auf Warteschlangen nach Name, daher ein Eintrag pro Name — öffnen Sie den bestehenden Eintrag, um den Abstand zu ändern."
     }
   },
   "options": {
@@ -320,7 +350,10 @@
           "group_arbitration": "⚖️ Schiedsverfahren & Zeitplanung",
           "group_entities": "🧩 Verfügbar gemachte Entitäten",
           "change_cover_type": "🔁 Beschattungstyp ändern",
-          "calibration": "📐 Kalibrierung"
+          "calibration": "📐 Kalibrierung",
+          "queue_settings": "🚦 Warteschlangen-Einstellungen",
+          "queue_overview": "🚦 Warteschlangen-Übersicht",
+          "card": "🖼️ Dashboard-Karte"
         },
         "description": "Konfiguration: **{instance_name}**{profile_line}\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
       },
@@ -335,7 +368,8 @@
           "end_time": "Endzeit",
           "end_entity": "Entität, die die Endzeit angibt",
           "max_coverage_steps": "Maximale Abdeckungsschritte",
-          "minimize_movements": "Bewegungen minimieren"
+          "minimize_movements": "Bewegungen minimieren",
+          "command_queue": "Befehlswarteschlange"
         },
         "data_description": {
           "delta_position": "Minimale Positionsänderung (%) erforderlich, bevor die Beschattung angepasst wird. Verhindert winzige Anpassungen, wenn die Sonne langsam wandert. Typische Werte: 1-2 % (sehr reaktiv, kann häufig angepasst werden), 5 % (ausgewogen, für die meisten empfohlen), 10 % (weniger häufig, größere Bewegungen). Beispiel: Wenn die Beschattung bei 30 % liegt und die Sonne sich leicht bewegt, passen Sie nur an, wenn die neue Position 35 % oder mehr beträgt (mit 5 % Schwellenwert). Reduziert Motorverschleiß und Geräusche durch ständige winzige Anpassungen.",
@@ -345,7 +379,8 @@
           "end_time": "Beenden Sie die automatische Steuerung nach dieser Zeit (24-Stunden-Format). Verwenden Sie diese Option, um den Datenschutz am Abend aufrechtzuerhalten (auf 18:00 oder 19:00 einstellen), zur Standardeinstellung vor dem Schlafengehen zurückkehren oder leer lassen, um bis Sonnenuntergang fortzufahren. Beispiel: '20:00' bedeutet, dass die automatische Steuerung um 20:00 Uhr endet. Die manuelle Steuerung funktioniert nach dieser Zeit weiterhin.",
           "end_entity": "Entity, die den Endzeitstatus darstellt und die oben festgelegte feste Endzeit außer Kraft setzt. Nützlich zur Automatisierung der Endzeit mit einer Entity (z. B. Sensor, der die Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt).",
           "max_coverage_steps": "Die maximale Anzahl der zu berücksichtigenden Schritte (z. B. 5 Schritte = 20% je Schritt). Mehr Schritte bedeuten glattere Bewegungen, aber häufigere Befehle und möglicherweise langsamere Reaktionen. Weniger Schritte reduzieren die Motorverschleiß, aber die Bewegung erscheint weniger flüssig.",
-          "minimize_movements": "Reduzieren Sie die Häufigkeit der Positionsänderung der Beschattung beim Sonnenverfolgen durch Einrasten auf wenige feste Abdeckungsebenen statt kontinuierlicher Sonnenverfolgung. Rundet zu MEHR Abdeckung, damit direkte Sonnenstrahlung niemals durch Rundung eindringt. Tauscht etwas Tageslicht gegen weit weniger Motorbewegungen ein. Standard: aus."
+          "minimize_movements": "Reduzieren Sie die Häufigkeit der Positionsänderung der Beschattung beim Sonnenverfolgen durch Einrasten auf wenige feste Abdeckungsebenen statt kontinuierlicher Sonnenverfolgung. Rundet zu MEHR Abdeckung, damit direkte Sonnenstrahlung niemals durch Rundung eindringt. Tauscht etwas Tageslicht gegen weit weniger Motorbewegungen ein. Standard: aus.",
+          "command_queue": "Serialisieren Sie die Befehle dieser Beschattung gegen andere Beschattungen, die derselben Warteschlange zugewiesen sind. Beschattungen, die eine Warteschlange teilen, senden nie gleichzeitig - nützlich für One-Way-Radio-Backends (Somfy RTS, RFXtrx), bei denen gleichzeitige Befehle kollidieren und verloren gehen. Der Abstand zwischen Befehlen wird im Eintrag \"Befehlswarteschlange\" mit demselben Namen festgelegt oder standardmäßig auf 5 Sekunden eingestellt, falls keine vorhanden ist. Leer lassen für keine Warteschlange (Standard)."
         }
       },
       "cover_entities": {
@@ -371,6 +406,12 @@
           "window_depth": "Fenstertiefe (Laibung)",
           "sill_height": "Fensterbretthöhe",
           "window_width": "Fensterbreite",
+          "solar_properties_enabled": "Solare Eigenschaften beschreiben (Schätzung)",
+          "solar_cover_side": "Montageseite der Beschattung",
+          "solar_cover_shade": "Farbtiefe der Beschattung",
+          "solar_g_total": "Gesamtenergiedurchlassgrad (g), geschlossen",
+          "solar_g_glazing": "Energiedurchlassgrad der Verglasung (g), unbeschattet",
+          "glass_area": "Glasfläche (optional)",
           "length_awning": "Markisenlänge",
           "angle": "Markisenwinkel",
           "slat_depth": "Lamellentiefe",
@@ -421,7 +462,9 @@
           "dual_panel_blackout_triggers": "Verdunkelungs-Auslöser",
           "awning_shade_mode": "Markisen-Beschattungsmodus",
           "day_night_concurrent_rail_travel": "Schienen gemeinsam bewegen (Dual-Entity-Modell)",
-          "day_night_external_command_interlock": "Nicht erreichbare Schienenbefehle korrigieren (Dual-Entity-Modell)"
+          "day_night_external_command_interlock": "Nicht erreichbare Schienenbefehle korrigieren (Dual-Entity-Modell)",
+          "tilt_horizontal_percent": "Neigungsprozentsatz bei horizontal",
+          "venetian_tilt_only_scope": "Nur-Neigung-Umfang"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -429,18 +472,24 @@
           "window_depth": "Tiefe des Fensterausbruchs/Rahmens von der Wandoberfläche. In der von Home Assistant konfigurierten Einheit angezeigt. Optionaler Parameter für erweiterte Genauigkeit — auf 0 (Standard) stellen, um zu deaktivieren. Typische Werte: Bündige Montage = 0,05 m / 2 in, Standard-Rahmen = 0,10 m / 4 in, Tiefe Ausnehmung = 0,15 m / 6 in. Messen Sie von der äußeren Wandoberfläche bis zur inneren Kante des Fensterrahmens. Der Fensterausbruch wirft seinen eigenen Schatten über die Oberseite des Glases — den gleichen Bereich, den die Beschattung von oben schützt. Wenn dieser Schatten allein bereits alles abdeckt, was die Beschattung andernfalls hätte abdecken müssen, kann die Beschattung vollständig geöffnet werden. Darunter macht der Fensterausbruch keinen Unterschied für die berechnete Position.",
           "sill_height": "Höhe vom Boden bis zur Unterseite Ihres Fensters. In der von Home Assistant konfigurierten Einheit angezeigt. Stellen Sie auf 0 (Standard) für bodenebene Fenster oder wenn unbekannt. Beispiel: Für eine Fensterbank 1 m / 39 in über dem Boden geben Sie diesen Wert ein. Verbessert die Berechnungsgenauigkeit für erhöhte Fenster — ohne sie schließt sich die Jalousie leicht mehr als nötig. Bereich: 0–50 m / 0–1968 in. Messen Sie vom Boden bis zur unteren Kante des Glasbereichs (der Fensterbank). Hinweis: Fensterhöhe wird weiterhin von unten bis oben des Glases gemessen — dies sind unabhängige Messungen.",
           "window_width": "Breite der Fensteröffnung. In der von Home Assistant konfigurierten Einheit angezeigt. Wird von Blendungszonen verwendet, um zu bestimmen, welche Bodenzonen basierend auf dem horizontalen Sonnenwinkel direktes Sonnenlicht erhalten können. Messen Sie die Innenbreite des Glasbereichs. Beispiele: Standard-Fenster = 0,9–1,2 m / 35–47 in, Doppelfenster = 1,5–1,8 m / 59–71 in, Terrassentür = 2,0–3,0 m / 79–118 in. Nur relevant, wenn Blendungszonen aktiviert sind.",
+          "solar_properties_enabled": "Einschalten, um zu beschreiben, wie viel Sonnen-WÄRME dieser Fensteraufbau durchlässt, damit die Diagnose sie schätzen kann. Standardmäßig aus und rein informativ — am Fahrverhalten der Beschattung ändert sich dadurch nichts. Alle Werte sind Schätzungen aus veröffentlichten Bandbreiten für Verglasungen und Beschattungsstoffe, keine Messungen an Ihrer Hardware.",
+          "solar_cover_side": "Wo die Beschattung relativ zur Scheibe hängt. **Außen**: vor der Verglasung, sodass aufgenommene Wärme nach draußen abgestrahlt wird — meist zwei- bis dreimal wirksamer gegen solare Wärme. **Innen**: im Raum, sodass das Sonnenlicht die Scheibe bereits passiert hat und der größte Teil der vom Stoff aufgenommenen Wärme drinnen bleibt.",
+          "solar_cover_shade": "Wie dunkel der Stoff optisch ist. **Hell** reflektiert den größten Teil des auftreffenden Lichts; **Dunkel** nimmt den größten Teil auf. Wird zusammen mit der Montageseite verwendet, um einen geschätzten Energiedurchlassgrad aus den veröffentlichten Bandbreiten nachzuschlagen. Wird ignoriert, wenn Sie unten einen Gesamtenergiedurchlassgrad eintragen.",
+          "solar_g_total": "Optional: der Energiedurchlassgrad des vollständig geschlossenen Aufbaus (g-Wert, 0,0–1,0), falls Ihr Stoff- oder Beschattungsdatenblatt einen angibt. Leer lassen, um die Schätzung aus Montageseite und Farbtiefe oben zu verwenden. 0,0 bedeutet vollständig undurchlässig für Sonnenenergie und ist ein echter Wert, nicht „nicht gesetzt“.",
+          "solar_g_glazing": "Energiedurchlassgrad der Scheibe allein, mit vollständig zurückgefahrener Beschattung (g-Wert, 0,0–1,0). Der Standardwert 0,70 ist typisch für gängige Zweifachverglasung; Einfachverglasung liegt näher bei 0,85, moderne Dreifach- oder Sonnenschutzverglasung eher bei 0,35–0,50. Sehen Sie im Datenblatt der Verglasung nach, falls vorhanden.",
+          "glass_area": "Optional: die Glasfläche dieses Fensters in Quadratmetern, die ausschließlich der Sensor „Geschätzter solarer Wärmeeintrag“ verwendet. Leer lassen, um die Fläche aus Fensterhöhe und -breite oben abzuleiten — das ergibt das Rohbaumaß, von dem ein Rahmen typischerweise 10–25 % wegnimmt; tragen Sie hier eine gemessene Glasfläche ein, wenn Sie einen genaueren Wert möchten. Erforderlich für Beschattungstypen, die nicht sowohl Fensterhöhe als auch -breite erfassen (Markisen, reine Lamellenjalousien, Schiebevorhänge, Lamellendächer) — sonst wird der Wärmeeintrag als unbekannt gemeldet.",
           "length_awning": "Maximale Ausfahrlänge Ihrer Markise bei vollständiger Ausdehnung. In der von Home Assistant konfigurierten Einheit angezeigt. Messen Sie vom Befestigungspunkt bis zum Ende des Tuchs, wenn es vollständig ausgefahren ist. Beispiele: Standard-Terrasse-Markise = 2,0–3,0 m / 79–118 in, Kleine Fenster-Markise = 1,0–1,5 m / 39–59 in, Großer Gewerbebereich = 4,0 m / 157 in oder mehr. Wird verwendet, um zu berechnen, wie weit die Markise ausfahren muss, um die Sonne zu blockieren.",
           "angle": "Winkel der Markise im ausgefahrenen Zustand (0-45°). 0° = Horizontal/flach (maximale Abdeckung), 15° = leichte Neigung (typisch für Drainage), 30° = steile Neigung (großer Sonnenwinkel), 45° = sehr steil (selten verwendet). Überprüfen Sie die Spezifikationen des Markisenherstellers. Die meisten Markisen sind 0-15°. Beeinflusst die Schattenberechnung für ordnungsgemäße Sonnenblockerung.",
           "slat_depth": "Breite jeder Lamelle (messen Sie eine Lamelle von vorne nach hinten). In der von Home Assistant konfigurierten Einheit angezeigt. Häufige Größen: Mini-Jalousien = 2,5 cm / 1 in, Standard-Jalousien = 5 cm / 2 in, Breite Lamellen = 6,5–7,5 cm / 2,5–3 in. Messen Sie eine einzelne Lamelle mit einem Lineal für eine genaue Sonnenschutzberechnung.",
           "slat_distance": "Vertikaler Abstand zwischen den Lamellenmitten. In der von Home Assistant konfigurierten Einheit angezeigt. Messen Sie von der Mitte einer Lamelle zur Mitte der nächsten Lamelle (vertikal). Normalerweise etwas mehr als die Lamellenbreite, um Überlappung beim Schließen zu ermöglichen. Häufig: 3–8 cm / 1,2–3 in je nach Jalousientyp. Wird verwendet, um den optimalen Neigungswinkel zu berechnen.",
           "venetian_tilt_skip_above": "Wenn die Beschattung über diese Position (0–100%) angefordert wird, wird der Neigungsbefehl übersprungen. Bei hohen Positionen fahren die Lamellen in das Gehäuse zurück und eine Neigung ist physikalisch bedeutungslos. Standard 95%. Erhöhen Sie den Wert, wenn Ihre Jalousie oben korrekt gekippt wird; verringern Sie ihn, wenn versucht wird, vollständig geöffnete Jalousien zu kippen.",
-          "venetian_mode": "Wie die Jalousie mit Lamellen beide Achsen nutzt, wenn die Sonne im Verfolgungsfenster ist. **Position und Neigung** (Standard): Die Beschattung wird auf die berechnete Position abgesenkt und die Lamellen neigen sich zum optimalen Winkel — am besten für kombinierte Beschattung und Privatsphäre. **Nur Neigung**: Die Beschattung bleibt geschlossen (Position 0 %) und nur der Lamellenwinkel folgt der Sonne — am besten, wenn Sie immer vollständige Abdeckung wünschen und Blendung kontinuierlich über die Neigung kontrollieren möchten.",
+          "venetian_mode": "Wie die Jalousie beide Achsen nutzt. **Position und Neigung** (Standard): Die Jalousie senkt sich auf die berechnete Position und die Lamellen neigen sich zum optimalen Winkel — ideal für kombinierte Verschattung und Privatsphäre. **Nur Neigung**: Die Jalousie bleibt geschlossen (Position 0 %) und nur der Lamellenwinkel folgt der Sonne — ideal, wenn Sie immer volle Abdeckung wünschen und kontinuierliche Blendungskontrolle über Neigung möchten. Standardmäßig hält der Modus „Nur Neigung\" die Jalousie bei jeder automatischen Entscheidung geschlossen, nicht nur bei der Sonnenverfolgung; verwenden Sie **Nur-Neigung-Umfang**, um es auf Sonnenverfolgungs-Entscheidungen zu beschränken.",
           "inverse_tilt": "Invertiert nur die Neigungsachse. Aktivieren Sie diese Option, wenn Ihre Hardware den Wert 0 für \"Lamellen offen\" und 100 für \"Lamellen geschlossen\" sendet, was dem Erwartungswert der Integration entspricht. Dies gilt nur für die Neigungsachse (Lamellen) — die Positionsachse wird separat durch \"Zustand invertieren\" gesteuert. Die meisten Beschattungen benötigen dies nicht. Nützlich für KNX- oder Somfy-Hardware, bei der die Neigungsrichtung der HA-Konvention entgegengesetzt verdrahtet ist.",
           "max_tilt": "Obergrenze für den maximalen Neigungswinkel der Lamellen (0–100). Niedrigere Werte verhindern, dass Lamellen Winkelpositionen erreichen, die direktes Sonnenlicht ins Zimmer reflektieren. Standard: 100 (keine Obergrenze). Beispiel: Stellen Sie 70 ein, wenn vollständig geöffnete Lamellen zu Spitzensonnenzeiten Blendungen verursachen.",
           "min_tilt": "Untergrenze für die minimale Neigungswinkel der Lamellen (0–100). Höhere Werte verhindern, dass Lamellen vollständig schließen – nützlich für Jalousien, die bei 0% das gesamte Licht blockieren. Standard: 0 (keine Untergrenze). Beispiel: Stellen Sie 10 ein, wenn Ihre Jalousien bei 0% vollständig dunkel werden und Sie immer etwas Licht durchlassen möchten.",
           "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s.",
           "venetian_backrotate_publish_lag": "Wie lange (in Sekunden) die Integration eine verspätete Statusmeldung der Position von Ihrem Aktor toleriert, bevor sie als echte Benutzerberührung behandelt wird. Standard 45 s eignet sich für Somfy IO über Tahoma. Erhöhen Sie auf 60–120 s, wenn Ihre Hardware (langsamer KNX-Bus, Fibaro/Shelly-Neuveröffentlichung) die aktuelle_Position lange nach dem physischen Stopp der Beschattung meldet – Symptom sind fehlerhafte 'manual_override_set'-Ereignisse, die etwa 30–90 s nach einem befohlenen Bewegungsbefehl ausgelöst werden. Verringern Sie nur, wenn Sie einen ungewöhnlich schnellen Aktor haben und eine straffere Erkennungsfehlertoleranz möchten. Bereich 15–180 s.",
-          "arm_length": "Länge des Schwenkarmes einer Fallarmmarkise, vom Wandpivot bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
+          "arm_length": "Länge des Fallarmes einer Fallarmmarkise, vom Wanddrehpunkt bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
           "awning_min_angle": "Armwinkel, wenn die Markise vollständig geschlossen/eingezogen ist (0–180°). Normalerweise 0° = Arm vertikal an der Wand. Definiert den Anfang des Schwenkbereichs.",
           "awning_max_angle": "Armwinkel, wenn die Markise vollständig offen ist (0–180°). Der Arm schwenkt linear vom geschlossenen Winkel zu diesem Wert über 0–100% Öffnung. Beispiel: ein Schwenkbereich von 175° ≈ 1,75° pro 1%.",
           "awning_housing_offset": "Vertikaler Versatz des Armpivots über die Oberkante des Fensters (0–1 m). Zusammen mit Fensterhöhe und Armlänge zur Lokalisierung des Pivots verwendet. Setzen Sie auf 0, wenn das Gehäuse bündig mit der Fensteroberkante sitzt.",
@@ -479,7 +528,9 @@
           "dual_panel_blackout_triggers": "Wenn das **Verdunkelungspaneel** schließt. **Wärme**: Klima-Sommer / extreme Hitze Block. **Datenschutz**: Sonnenuntergangsfenster. **Nacht**: Sonne unter dem Horizont. Wählen Sie eine beliebige Kombination – das Verdunkelungspaneel öffnet sich, wenn keiner der ausgewählten Auslöser aktiv ist. Die beiden Paneele sind unabhängig.",
           "awning_shade_mode": "Ob die Markise das Fenster-Glas oder den gesamten Bereich davor beschattet. **Fenster beschatten** (Standard): Gerade weit genug ausfahren, um die direkte Sonne vom Fenster fernzuhalten, und einfahren, wenn die Sonne zur Seite des Fensters wandert – am besten zur Verringerung von Blendung und Wärmeeintrag am Glas. **Bereich davor beschatten (Terrasse)**: Vollständig ausgefahren bleiben, wenn die Sonne vor der Markise steht, um eine Terrasse oder einen Sitzbereich statt des Fensters zu beschatten.",
           "day_night_concurrent_rail_travel": "Nur für das Modell **Zwei Schienen-Entitäten**: ob die beiden Schienen gleichzeitig fahren dürfen. **Aus (Standard, empfohlen):** Die nachfolgende Schiene wartet, bis die führende Schiene ihr Ziel vollständig freigegeben hat, bevor sie sich überhaupt bewegt. Langsamer — die Beschattung braucht zwei Fahrtdauern statt eine — aber immer korrekt, weil sie auf einer tatsächlich gelesenen Position handelt statt auf einer Vermutung, dass ein Motor gestartet ist. **An:** Die nachfolgende Schiene beginnt, sobald die führende Schiene bestätigt unterwegs ist und vor ihr liegt, damit die Beschattung ihre Position in einer Fahrtdauer erreicht. ⚠️ **Nur für erfahrene Benutzer — diese Einstellung ist die Ursache der meisten gemeldeten Doppelschienen-Probleme.** Die Bestätigung, dass die führende Schiene gestartet hat, setzt voraus, dass Ihre Motoren einen `opening`/`closing` Zustand oder Zwischenpositionen veröffentlichen, während sie fahren. Viele tun das nicht: einige melden überhaupt nichts zwischen dem Befehl und der Ankunft, was Adaptive Cover Pro zwingt, eine Bewegung zu vermuten, die es nicht sieht. Wenn diese Vermutung falsch ist, wird die nachfolgende Schiene in eine Schiene freigegeben, die sich nicht bewegt hat, was einen Motor blockieren, seinen Überstrom-Schutz auslösen oder seine Kalibrierung verlieren kann. Aktivieren Sie dies nur, wenn Sie Ihre Schienen beobachten können und bestätigen können, dass sie während der gesamten Bewegung ihren Abstand einhalten.",
-          "day_night_external_command_interlock": "Nur für das Modell **Zwei Schienen-Entitäten**: was passiert, wenn ein Befehl versucht, eine Schiene in den Bereich zu fahren, den die andere Schiene besetzt. Zwei Arten von Befehlen landen dort. Ein Befehl, der **direkt an eine Schienen-Entität gesendet wird** — von einem Dashboard, einem Skript oder einer Handfernbedienung — läuft nie über Adaptive Cover Pro, also wird nichts sequenziert und der Motor verweigert ihn entweder oder bleibt auf halbem Weg stecken. Ein Befehl, der **über Adaptive Cover Pro gesendet wird** — der Schieber der Karte pro Schiene, die `set_position` / `set_axes` Dienste, die optionale Proxy-Beschattung, die My-Position-Taste — wird stattdessen von der Schienen-Freigabe-Prüfung zurückgehalten, was sicher ist, aber bedeutet, dass sich nichts bewegt. **An** (Standard): Die blockierende Schiene wird zuerst aus dem Weg gefahren und Ihr Befehl wird dann erneut gesendet, damit er tatsächlich ausgeführt wird; danach aktivieren beide Schienen die manuelle Übersteuerung. ⚠️ Das bedeutet, dass Adaptive Cover Pro möglicherweise die Schiene bewegt, die Sie nicht angesteuert haben. **Aus**: Der Befehl bleibt genau so, wie er gesendet wurde — er erreicht möglicherweise einfach sein Ziel nicht oder geschieht gar nicht — und eine Warnung wird protokolliert. Die automatische Sonnennachführung braucht dies nie: Sie berechnet beide Schienen aus einer Position und bewegt sie zusammen, also fragt sie nie nach einem Ort, den eine Schiene nicht erreichen kann."
+          "day_night_external_command_interlock": "Nur für das Modell **Zwei Schienen-Entitäten**: was passiert, wenn ein Befehl versucht, eine Schiene in den Bereich zu fahren, den die andere Schiene besetzt. Zwei Arten von Befehlen landen dort. Ein Befehl, der **direkt an eine Schienen-Entität gesendet wird** — von einem Dashboard, einem Skript oder einer Handfernbedienung — läuft nie über Adaptive Cover Pro, also wird nichts sequenziert und der Motor verweigert ihn entweder oder bleibt auf halbem Weg stecken. Ein Befehl, der **über Adaptive Cover Pro gesendet wird** — der Schieber der Karte pro Schiene, die `set_position` / `set_axes` Dienste, die optionale Proxy-Beschattung, die My-Position-Taste — wird stattdessen von der Schienen-Freigabe-Prüfung zurückgehalten, was sicher ist, aber bedeutet, dass sich nichts bewegt. **An** (Standard): Die blockierende Schiene wird zuerst aus dem Weg gefahren und Ihr Befehl wird dann erneut gesendet, damit er tatsächlich ausgeführt wird; danach aktivieren beide Schienen die manuelle Übersteuerung. ⚠️ Das bedeutet, dass Adaptive Cover Pro möglicherweise die Schiene bewegt, die Sie nicht angesteuert haben. **Aus**: Der Befehl bleibt genau so, wie er gesendet wurde — er erreicht möglicherweise einfach sein Ziel nicht oder geschieht gar nicht — und eine Warnung wird protokolliert. Die automatische Sonnennachführung braucht dies nie: Sie berechnet beide Schienen aus einer Position und bewegt sie zusammen, also fragt sie nie nach einem Ort, den eine Schiene nicht erreichen kann.",
+          "tilt_horizontal_percent": "Optionaler dritter Kalibrierungspunkt für Winkel angeben: der Neigungsprozentsatz, den die Beschattung anzeigt, wenn die Lamellen genau horizontal (90°) sind. 0 = deaktiviert, sodass die Skala direkt vom 0%-Winkel zum 100%-Winkel läuft. Stellen Sie ihn ein, wenn die Lamellen irgendwo anders als in der Mitte ihres gemeldeten Verfahrens horizontal erreicht werden – die Skala verwendet dann zwei gerade Segmente, die an diesem Punkt zusammentreffen, z. B. 0° bei 0%, horizontal bei 50% und 130° bei 100%. Erfordert, dass die 0%- und 100%-Winkel auf gegenüberliegenden Seiten von 90° liegen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist.",
+          "venetian_tilt_only_scope": "Für welche Entscheidungen der Modus „Nur Neigung\" den Behang geschlossen hält. Wird nur verwendet, wenn der Betriebsmodus **Nur Neigung** ist. **Alle automatischen Entscheidungen** (Standard): Die Jalousie wird bei jeder automatischen Entscheidung geschlossen gehalten (0 %) — Sonnenverfolgung, Wolkenunterdrückung und Klima — so wie der Modus „Nur Neigung\" schon immer funktioniert hat. **Nur Sonnenverfolgung**: Die Jalousie wird nur dann geschlossen gehalten, wenn die Sonnenverfolgung gewinnt; Wolkenunterdrückungs- und Klimaentscheidungen (Sommer / Winter / extreme Hitze) bewegen den Behang normal. Wählen Sie dies, wenn eine Jalousie im reinen Neigungsbetrieb eine Tür oder einen Gehweg bedeckt, die an bewölkten Tagen nicht blockiert bleiben darf. Hinweis: Bei einem Wolkenunterdrückungsgewinn hebt sich der Behang, aber die Lamellen behalten ihren letzten Winkel bei — Wolkenunterdrückung sendet keinen Neigungsbefehl. Manuelle Entscheidungen, benutzerdefinierte Positionen, Wetter, Bewegung und Entscheidungen außerhalb des Zeitfensters bewegen den Behang bereits unter beiden Einstellungen."
         }
       },
       "sun_tracking": {
@@ -562,7 +613,7 @@
           "manual_override_duration": "Wie lange (in Minuten) die automatische Steuerung nach manueller Anpassung pausiert werden soll. Wenn Sie die Beschattung manuell verschieben, wird die automatische Steuerung unterbrochen. Typische Werte: 10-15 min (kurze Pause, bald zur Verfolgung zurückkehren), 30 min (mittlere Pause, ausgewogen), 60-120 min (lange Pause, manuelle Position länger beibehalten), 0 (deaktiviert, sofort zur automatischen Steuerung zurückkehren - nicht empfohlen). Ermöglicht Ihnen die Kontrolle, wenn Sie sie wünschen, und setzt die Automatisierung später fort.",
           "manual_override_duration_mode": "Legen Sie fest, ob die oben eingestellte Haltezeit eine feste Zeitspanne ist oder bis zu einer Sonnen- bzw. Zeitplangrenze läuft. „Feste Dauer“ verwendet unverändert die Dauer von oben — das ist die Standardeinstellung und entspricht dem bisherigen Verhalten der manuellen Übersteuerung. Die übrigen Optionen halten bis zum ersten Sonnenuntergang, Sonnenaufgang, Sonnenereignis oder Ende des Betriebsfensters nach dem Zeitpunkt, an dem Sie die Beschattung bewegt haben. Genau das braucht man für den Fall „abends die Beschattung schließen“: Sie bleibt die ganze Nacht geschlossen, statt um 2 Uhr wieder zu öffnen. Sonnenuntergang und Sonnenaufgang bezeichnen dieselben Zeitpunkte wie im übrigen Adaptive Cover Pro, einschließlich eigener Sonnenuntergangs-/Sonnenaufgangs-Entitäten und Versätze, die Sie konfiguriert haben. Lässt sich diese Grenze nicht ermitteln — zum Beispiel „Bis das Zeitfenster endet“ ohne gesetzte Endzeit —, wird die Dauer von oben als Rückfallwert verwendet, sodass die Übersteuerung niemals unbegrenzt hält.",
           "manual_override_reset": "Setzen Sie den Timer für die manuelle Übersteuerung nach jeder manuellen Anpassung zurück. Wenn aktiviert, wird die Übersteuerungsdauer bei jeder manuellen Änderung neu gestartet. Wenn deaktiviert, gilt die Dauer nur für die erste manuelle Anpassung (nachfolgende Änderungen verlängern die Pause nicht). Aktivieren Sie diese Option, wenn Sie möchten, dass der Übersteuerungszeitraum sich mit jedem manuellen Eingriff 'erneuert'.",
-          "manual_threshold": "Positionsdifferenz (%), die als 'manuelle Übersteuerung' zählt (Standard: 1 %). Wenn Sie die Beschattung um diesen Betrag manuell verschieben, wird die Übersteuerungserkennung ausgelöst. Typische Werte: 1-2 % (empfindlich, erkennt kleine Anpassungen), 5 % (weniger empfindlich, empfohlen), 10 % (nur große manuelle Änderungen zählen). Verhindert versehentliche Übersteuerungserkennung durch kleine Motordriften oder Positionsmeldungsvariationen.",
+          "manual_threshold": "Positionsdifferenz (%), die als 'manuelle Übersteuerung' zählt (Standard: 1 %). Wenn Sie die Beschattung manuell um MEHR als diesen Betrag verschieben, wird die Übersteuerungserkennung ausgelöst. Eine Verschiebung um genau diesen Betrag nicht: das ist dieselbe Differenz, bei der Adaptive Cover Pro die Beschattung als am Ziel angekommen betrachtet, sie als manuellen Eingriff zu zählen wäre also widersprüchlich. Typische Werte: 1-2 % (empfindlich, erkennt kleine Anpassungen), 5 % (weniger empfindlich, empfohlen), 10 % (nur große manuelle Änderungen zählen). Verhindert versehentliche Übersteuerungserkennung durch kleine Motordriften oder Positionsmeldungsvariationen.",
           "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um die Übersteuerungserkennung von Übergangspositionen zu verhindern, während die Beschattung zu Ihrer Zielposition wechselt. Nützlich, wenn Ihre Beschattung während der Bewegung viele Zwischenwerte meldet.",
           "transit_timeout": "Zeitspanne, die ACP wartet, nachdem eine Beschattung aufgehört hat, Fortschritt zu melden, bevor die nächste Positionsmeldung als manuelle Übersteuerung durch den Benutzer behandelt wird. Der Timer wird zurückgesetzt, sobald sich die Beschattung dem angesteuerten Ziel nähert, sodass langsame, aber sich bewegende Beschattungen über die gesamte Fahrtdauer geschützt sind. Erhöhen Sie diesen Wert für Beschattungen, die länger als 45 Sekunden für einen vollständigen Durchgang benötigen. Standard: 45 Sekunden.",
           "manual_ignore_external": "Wenn aktiviert, werden nur Positionsänderungen, die über die Adaptive Cover Pro Proxy-Entität oder den Dienst adaptive_cover_pro.set_position gesendet werden, die manuelle Übersteuerung aktivieren. Positionsänderungen aus anderen Quellen (andere Automationen, die Standard-Home Assistant-Beschattungskarte, physische oder RF-Fernbedienungen) werden ignoriert und die automatische Steuerung läuft ungestört weiter. Praktisch, wenn Sie die Beschattung nur über ACP selbst steuern und möchten, dass laute externe Statusänderungen die Automation nicht unterbrechen. Standard: aus.",
@@ -616,8 +667,10 @@
           "weather_is_windy_template": "Vorlage \"Is Windy\" (optional)",
           "weather_is_windy_template_mode": "Logik der Vorlage \"Is Windy\"",
           "weather_enabled": "Wetter-Übersteuerung aktivieren",
+          "weather_outside_window": "Außerhalb des Zeitfensters wirken",
           "weather_severe_template": "Unwetter-Vorlage (optional)",
-          "weather_severe_template_mode": "Unwetter-Vorlage-Logik"
+          "weather_severe_template_mode": "Unwetter-Vorlage-Logik",
+          "weather_override_tilt": "Übersteuerungsneigung"
         },
         "data_description": {
           "weather_bypass_auto_control": "Wenn aktiviert, wird die Wetterübersteuerung Beschattungen weiterhin zur konfigurierten Position bewegen, auch wenn der Schalter für automatische Steuerung ausgeschaltet ist. Dies stellt sicher, dass der Schutz vor Wind, Regen und schwerem Wetter unabhängig vom Automatisierungsstatus immer aktiv ist. Deaktivieren Sie dies nur, wenn die Wetterübersteuerung dem Schalter für automatische Steuerung folgen soll.",
@@ -638,8 +691,10 @@
           "weather_is_windy_template": "Optionale Home-Assistant-Jinja2-Vorlage, die entscheidet, ob es windig ist. Wenn sie als wahr (on/true/1) ausgewertet wird, wird die Übersteuerung aktiviert. Wie sie sich mit dem Binärsensor \"Is Windy\" oben kombiniert (OR oder AND), wird durch die Einstellung \"Logik der Vorlage 'Is Windy'\" unten definiert; sie kann auch ohne Sensor allein verwendet werden und reagiert sofort auf den Wechsel der Vorlage. Beispiel: Leiten Sie \"windig\" aus einem numerischen Windgeschwindigkeit-Schwellenwert ab. Eine Vorlage, die leer ist oder nicht gerendert werden kann, äußert sich nicht (kein Widerrufen). Lassen Sie leer, um zu deaktivieren.",
           "weather_is_windy_template_mode": "Wie die Vorlage \"Is Windy\" sich mit dem Binärsensor \"Is Windy\" oben kombiniert. \"OR\" (Standard) – windig, wenn die Vorlage wahr ist ODER der Sensor eingeschaltet ist. \"AND\" – windig nur, wenn die Vorlage wahr ist UND der Sensor eingeschaltet ist. Ohne einen konfigurierten Sensor entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Vorlage \"Is Windy\" festgelegt ist.",
           "weather_enabled": "Hauptschalter für Wetter-Sicherheitsübersteuerungen (Wind, Regen, extreme Bedingungen). Wenn deaktiviert, werden die konfigurierten Wettersensoren ignoriert. Bestehende Beschattungen behalten diese Einstellung nach dem Update; neue Beschattungen starten deaktiviert.",
+          "weather_outside_window": "Wenn aktiviert (Standard), schützen Wetter-Übersteuerungen die Beschattungen auch nach dem Ende des Zeitfensters — ein Sturm um 03:00 Uhr fährt eine Markise weiterhin ein. Deaktivieren Sie diese Option, um die Wettersicherung auf das konfigurierte Start-/Endfenster zu begrenzen; außerhalb davon folgt die Beschattung stattdessen der Fensterende- oder Sonnenuntergangs-Position und das Wetter schützt sie nachts nicht. Lassen Sie die Option aktiviert, sofern Sie die Wetter-Übersteuerung nicht als Komfortregel statt als Geräteschutz verwenden.",
           "weather_severe_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob schwerwiegendes Unwetter vorhanden ist (Hagel, Frost, Gewitter usw.). Wenn sie wahr (on/true/1) erbracht wird, wird die Übersteuerung aktiviert. Wie sie mit den Unwetter-Sensoren oben (OR oder AND) kombiniert, wird durch die „Unwetter-Vorlage-Logik“ unten eingestellt; sie kann eigenständig ohne Sensoren funktionieren und reagiert sofort, wenn sich die Vorlage ändert. Beispiel: ‘schwerwiegend’ aus der Vorhersage-Bedingung einer Wetter-Entität ableiten. Eine Vorlage, die leer ist oder nicht erbracht werden kann, gibt keine Meinung ab (kein Rückzug). Leer lassen zum Deaktivieren.",
-          "weather_severe_template_mode": "Wie die Unwetter-Vorlage mit den Unwetter-Sensoren oben kombiniert. 'OR' (Standard) – schwerwiegend, wenn die Vorlage wahr ist ODER ein Sensor EIN ist. 'AND' – schwerwiegend nur, wenn die Vorlage wahr ist UND mindestens ein Sensor EIN ist. Ohne konfigurierte Sensoren entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Unwetter-Vorlage eingestellt ist."
+          "weather_severe_template_mode": "Wie die Unwetter-Vorlage mit den Unwetter-Sensoren oben kombiniert. 'OR' (Standard) – schwerwiegend, wenn die Vorlage wahr ist ODER ein Sensor EIN ist. 'AND' – schwerwiegend nur, wenn die Vorlage wahr ist UND mindestens ein Sensor EIN ist. Ohne konfigurierte Sensoren entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Unwetter-Vorlage eingestellt ist.",
+          "weather_override_tilt": "Lamellenneigung (0–100 %), um die Neigung einzustellen, wenn die Wetterübersteuerung aktiv ist. 0 % = Lamellen geschlossen, 100 % = Lamellen offen. Leer lassen, um die Lamellen dort zu behalten, wo sie sind (aktuelles Verhalten). Nicht angewendet, während „Minimale Positionsmodus\" eingeschaltet ist — in diesem Modus erhöht das Wetter nur eine Mindestposition."
         }
       },
       "weather": {
@@ -647,7 +702,7 @@
           "weather_state": "Wetterbedingungen"
         },
         "data_description": {
-          "weather_state": "Wählen Sie Wetterzustände aus, die im Klimamodus 'Sonne ist draußen' bedeuten. Empfohlene Auswahl (vorausgefüllt): ☑ sunny (direktes Sonnenlicht), ☑ partlycloudy (etwas Sonne), ☐ cloudy (kein direktes Sonnenlicht), ☐ clear (normalerweise Nacht). Wenn das aktuelle Wetter der Auswahl entspricht: Wenden Sie Klimastrategien an. Wenn keine Übereinstimmung: Verwenden Sie die Standardposition (keine Sonne angenommen). Die meisten Benutzer sollten die Standardeinstellungen beibehalten."
+          "weather_state": "Wetterzustände, die 'Sonne ist draußen' bedeuten. Dies ist ein Fallback für die Sonnenerkennung, der nur greift, wenn kein Sensor oder keine Vorlage für 'Sonne scheint' konfiguriert ist, oder wenn einer konfiguriert ist, aber noch keine Einschätzung geliefert hat. Wenn der aktuelle Wetterzustand mit einem dieser Werte übereinstimmt, wird die Sonne als vorhanden angenommen; andernfalls kann die Standardposition oder die Bewölkungsposition der Wolkenunterdrückung greifen (falls aktiviert), und die Abweichung zählt für die Einschätzung wenig Licht im Klimamodus. Standardwerte: sunny, partlycloudy, clear."
         },
         "title": "Wetterbedingungen",
         "description": "Wählen Sie die Wetterzustände aus, die im Klimamodus als „Sonne ist draußen\" zählen. Die Integration vergleicht den Live-Wetterzustand mit dieser Liste — übereinstimmende Zustände aktivieren die solarbasierte Beschattungselemente-Steuerung. Zustände, die nicht in der Liste stehen, werden als bewölkt behandelt, daher gelten Sommer-Schließen- und Winter-Öffnen-Regeln nur, wenn das Wetter passt.\n\nTypische Auswahlen sind „sonnig\" und „teilweise bewölkt\". Die verfügbaren Zustände hängen von Ihrer Wetterintegrationen ab.\n\n[Weitere Informationen]({learn_more})"
@@ -745,6 +800,7 @@
           "lux_entity": "Luxsensor (optional)",
           "lux_threshold": "Luxschwellwert",
           "irradiance_entity": "Strahlungssensor (optional)",
+          "irradiance_plane": "Messebene des Strahlungssensors",
           "irradiance_threshold": "Strahlungsschwellwert",
           "cloud_coverage_entity": "Wolkendecken-Sensor (optional)",
           "cloud_coverage_threshold": "Wolkendecken-Schwellwert",
@@ -765,6 +821,7 @@
           "lux_entity": "Optionaler Beleuchtungssensor (drinnen oder draußen) für präzise Sonnenerkennung. Wenn der Sensor unter dem Schwellenwert liegt, fehlt direktes Sonnenlicht und die Blendungskontrolle wird unterdrückt. Typische Direktsonnenwerte: 5.000–10.000 Lux. Lassen Sie leer, wenn Sie diesen Sensor nicht haben.",
           "lux_threshold": "Lichtstärke, ab der die Sonne als vorhanden gilt. Darunter verfolgt die Beschattung nicht die Sonne, sondern kehrt in ihre Standardposition zurück. Typische Werte: 5.000–10.000 Lux für direktes Sonnenlicht, 2.000–3.000 Lux für helles indirektes Licht. **Der Wert wird in der Einheit des konfigurierten Luxsensors interpretiert**. Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
           "irradiance_entity": "Optionaler Solarbestrahlungssensor (outdoor) für präzise Sonnenerkennung. Misst Solarleistung in W/m². Wenn der Sensor unter dem Schwellenwert liegt, fehlt direktes Sonnenlicht und die Blendungskontrolle wird unterdrückt. Lassen Sie leer, wenn Sie diesen Sensor nicht haben.",
+          "irradiance_plane": "Welche Fläche der obige Strahlungssensor misst. **Globalstrahlung horizontal** (Standard): Der Sensor liegt flach und zeigt senkrecht nach oben — die übliche Montage eines Pyranometers. Der Sensor „Geschätzter solarer Wärmeeintrag“ rechnet diesen Messwert dann auf die Ebene dieses Fensters um. **Fensterebene**: Der Sensor sitzt auf oder neben der Scheibe und misst bereits das, was das Fenster sieht, sodass der Messwert unverändert übernommen wird. Betrifft nur den geschätzten solaren Wärmeeintrag — die Wolkenunterdrückung liest denselben Sensor in beiden Fällen unverändert.",
           "irradiance_threshold": "Solarstrahlungsintensität, ab der die Sonne als vorhanden gilt. Darunter kehrt die Beschattung in ihre Standardposition zurück. Typische Werte: 300–500 W/m² für direktes Sonnenlicht, 100–200 W/m² für einen bewölkten Tag. **Der Wert wird in der Einheit des konfigurierten Strahlungssensors interpretiert**. Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
           "cloud_coverage_entity": "Optionaler Wolkenbedeckungssensor meldet 0–100 % (z. B. von einer Wetterintegration). Wenn der Messwert den Schwellenwert erreicht, wird die Blendungskontrolle unterdrückt und die Beschattung kehrt zu ihrer Standardposition zurück. Lassen Sie leer, wenn Sie diesen Sensor nicht haben.",
           "cloud_coverage_threshold": "Wolkenbedeckung in Prozent, ab der die Blendschutzregelung unterdrückt wird. Beispiel: 75 bedeutet, dass die Beschattung die Sonnennachführung stoppt, wenn der Himmel zu 75 % oder mehr bedeckt ist. Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
@@ -1011,6 +1068,8 @@
           "custom_position_min_mode": "Mindestmodus",
           "custom_position_use_my": "Meine Position verwenden",
           "custom_position_position_max": "Maximalposition",
+          "custom_position_outside_window": "Grenzen außerhalb des Zeitfensters aktiv halten",
+          "custom_position_scope_to_window": "Nur innerhalb des Zeitfensters anwenden",
           "custom_position_tilt": "Neigung",
           "custom_position_tilt_only": "Nur Neigung",
           "custom_position_tilt_min": "Mindestneigung",
@@ -1027,6 +1086,8 @@
           "custom_position_tilt": "Neigungswinkel (0–100 %), gesetzt wenn dieser Slot-Sensor aktiv ist. Nur für Jalousien mit Lamellenneigung — wird für andere Jalousientypen ignoriert. Leer lassen für automatische Berechnung durch die Engine.",
           "custom_position_tilt_only": "Bei Aktivierung wird nur der Lamellenwinkel (der Neigungswert) fixiert — die Sonnenverfolgung steuert weiterhin die Wagenposition. Nur für Jalousien mit Lamellenneigung. Setzt Minimummodus und Meine Position für diesen Slot außer Kraft.",
           "custom_position_position_max": "Wenn gesetzt, fungiert die Position als Höchstgrenze, solange der Auslöser dieses Slots aktiv ist — niedrigere Positionen von der Sonnenverfolgung oder anderen Berechnungen werden zugelassen, alles darüber wird darauf begrenzt. Das Gegenstück zum Mindestmodus. Nicht gesetzt lassen für kein Maximum. Bei einem Konflikt mit einem Minimum gewinnt das Minimum.",
+          "custom_position_outside_window": "Wenn aktiviert, begrenzen die Minimum-/Maximum-Grenzen dieses Slots (Mindestmodus, Maximalposition, Mindestneigung, Maximalneigung) auch nach dem Schließen des Start-/Endzeitfensters weiter, solange der Auslöser aktiv bleibt — etwa ein Fensterkontakt, der die Lamellen um 3 Uhr nachts offen halten soll. Nur die begrenzte Achse bewegt sich, und nur bis zu ihrer Grenze; die andere Achse bleibt, wo sie ist — ein nicht begrenzter Behang wird auf die Stelle gefahren, an der die Beschattung ohnehin steht, und an nicht begrenzte Lamellen geht überhaupt kein Befehl — so springt keines von beiden auf die Standardposition. Eine exakte Position, ein fester Lamellenwinkel und Meine Position verwenden wirken niemals außerhalb des Zeitfensters, unabhängig von dieser Einstellung. Eine noch aktive manuelle Übersteuerung setzt sich hier unabhängig von der Priorität des Slots durch: Solange sie hält, warten die Grenzen, bis das Zeitfenster wieder öffnet (innerhalb des Zeitfensters begrenzt eine Grenze, die die Übersteuerung überstimmt, diese weiterhin). Wird der Auslöser nachts inaktiv, bleibt die Beschattung einfach dort stehen, wo die Begrenzung sie gelassen hat.",
+          "custom_position_scope_to_window": "Wenn aktiviert, gilt dieser Slot nicht mehr, sobald das Start-/Endzeitfenster schließt, damit die Beschattung zur Position am Fenster-Ende (oder zur aktuellen Standardposition) zurückkehren kann, anstatt dort zu bleiben, wo der Slot sie platziert hat. Dies regelt nur den Anspruch dieses Slots auf die exakte Position und Meine Position verwenden — ob eine Minimum- oder Maximumgrenze das Fenster übersteht, wird stattdessen durch „Grenzen außerhalb des Zeitfensters aktiv halten“ entschieden, und die beiden werden unabhängig gesetzt. Priorität 100 (Sicherheit) ignoriert dies: Außerhalb des Zeitfensters zu wirken ist das, was diese Priorität bedeutet. Standardmäßig deaktiviert, behält also ein vorhandener Slot die ganze Nacht seine Position. Die Umpositionierung zur Endzeit selbst erfordert weiterhin, dass „Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird“ aktiviert ist.",
           "custom_position_tilt_min": "Wenn gesetzt, fungiert die Neigung als Mindestwert, solange der Auslöser dieses Slots aktiv ist — eine berechnete Neigung darunter wird darauf angehoben, alles darüber bleibt unverändert. Anders als „Nur Neigung“ (das einen exakten Winkel festlegt) ist dies eine Grenze. Nur für Jalousien. Nicht gesetzt lassen für kein Minimum.",
           "custom_position_tilt_max": "Wenn gesetzt, fungiert die Neigung als Höchstwert, solange der Auslöser dieses Slots aktiv ist — eine berechnete Neigung darüber wird darauf abgesenkt. Nur für Jalousien. Nicht gesetzt lassen für kein Maximum."
         }
@@ -1124,6 +1185,40 @@
       "travel_time_manual": {
         "description": "Sekunden für eine vollständige Fahrt von vollständig geschlossen bis vollständig offen. Setzen Sie eine Beschattung auf **0**, um ihre Zeit zu löschen; alles andere muss mindestens {min_seconds} Sekunden betragen.\n\nEine ungefähre Zahl ist wertvoll: Sie beeinflusst nur, wie die Bewegung angezeigt wird, niemals, wohin die Beschattung geschickt wird. Das Timing eines vollständigen Schließens mit einer Stoppuhr ist ausreichend.\n\n{cover_list}",
         "title": "Laufzeit — manuelle Eingabe"
+      },
+      "queue_settings": {
+        "title": "Warteschlangen-Einstellungen",
+        "description": "Wie lange diese Warteschlange nach der Übertragung einer ihrer Beschattungen blockiert bleibt. Jede Beschattung, die diese Warteschlange nennt, übernimmt den neuen Wert bei ihrem nächsten Befehl - kein Neustart erforderlich. [Weitere Informationen]({learn_more})",
+        "data": {
+          "command_queue_gap": "Abstand zwischen Befehlen"
+        },
+        "data_description": {
+          "command_queue_gap": "Sekunden, die die Warteschlange nach jeder Übertragung einer Beschattung in dieser Warteschlange aktiv bleibt, bevor die nächste Beschattung gehen darf. Standard: 5 Sekunden."
+        }
+      },
+      "queue_overview": {
+        "title": "Warteschlangen-Übersicht",
+        "description": "{overview}"
+      },
+      "card_installed": {
+        "title": "Dashboard-Karte",
+        "description": "✅ Die Begleit-**Adaptive Cover Pro Card** ist installiert, aber die installierte Version konnte nicht bestimmt werden.\n\nDie Karten lesen die Entitäten dieser Integration direkt ein, daher gibt es hier nichts zu konfigurieren. Siehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten und wie sie zu einem Dashboard hinzugefügt werden.\n\nNach einem Karten-Update führe die Aktion `lovelace.reload_resources` aus und lade den Browser vollständig neu — Home Assistant cached Dashboard-Module so stark, dass ein normales Reload die alte Version weiter bereitstellt."
+      },
+      "card_add": {
+        "title": "Dashboard-Karte",
+        "description": "Die Begleit-**Adaptive Cover Pro Card** wandelt die Sensoren dieser Integration in ein Dashboard um, das du auf einen Blick lesen kannst — Sonnen- und Fenstergeometrie, die Entscheidungsspur und aktuelle Beschattungspositionen mit Inline-Steuerelementen.\n\nSie ist auf diesem System nicht installiert.\n\n➕ [Karte zu HACS hinzufügen]({install_url})\n\nHACS öffnet die Seite der Karte und bittet dich zunächst, das Repository zu bestätigen, falls es noch nicht bekannt ist. Lade sie dort herunter und aktualisiere anschließend den Browser — die Karten erscheinen dann in der Kartenauswahl unter **Adaptive Cover Pro**.\n\nSiehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten."
+      },
+      "card_manual": {
+        "title": "Dashboard-Karte",
+        "description": "Die Begleit-**Adaptive Cover Pro Card** ist nicht installiert, und HACS wurde auf diesem System nicht gefunden.\n\nInstalliere [HACS]({hacs_url}) und öffne diese Seite erneut für ein One-Click-Add — das ist der empfehlenswerte Weg, da HACS auch Updates verwaltet.\n\nUm es stattdessen von Hand zu tun: [lade die Karte herunter]({download_url}), platziere `adaptive-cover-pro-card.js` in `www/community/adaptive-cover-pro-card/`, und registriere es dann unter **Einstellungen → Dashboards → ⋮ → Ressourcen** als JavaScript-Modul.\n\nSiehe [Dashboard-Karten]({learn_more}) für die vollständigen Anweisungen."
+      },
+      "card_installed_version": {
+        "title": "Dashboard-Karte",
+        "description": "✅ Die Begleit-**Adaptive Cover Pro Card** ist installiert, Version **{installed_version}**.\n\nDie Karten lesen die Entitäten dieser Integration direkt ein, daher gibt es hier nichts zu konfigurieren. Siehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten und wie sie zu einem Dashboard hinzugefügt werden.\n\nNach einem Karten-Update führe die Aktion `lovelace.reload_resources` aus und lade den Browser vollständig neu — Home Assistant cached Dashboard-Module so stark, dass ein normales Reload die alte Version weiter bereitstellt."
+      },
+      "card_installed_update": {
+        "title": "Dashboard-Karte",
+        "description": "✅ Die Begleit-**Adaptive Cover Pro Card** ist installiert, Version **{installed_version}**.\n\n⬆️ Version **{available_version}** ist verfügbar. Öffne HACS zum Download.\n\nDie Karten lesen die Entitäten dieser Integration direkt ein, daher gibt es hier nichts zu konfigurieren. Siehe [Dashboard-Karten]({learn_more}) für eine Übersicht der einzelnen Karten und wie sie zu einem Dashboard hinzugefügt werden.\n\nNach dem Update führe die Aktion `lovelace.reload_resources` aus und lade den Browser vollständig neu — Home Assistant cached Dashboard-Module so stark, dass ein normales Reload die alte Version weiter bereitstellt."
       }
     },
     "abort": {
@@ -1184,6 +1279,9 @@
       },
       "solar_calculation": {
         "name": "Solarberechnung"
+      },
+      "solar_gain": {
+        "name": "Geschätzter solarer Wärmeeintrag"
       },
       "group_position": {
         "name": "Gruppenposition"
@@ -1334,7 +1432,7 @@
   "selector": {
     "mode": {
       "options": {
-        "cover_blind": "Vertikale Jalousie",
+        "cover_blind": "Vertikales Rollo",
         "cover_awning": "Horizontale Markise",
         "cover_tilt": "Jalousie (nur Neigung)",
         "cover_venetian": "Jalousie (zweiachsig)",
@@ -1425,6 +1523,25 @@
         "right": "Einflügelig – am rechten Rand befestigt, schließt nach links"
       }
     },
+    "solar_cover_side": {
+      "options": {
+        "external": "Außen – vor der Verglasung montiert",
+        "internal": "Innen – im Raum montiert"
+      }
+    },
+    "solar_cover_shade": {
+      "options": {
+        "light": "Hell – reflektierender, heller Stoff",
+        "medium": "Mittel – mitteltoniger Stoff",
+        "dark": "Dunkel – absorbierender, dunkler Stoff"
+      }
+    },
+    "irradiance_plane": {
+      "options": {
+        "horizontal": "Globalstrahlung horizontal – Sensor liegt flach, nach oben",
+        "window_plane": "Fensterebene – Sensor zeigt in dieselbe Richtung wie die Scheibe"
+      }
+    },
     "outside_temp_source": {
       "options": {
         "live": "Live-Lesung (Standard) – aktueller Außensensor oder Wetter-Temperatur",
@@ -1487,6 +1604,12 @@
       "options": {
         "window": "Fenster beschatten",
         "area": "Bereich davor beschatten (Terrasse)"
+      }
+    },
+    "venetian_tilt_only_scope": {
+      "options": {
+        "all_automatic_control": "Alle automatischen Entscheidungen",
+        "sun_tracking_only": "Nur Sonnenverfolgung"
       }
     }
   },
@@ -1666,6 +1789,10 @@
         "use_my": {
           "name": "Somfy My verwenden",
           "description": "Wenn wahr, my_position_value statt Position verwenden."
+        },
+        "scope_to_window": {
+          "name": "Nur innerhalb des Zeitfensters anwenden",
+          "description": "Wenn aktiviert, wird die genaue Position dieses Slots (oder Meine Position verwenden) nicht mehr angewendet, wenn das Start-/Endzeitfenster schließt, damit die Position am Ende des Fensters übernehmen kann. Standardmäßig deaktiviert. Priorität 100 (Sicherheit) ignoriert dies. Die Umpositionierung zur Endzeit selbst erfordert weiterhin, dass „Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird“ aktiviert ist."
         }
       }
     },
@@ -1734,9 +1861,9 @@
           "description": "Fensterbreite in Metern (0,1–50 m, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Vertikaljalousie.",
           "name": "Fensterbreite"
         },
-        "venetian_tilt_skip_above": {
-          "name": "Neigung über Position überspringen (%)",
-          "description": "Neigungsbefehl überspringen, wenn die angeforderte Position diesen Wert überschreitet. Nur Jalousien. Standard 95."
+        "tilt_horizontal_percent": {
+          "name": "Neigungsprozentsatz bei horizontal",
+          "description": "Optionaler dritter Kalibrierungspunkt: der Neigungsprozentsatz, der gemeldet wird, wenn die Lamellen genau horizontal (90°) sind. 0 deaktiviert ihn. Erfordert, dass der Neigungswinkel bei 0% und der Neigungswinkel bei 100% auf gegenüberliegenden Seiten von 90° liegen."
         }
       },
       "name": "Geometrie einstellen"
@@ -1803,7 +1930,7 @@
           "name": "Wetter-Entity"
         },
         "weather_state": {
-          "description": "Wetterbedingungszustände als sonnig für Sonnenverfolgung betrachtet.",
+          "description": "Wetterzustände, die 'Sonne ist draußen' bedeuten. Dient als Fallback, wenn kein Sensor/keine Vorlage für 'Sonne scheint' konfiguriert ist.",
           "name": "Sonnige Wetterzustände"
         },
         "is_sunny_sensor": {
@@ -1833,7 +1960,7 @@
           "name": "Rücksetzung bei Fenster-Start"
         },
         "manual_threshold": {
-          "description": "Positionsänderung (%) die manuelle Übersteuerung auslöst (0–99).",
+          "description": "Positionsänderung (%) die manuelle Übersteuerung auslöst (0–99). Eine Verschiebung muss diesen Betrag überschreiten, nicht nur erreichen.",
           "name": "Erkennungsschwelle"
         },
         "manual_ignore_external": {
@@ -1996,6 +2123,10 @@
           "description": "Binärsensor zeigt gefährlichen Wind an. Null = kein.",
           "name": "Es ist windig Sensor"
         },
+        "weather_outside_window": {
+          "description": "Wenn wahr (Standard), wirken Wetter-Übersteuerungen weiter, nachdem das Zeitfenster geschlossen ist. Auf falsch setzen, um die Wettersicherung auf das konfigurierte Start-/Endfenster zu begrenzen.",
+          "name": "Außerhalb des Zeitfensters wirken"
+        },
         "weather_override_min_mode": {
           "description": "Wenn wahr, wird weather_override_position als minimale Untergrenze behandelt.",
           "name": "Minimum-Position-Modus"
@@ -2035,6 +2166,10 @@
         "weather_wind_speed_threshold": {
           "description": "Windgeschwindigkeit oberhalb derer die Beschattung eingezogen wird.",
           "name": "Windgeschwindigkeits-Schwellwert"
+        },
+        "weather_override_tilt": {
+          "name": "Wetter-Übersteuerungs-Neigung",
+          "description": "Lamellenneigung zum Einstellen wenn eine Wetterbedingung ausgelöst wird (0–100%). Nur Jalousien; null = Lamellen nicht ändern."
         }
       },
       "name": "Wetter-Sicherheitseinstellungen einstellen"
@@ -2101,7 +2236,7 @@
     },
     "set_tilt": {
       "name": "Neigung setzen",
-      "description": "Stellt die Lamellen-/Neigungsachse der Beschattung ein. Bei Jalousien (dual-axis Beschattungen) treibt dies nur die Neigungs-Lamellen an und lässt den Schlitten unverändert; bei Beschattungstypen, deren primäre Achse bereits die Neigung ist, verhält sich dies wie eine Neigungs-Bewegung. Standardmäßig aktiviert der Aufruf die Manuelle Übersteuerung; setzen Sie force=true, um die Aktivierung der Manuellen Übersteuerung zu überspringen (entspricht der force-Semantik von set_position).",
+      "description": "Stellt die Lamellen-/Neigungsachse der Beschattung ein. Bei Jalousien (zweiachsig) treibt dies nur die Neigungs-Lamellen an und lässt den Schlitten unverändert; bei Beschattungstypen, deren primäre Achse bereits die Neigung ist, verhält sich dies wie eine Neigungs-Bewegung. Standardmäßig aktiviert der Aufruf die Manuelle Übersteuerung; setzen Sie force=true, um die Aktivierung der Manuellen Übersteuerung zu überspringen (entspricht der force-Semantik von set_position).",
       "fields": {
         "tilt": {
           "name": "Neigung",

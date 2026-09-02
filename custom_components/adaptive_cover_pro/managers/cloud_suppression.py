@@ -69,7 +69,12 @@ class CloudSuppressionManager:
         self._debouncer = HoldDebouncer(
             logger, label="cloud-suppression hold", on_commit=self._on_commit
         )
-        self._debouncer.reset(False)
+        # seeded=False: the first reading after construction/reload is the world
+        # as found, not a change, so it must not be debounced (issue #1238).
+        # Without it a restart in cloudy weather would leave the resolved bool
+        # False — and the climate LOW_LIGHT branch, which now gates on it, would
+        # sun-track for the whole hold-time before the cover settled.
+        self._debouncer.reset(False, seeded=False)
 
     # --- Configuration ---
 
@@ -180,8 +185,23 @@ class CloudSuppressionManager:
         )
 
     def _reset(self) -> None:
-        """Drop all latch/resolved/pending state and cancel any timer."""
+        """Drop all latch/resolved/pending state and cancel any timer.
+
+        Runs on every cycle with nothing to fold in — not just a config reload
+        that disables the feature, but also a **transient readings outage**
+        (``readings is None`` in :meth:`evaluate`).
+
+        ``seeded=False`` is deliberate on that outage path too. The reset itself
+        is what ends an interrupted hold: it cancels the timer, drops the
+        pending target, and forces ``resolved`` back to False. Re-seeding only
+        decides what the *next* valid reading costs. Seeded, that reading would
+        re-arm a fresh full hold — a one-cycle blip would buy another
+        ``hold_time`` of the wrong state, which is the restart bug issue #1238
+        fixed. Unseeded, it is treated as the world as found and commits
+        in-line; the seed is one-shot, so the transition after it debounces
+        normally again.
+        """
         self._lux_latched = False
         self._irr_latched = False
         self._cloud_latched = False
-        self._debouncer.reset(False)
+        self._debouncer.reset(False, seeded=False)

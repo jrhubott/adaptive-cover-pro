@@ -346,12 +346,19 @@ async def test_unload_cancels_the_coalescer_pending_trailing_run(
         )
 
 
-#: The canonical reachable self-reference loop (issue #1159 review). The gate
-#: template reads ``control_status``; a True verdict opens the time window,
-#: which makes ``control_status`` stop reporting ``outside_time_window``, which
-#: renders the template False, which closes the window again. A true 2-cycle
-#: with no fixed point.
-_LOOPING_GATE_TEMPLATE = "{{ is_state(acp.control_status, 'outside_time_window') }}"
+#: The canonical reachable self-reference loop (issue #1159 review; rewired
+#: for #1310). The gate template reads ``control_status``'s
+#: ``time_window_status`` *attribute*, not its state: #1310 keyed the
+#: sensor's own state on ``clock_window_open`` (gate-independent) precisely so
+#: the gate can no longer flip it, which severed the original state-based
+#: loop. The attribute is still built from ``check_adaptive_time`` (gate-
+#: dependent) in ``sensor.py:_control_status_attrs``, so the cycle still
+#: closes through it: a True verdict opens the time window, which clears
+#: "Outside Window" from the attribute, which renders the template False,
+#: which closes the window again. A true 2-cycle with no fixed point.
+_LOOPING_GATE_TEMPLATE = (
+    "{{ is_state_attr(acp.control_status, 'time_window_status', 'Outside Window') }}"
+)
 
 #: Refreshes past this many mean the loop is running away. The counting stub
 #: stops calling through at the cap instead of letting an unguarded regression
@@ -362,21 +369,60 @@ _REFRESH_CAP = 60
 async def test_self_referencing_gate_template_refresh_is_bounded(
     hass: HomeAssistant, freezer
 ) -> None:
-    """The real control_status feedback loop settles at one refresh per window.
+    """The real time_window_status feedback loop settles at one refresh per window.
 
     Everything here is production wiring: the real daytime-gate template, the
-    real tracker, the real ``sensor.…_control_status``, the real coordinator
-    refresh. Only two things are instrumented — a counter around
-    ``async_refresh`` (which stops calling through at ``_REFRESH_CAP`` so a
-    regression fails fast instead of hanging), and one asynchronously-dispatched
-    consumer of the control-status sensor.
+    real tracker, the real ``sensor.…_control_status`` and its diagnostic
+    attributes, the real coordinator refresh. Only two things are
+    instrumented — a counter around ``async_refresh`` (which stops calling
+    through at ``_REFRESH_CAP`` so a regression fails fast instead of
+    hanging), and one asynchronously-dispatched consumer of the
+    control-status sensor.
+
+    The self-reference is deliberately wired through the
+    ``time_window_status`` *attribute*, not the sensor's own state. Since
+    #1310, ``control_status``'s state reads ``clock_window_open`` — the
+    start/end clock only, gate-independent — so the daytime gate can never
+    flip the sensor's own state and the original state-based loop no longer
+    closes. The ``time_window_status`` attribute
+    (``sensor.py:_control_status_attrs``) still reads ``check_adaptive_time``,
+    which folds the gate back in, so the attribute — not the state — is what
+    re-establishes the cycle: a True gate verdict clears "Outside Window" from
+    the attribute, the template (which reads that attribute) renders False,
+    the gate reports "not daytime", ``check_adaptive_time`` goes False, the
+    attribute flips back to "Outside Window", and the template renders True
+    again. A true 2-cycle with no fixed point — the same shape as the
+    pre-#1310 loop, reattached one field over.
+
+    HA still fires a full ``state_changed`` event for this: the sensor's main
+    ``state`` value never changes over the run (``clock_window_open`` is
+    stable for the whole window), but its ``attributes`` dict does, and
+    ``StateMachine.async_set_internal`` fires ``EVENT_STATE_CHANGED`` — not
+    the lighter ``EVENT_STATE_REPORTED`` — whenever ``old_state.attributes !=
+    attributes``, state value aside. And HA's template ``RenderInfo`` tracks
+    dependencies at the entity level, not the attribute level:
+    ``is_state_attr`` collects the entity into ``RenderInfo.entities`` exactly
+    like ``is_state`` does — they read different properties
+    (``TemplateStateBase.attributes`` vs ``.state``), but each one calls
+    ``_collect_state()``, which adds the *entity_id* and nothing finer —
+    so ``_event_triggers_rerender`` treats this attribute-only flip as a
+    reason to re-render, same as it always did for the state-based version.
 
     That consumer matters. A real install always has one (the recorder, a
     template sensor, an automation), and it is what keeps every flip visible to
     the tracker. With only synchronous callbacks on the bus the loop happens to
     die out after a handful of iterations and the test would pass vacuously;
-    with one, the *unguarded* loop is unbounded — measured at >9000 refreshes
-    before the harness timed out, versus the five below.
+    with one, the *unguarded* loop is unbounded. The original state-based
+    version of this loop measured >9000 refreshes before the harness timed
+    out; this attribute-based rewiring was re-measured the same way (real
+    ``async_setup`` + real consumer, ``_coalesce_namespace_refreshes`` swapped
+    for an identity passthrough so every flip calls the tracked action
+    directly) and drove *more than 5000* refreshes inside the single
+    ``await hass.async_block_till_done()`` that follows ``async_setup`` —
+    the measurement was capped there only to keep the run fast, not because
+    the loop showed any sign of settling. Both loops are the same shape: a
+    boolean with no fixed point, re-rendering every time its own effect
+    changes.
 
     A real start/end window is configured, with hours of slack on both sides:
     the ``hass`` fixture puts HA in US/Pacific, so the frozen 17:00 UTC instant

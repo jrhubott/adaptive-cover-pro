@@ -37,6 +37,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_SCOPE,
     CONF_VENETIAN_TILT_SKIP_MODE,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_ENABLE_PROXY_COVER,
     CONF_ENTITIES,
     CONF_OUTSIDE_TEMP_SOURCE,
@@ -582,3 +583,278 @@ def test_selector_offers_three_options() -> None:
     raw_options = selector.config["options"]
     option_values = {(o["value"] if isinstance(o, dict) else o) for o in raw_options}
     assert option_values == {"live", "forecast_max", "max_of_live_and_forecast"}
+
+
+# ---------------------------------------------------------------------------
+# Solar transmittance (#1236): five optional fields render on the geometry step
+# for EVERY cover type — the estimate is a property of the window assembly, not
+# of a particular drive mechanism, so there is no per-policy schema branch.
+# ---------------------------------------------------------------------------
+
+
+_SOLAR_PROPERTY_KEYS = (
+    "solar_properties_enabled",
+    "solar_cover_side",
+    "solar_cover_shade",
+    "solar_g_total",
+    "solar_g_glazing",
+)
+
+_ALL_GEOMETRY_TYPES = [
+    "cover_blind",
+    "cover_awning",
+    "cover_oscillating_awning",
+    "cover_tilt",
+    "cover_venetian",
+    "cover_roof_window",
+    "cover_sliding_curtain",
+    "cover_louvered_roof",
+    "cover_day_night_shade",
+    "cover_dual_panel",
+]
+
+
+@pytest.mark.parametrize("cover_type", _ALL_GEOMETRY_TYPES)
+def test_solar_property_fields_on_geometry_step(cover_type) -> None:
+    keys = _schema_keys(cf._get_geometry_schema(cover_type))
+    for key in _SOLAR_PROPERTY_KEYS:
+        assert key in keys, f"{key} should be on the geometry step for {cover_type}"
+
+
+@pytest.mark.parametrize("cover_type", _ALL_GEOMETRY_TYPES)
+def test_solar_property_keys_are_live_option_keys(cover_type) -> None:
+    # Rendering the field is not enough: the options service rejects any key
+    # the policy does not advertise, so the section builder must carry them too.
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    live = get_policy(cover_type).live_option_keys()
+    for key in _SOLAR_PROPERTY_KEYS:
+        assert key in live, f"{key} missing from live_option_keys for {cover_type}"
+
+
+@pytest.mark.parametrize(
+    "conf_key, expected_translation_key",
+    [
+        ("solar_cover_side", "solar_cover_side"),
+        ("solar_cover_shade", "solar_cover_shade"),
+    ],
+)
+def test_solar_selects_use_selector_with_translation_key(
+    conf_key: str, expected_translation_key: str
+) -> None:
+    """Both solar selects must render translated labels, not raw enum values."""
+    from homeassistant.helpers import selector as ha_selector
+
+    schema = cf._get_geometry_schema("cover_blind")
+    marker = next(k for k in schema.schema if str(k) == conf_key)
+    value_validator = schema.schema[marker]
+    assert isinstance(value_validator, ha_selector.SelectSelector)
+    assert value_validator.config.get("translation_key") == expected_translation_key
+
+
+def test_solar_master_toggle_defaults_off() -> None:
+    """Absent ⇒ off ⇒ the whole feature is inert on an untouched install."""
+    schema = cf._get_geometry_schema("cover_blind")
+    marker = next(k for k in schema.schema if str(k) == "solar_properties_enabled")
+    assert marker.default() is False
+
+
+def test_solar_g_total_has_no_default_so_unset_round_trips() -> None:
+    """The optional override must stay absent until the user sets it (#1267)."""
+    import voluptuous as vol_
+
+    schema = cf._get_geometry_schema("cover_blind")
+    marker = next(k for k in schema.schema if str(k) == "solar_g_total")
+    assert isinstance(marker, vol_.Optional)
+    assert marker.default is vol_.UNDEFINED
+    assert "solar_g_total" not in schema({})
+
+
+def test_solar_g_glazing_defaults_to_the_shared_glazing_constant() -> None:
+    from custom_components.adaptive_cover_pro.const import DEFAULT_SOLAR_G_GLAZING
+
+    schema = cf._get_geometry_schema("cover_blind")
+    marker = next(k for k in schema.schema if str(k) == "solar_g_glazing")
+    assert marker.default() == DEFAULT_SOLAR_G_GLAZING
+
+
+def test_solar_fields_render_after_the_window_facing_fields() -> None:
+    # The window's own geometry comes first; the optional material description
+    # is appended, so the pinned azimuth → fov → distance order is untouched.
+    keys = [str(k) for k in cf._get_geometry_schema("cover_blind").schema]
+    assert keys.index("distance_shaded_area") < keys.index("solar_properties_enabled")
+
+
+# ---------------------------------------------------------------------------
+# Estimated solar gain (#1237): the glazed-area override sits with the other
+# solar fields on the geometry step (it is a property of the window, so it
+# renders for every cover type — including the ones whose geometry cannot
+# derive an area, which is exactly who needs the override). The plane select
+# sits with the irradiance entity it describes, on the light & cloud step.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cover_type", _ALL_GEOMETRY_TYPES)
+def test_glass_area_on_geometry_step(cover_type) -> None:
+    keys = _schema_keys(cf._get_geometry_schema(cover_type))
+    assert "glass_area" in keys
+
+
+@pytest.mark.parametrize("cover_type", _ALL_GEOMETRY_TYPES)
+def test_glass_area_is_a_live_option_key(cover_type) -> None:
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    assert "glass_area" in get_policy(cover_type).live_option_keys()
+
+
+def test_glass_area_has_no_default_so_unset_round_trips() -> None:
+    """Blank means "derive from geometry", so it must stay absent (#1267)."""
+    import voluptuous as vol_
+
+    schema = cf._get_geometry_schema("cover_blind")
+    marker = next(k for k in schema.schema if str(k) == "glass_area")
+    assert isinstance(marker, vol_.Optional)
+    assert marker.default is vol_.UNDEFINED
+    assert "glass_area" not in schema({})
+
+
+def test_glass_area_renders_with_the_other_solar_fields() -> None:
+    keys = [str(k) for k in cf._get_geometry_schema("cover_blind").schema]
+    assert keys.index("solar_properties_enabled") < keys.index("glass_area")
+
+
+def test_irradiance_plane_on_light_cloud_step() -> None:
+    from custom_components.adaptive_cover_pro.config_dynamic import light_cloud_schema
+
+    assert "irradiance_plane" in _schema_keys(light_cloud_schema())
+
+
+def test_irradiance_plane_renders_beside_the_irradiance_entity() -> None:
+    from custom_components.adaptive_cover_pro.config_dynamic import light_cloud_schema
+
+    keys = [str(k) for k in light_cloud_schema().schema]
+    assert keys.index("irradiance_plane") == keys.index("irradiance_entity") + 1
+
+
+def test_irradiance_plane_uses_a_selector_with_a_translation_key() -> None:
+    from homeassistant.helpers import selector as ha_selector
+
+    from custom_components.adaptive_cover_pro.config_dynamic import light_cloud_schema
+
+    schema = light_cloud_schema()
+    marker = next(k for k in schema.schema if str(k) == "irradiance_plane")
+    validator = schema.schema[marker]
+    assert isinstance(validator, ha_selector.SelectSelector)
+    assert validator.config.get("translation_key") == "irradiance_plane"
+
+
+def test_irradiance_plane_defaults_to_horizontal() -> None:
+    """Most users own a flat-mounted pyranometer, so that is the safe default."""
+    from custom_components.adaptive_cover_pro.config_dynamic import light_cloud_schema
+    from custom_components.adaptive_cover_pro.const import DEFAULT_IRRADIANCE_PLANE
+
+    schema = light_cloud_schema()
+    marker = next(k for k in schema.schema if str(k) == "irradiance_plane")
+    assert marker.default() == DEFAULT_IRRADIANCE_PLANE == "horizontal"
+
+
+def test_irradiance_plane_is_a_live_option_key() -> None:
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    assert "irradiance_plane" in get_policy("cover_blind").live_option_keys()
+
+
+def test_irradiance_plane_is_not_on_the_geometry_step() -> None:
+    assert "irradiance_plane" not in _schema_keys(
+        cf._get_geometry_schema("cover_blind")
+    )
+
+
+# ---------------------------------------------------------------------------
+# Weather-override slat angle (#1297): a second axis only exists on venetians,
+# so the slider is opt-in per cover type. ``cover_tilt`` deliberately does NOT
+# get it — its primary axis IS the slat, so weather_override_position already
+# sets the angle and a second field would contradict the first.
+# ---------------------------------------------------------------------------
+
+
+def test_weather_override_tilt_slider_only_with_include_tilt() -> None:
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+
+    assert CONF_WEATHER_OVERRIDE_TILT not in _schema_keys(weather_override_schema())
+    assert CONF_WEATHER_OVERRIDE_TILT in _schema_keys(
+        weather_override_schema(include_tilt=True)
+    )
+
+
+def test_weather_override_tilt_has_no_default_so_unset_round_trips() -> None:
+    """Blank means "leave the slats alone", so it must stay absent (#1267).
+
+    A bare ``vol.Optional`` with no default is what makes voluptuous omit the
+    key from ``user_input`` when the user clears the slider, which in turn is
+    what lets ``optional_entities`` null it. Give this marker a default and the
+    field becomes uncleanable. The end-to-end round trip through the real
+    options flow is pinned by ``test_weather_override_tilt_saves_and_clears``
+    in ``tests/test_config_flow_integration.py`` — this schema cannot be
+    ``__call__``-ed here, because a sibling threshold field validates against
+    the event loop.
+    """
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+
+    schema = weather_override_schema(include_tilt=True)
+    marker = next(k for k in schema.schema if str(k) == CONF_WEATHER_OVERRIDE_TILT)
+    assert isinstance(marker, vol.Optional)
+    assert marker.default is vol.UNDEFINED
+
+
+def test_weather_override_tilt_is_a_percentage_slider() -> None:
+    from homeassistant.helpers import selector as ha_selector
+
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+
+    schema = weather_override_schema(include_tilt=True)
+    sel = next(
+        v for k, v in schema.schema.items() if str(k) == CONF_WEATHER_OVERRIDE_TILT
+    )
+    assert isinstance(sel, ha_selector.NumberSelector)
+    assert sel.config["min"] == 0
+    assert sel.config["max"] == 100
+    assert sel.config["unit_of_measurement"] == "%"
+
+
+def test_weather_override_tilt_renders_between_position_and_min_mode() -> None:
+    """Form order follows meaning: what to set, then how to apply it."""
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+
+    keys = [str(k) for k in weather_override_schema(include_tilt=True).schema]
+    assert (
+        keys.index("weather_override_position")
+        < keys.index(CONF_WEATHER_OVERRIDE_TILT)
+        < keys.index("weather_override_min_mode")
+    )
+
+
+@pytest.mark.parametrize(
+    ("cover_type", "expected"),
+    [
+        (CoverType.VENETIAN, True),
+        (CoverType.BLIND, False),
+        (CoverType.TILT, False),
+        ("cover_day_night_shade", False),
+    ],
+)
+def test_weather_override_tilt_is_live_option_key_for_venetian_only(
+    cover_type, expected
+) -> None:
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    live = get_policy(cover_type).live_option_keys()
+    assert (CONF_WEATHER_OVERRIDE_TILT in live) is expected

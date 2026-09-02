@@ -68,6 +68,8 @@ from ..const import (
     CONF_END_ENTITY,
     CONF_END_OF_WINDOW_POS,
     CONF_EXTREME_HEAT_POSITION,
+    CONF_COMMAND_QUEUE,
+    CONF_COMMAND_QUEUE_GAP,
     CONF_END_TIME,
     CONF_ENTITIES,
     CONF_FOV_LEFT,
@@ -76,6 +78,7 @@ from ..const import (
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_GLARE_ZONE_PRIORITY,
+    CONF_GLASS_AREA,
     CONF_GROUP_STAGGER_DELAY,
     CONF_HEIGHT_WIN,
     CONF_INTERP,
@@ -85,6 +88,7 @@ from ..const import (
     CONF_INTERP_START,
     CONF_INVERSE_STATE,
     CONF_IRRADIANCE_ENTITY,
+    CONF_IRRADIANCE_PLANE,
     CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
@@ -135,7 +139,12 @@ from ..const import (
     CONF_SLIDING_POINT2_X,
     CONF_SLIDING_POINT2_Y,
     CONF_SLIDING_SLIDE_DIRECTION,
+    CONF_SOLAR_COVER_SHADE,
+    CONF_SOLAR_COVER_SIDE,
+    CONF_SOLAR_G_GLAZING,
+    CONF_SOLAR_G_TOTAL,
     CONF_SOLAR_PRIORITY,
+    CONF_SOLAR_PROPERTIES_ENABLED,
     CONF_START_ENTITY,
     CONF_START_TIME,
     CONF_SUNRISE_OFFSET,
@@ -160,11 +169,13 @@ from ..const import (
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_POST_SETTLE_MODE,
+    CONF_VENETIAN_TILT_ONLY_SCOPE,
     CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_RESET_SCOPE,
@@ -174,11 +185,15 @@ from ..const import (
     CONF_VENETIAN_TILT_TRANSFORM,
     DAY_NIGHT_CONTROL_MODELS,
     DUAL_PANEL_BLACKOUT_TRIGGERS,
+    IRRADIANCE_PLANES,
     MANUAL_OVERRIDE_DURATION_MODES,
     MIN_USABLE_SLAT_ANGLE_DEG,
     SLIDING_SLIDE_DIRECTIONS,
+    SOLAR_COVER_SHADES,
+    SOLAR_COVER_SIDES,
     VENETIAN_MODES,
     VENETIAN_POST_SETTLE_MODES,
+    VENETIAN_TILT_ONLY_SCOPES,
     VENETIAN_TILT_RESET_DIRECTIONS,
     VENETIAN_TILT_RESET_SCOPES,
     VENETIAN_TILT_SKIP_MODES,
@@ -196,8 +211,10 @@ from ..const import (
     CONF_WEATHER_IS_WINDY_SENSOR,
     CONF_WEATHER_IS_WINDY_TEMPLATE,
     CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
+    CONF_WEATHER_OUTSIDE_WINDOW,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_WEATHER_PRIORITY,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
@@ -462,12 +479,21 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # Geometry — dual-panel shade (#996)
     CONF_DUAL_PANEL_FRONT_ENTITY: _entity_v(),
     CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: _list_subset_v(*DUAL_PANEL_BLACKOUT_TRIGGERS),
+    # Geometry — optional solar-transmittance description (#1236)
+    CONF_SOLAR_PROPERTIES_ENABLED: _bool_v(),
+    CONF_SOLAR_COVER_SIDE: _select_v(*SOLAR_COVER_SIDES),
+    CONF_SOLAR_COVER_SHADE: _select_v(*SOLAR_COVER_SHADES),
+    CONF_SOLAR_G_TOTAL: _range(CONF_SOLAR_G_TOTAL),
+    CONF_SOLAR_G_GLAZING: _range(CONF_SOLAR_G_GLAZING),
+    # Geometry — optional glazed-area override for the gain estimate (#1237)
+    CONF_GLASS_AREA: _range(CONF_GLASS_AREA),
     # Geometry — tilt/venetian
     CONF_TILT_DEPTH: _range(CONF_TILT_DEPTH),
     CONF_TILT_DISTANCE: _range(CONF_TILT_DISTANCE),
     CONF_TILT_MODE: _select_v("mode1", "mode2", "specify_angles"),
     CONF_TILT_ANGLE_0: _range(CONF_TILT_ANGLE_0),
     CONF_TILT_ANGLE_100: _range(CONF_TILT_ANGLE_100),
+    CONF_TILT_HORIZONTAL_PERCENT: _range(CONF_TILT_HORIZONTAL_PERCENT),
     CONF_MAX_TILT: _range(CONF_MAX_TILT),
     CONF_MAX_TILT_SUN_ONLY: _bool_v(),
     CONF_MIN_TILT: _range(CONF_MIN_TILT),
@@ -485,6 +511,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_VENETIAN_TILT_RESET_SCOPE: _select_v(*VENETIAN_TILT_RESET_SCOPES),
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG: _range(CONF_VENETIAN_BACKROTATE_PUBLISH_LAG),
     CONF_VENETIAN_MODE: _select_v(*VENETIAN_MODES),
+    CONF_VENETIAN_TILT_ONLY_SCOPE: _select_v(*VENETIAN_TILT_ONLY_SCOPES),
     # Sun tracking
     CONF_ENABLE_SUN_TRACKING: _bool_v(),
     CONF_AZIMUTH: _range(CONF_AZIMUTH),
@@ -603,6 +630,18 @@ FIELD_VALIDATORS: dict[str, Any] = {
         for slot_keys in CUSTOM_POSITION_SLOTS.values()
         for sub in ("position_max", "tilt_min", "tilt_max")
     },
+    # Outside-window constraint opt-in (issue #943 item B) — a plain boolean,
+    # so no OPTION_RANGES entry.
+    **{
+        slot_keys["outside_window"]: _bool_v()
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
+    },
+    # Scope-to-window opt-in (issue #1318) — the inverse-polarity sibling of
+    # the key above, and a plain boolean too, so no OPTION_RANGES entry.
+    **{
+        slot_keys["scope_to_window"]: _bool_v()
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
+    },
     **{slot_keys["enabled"]: _bool_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()},
     # Glare zones 1–4 — name is free-form text; x/y/radius/z pull ranges from
     # OPTION_RANGES (bounds mirror config_flow._build_glare_zones_schema).
@@ -623,6 +662,8 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_LUX_ENTITY: _entity_v(),
     CONF_LUX_THRESHOLD: _templatable_num(CONF_LUX_THRESHOLD),
     CONF_IRRADIANCE_ENTITY: _entity_v(),
+    # Which plane the irradiance sensor measures (#1237)
+    CONF_IRRADIANCE_PLANE: _select_v(*IRRADIANCE_PLANES),
     CONF_IRRADIANCE_THRESHOLD: _templatable_num(CONF_IRRADIANCE_THRESHOLD),
     CONF_CLOUD_COVERAGE_ENTITY: _entity_v(),
     CONF_CLOUD_COVERAGE_THRESHOLD: _templatable_num(CONF_CLOUD_COVERAGE_THRESHOLD),
@@ -671,6 +712,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     ),
     # Weather safety
     CONF_WEATHER_BYPASS_AUTO_CONTROL: _bool_v(),
+    CONF_WEATHER_OUTSIDE_WINDOW: _bool_v(),
     CONF_WEATHER_WIND_SPEED_SENSOR: _entity_v(),
     CONF_WEATHER_WIND_DIRECTION_SENSOR: _entity_v(),
     CONF_WEATHER_WIND_SPEED_THRESHOLD: _templatable_num(
@@ -697,6 +739,11 @@ FIELD_VALIDATORS: dict[str, Any] = {
         *[m.value for m in TemplateCombineMode]
     ),
     CONF_WEATHER_OVERRIDE_POSITION: _range(CONF_WEATHER_OVERRIDE_POSITION),
+    # Venetian-only slat angle for the retraction (#1297) — None leaves the
+    # slats alone. Gated out of the UI by the policy, but the service seat is
+    # ungated like every other key here; the coordinator simply ignores a tilt
+    # a single-axis cover cannot act on.
+    CONF_WEATHER_OVERRIDE_TILT: _range(CONF_WEATHER_OVERRIDE_TILT),
     CONF_WEATHER_OVERRIDE_MIN_MODE: _bool_v(),
     CONF_WEATHER_TIMEOUT: _range(CONF_WEATHER_TIMEOUT),
     # Built-in handler priority overrides (1-99; clear to restore class default)
@@ -709,6 +756,11 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_SOLAR_PRIORITY: _range(CONF_SOLAR_PRIORITY),
     # Cover group (issue #790, Phase 2)
     CONF_GROUP_STAGGER_DELAY: _range(CONF_GROUP_STAGGER_DELAY),
+    # Named dispatch queue (issue #1189). The gap is bounded; the name is free
+    # text (any string, or blank for "no queue"), because a cover may join a
+    # queue nobody has created an entry for yet.
+    CONF_COMMAND_QUEUE_GAP: _range(CONF_COMMAND_QUEUE_GAP),
+    CONF_COMMAND_QUEUE: vol.Any(str, None),
 }
 
 # ---------------------------------------------------------------------------
@@ -783,6 +835,7 @@ _SECTION_LIGHT_CLOUD = frozenset(
         CONF_LUX_ENTITY,
         CONF_LUX_THRESHOLD,
         CONF_IRRADIANCE_ENTITY,
+        CONF_IRRADIANCE_PLANE,
         CONF_IRRADIANCE_THRESHOLD,
         CONF_CLOUD_COVERAGE_ENTITY,
         CONF_CLOUD_COVERAGE_THRESHOLD,
@@ -825,6 +878,7 @@ _SECTION_CLIMATE = frozenset(
 _SECTION_WEATHER_SAFETY = frozenset(
     {
         CONF_WEATHER_BYPASS_AUTO_CONTROL,
+        CONF_WEATHER_OUTSIDE_WINDOW,
         CONF_WEATHER_WIND_SPEED_SENSOR,
         CONF_WEATHER_WIND_DIRECTION_SENSOR,
         CONF_WEATHER_WIND_SPEED_THRESHOLD,
@@ -841,6 +895,9 @@ _SECTION_WEATHER_SAFETY = frozenset(
         CONF_WEATHER_SEVERE_TEMPLATE,
         CONF_WEATHER_SEVERE_TEMPLATE_MODE,
         CONF_WEATHER_OVERRIDE_POSITION,
+        # Has a FIELD_VALIDATORS entry, so it must be service-settable too —
+        # else the validator is dead code and the key silently dropped (#1297).
+        CONF_WEATHER_OVERRIDE_TILT,
         CONF_WEATHER_OVERRIDE_MIN_MODE,
         CONF_WEATHER_TIMEOUT,
     }
@@ -899,6 +956,7 @@ _SECTION_GEOMETRY_TILT = frozenset(
         CONF_TILT_MODE,
         CONF_TILT_ANGLE_0,
         CONF_TILT_ANGLE_100,
+        CONF_TILT_HORIZONTAL_PERCENT,
     }
 )
 _SECTION_GEOMETRY_OSCILLATING = frozenset(
@@ -947,6 +1005,24 @@ _SECTION_GEOMETRY_DUAL_PANEL = frozenset(
         CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
     }
 )
+# Optional solar-transmittance description (#1236). Universal rather than
+# per-cover-type: it describes the window assembly, not the drive mechanism, so
+# it renders on every geometry step and every one of these keys carries a
+# FIELD_VALIDATORS entry — which under the convention above means each must be
+# service-settable or the validator is dead code.
+_SECTION_GEOMETRY_SOLAR = frozenset(
+    {
+        CONF_SOLAR_PROPERTIES_ENABLED,
+        CONF_SOLAR_COVER_SIDE,
+        CONF_SOLAR_COVER_SHADE,
+        CONF_SOLAR_G_TOTAL,
+        CONF_SOLAR_G_GLAZING,
+        # The glazed-area override for the estimated-solar-gain figure (#1237)
+        # renders on the same step, for the same reason: it describes the
+        # window, not the drive mechanism.
+        CONF_GLASS_AREA,
+    }
+)
 _SECTION_GEOMETRY_ALL = (
     _SECTION_GEOMETRY_VERTICAL
     | _SECTION_GEOMETRY_AWNING
@@ -956,6 +1032,7 @@ _SECTION_GEOMETRY_ALL = (
     | _SECTION_GEOMETRY_SLIDING
     | _SECTION_GEOMETRY_DAY_NIGHT
     | _SECTION_GEOMETRY_DUAL_PANEL
+    | _SECTION_GEOMETRY_SOLAR
 )
 
 _SECTION_VENETIAN = frozenset(
@@ -1113,6 +1190,22 @@ def _cross_field_validate(
             raise ServiceValidationError(
                 f"tilt_angle_0 ({angle_0}) must be less than tilt_angle_100 ({angle_100})."
             )
+
+    # Three-point calibration mid-point (#1222). Triggered by a change to ANY of
+    # the three keys, since moving an endpoint can invalidate an already-stored
+    # mid-point just as easily as the mid-point itself can. The rule is the
+    # engine's own ``hinge_is_usable``, reached through the tilt policy's
+    # message wrapper, so "accepted here" and "honoured by the map" cannot part.
+    if (
+        CONF_TILT_HORIZONTAL_PERCENT in patch
+        or CONF_TILT_ANGLE_0 in patch
+        or CONF_TILT_ANGLE_100 in patch
+    ):
+        from ..cover_types.tilt import tilt_horizontal_percent_error
+
+        message = tilt_horizontal_percent_error(merged_active)
+        if message is not None:
+            raise ServiceValidationError(message)
 
     # Custom position slot completeness: a slot needs a trigger (sensors,
     # legacy sensor, or template) AND a claim on an axis — or neither. The
@@ -1309,6 +1402,9 @@ async def _handle_set_custom_position(hass: HomeAssistant, call: ServiceCall) ->
         "position_max": slot_keys["position_max"],
         "tilt_min": slot_keys["tilt_min"],
         "tilt_max": slot_keys["tilt_max"],
+        "outside_window": slot_keys["outside_window"],
+        # Scope the FIXED claim to the clock window (issue #1318)
+        "scope_to_window": slot_keys["scope_to_window"],
     }
 
     # Build patch: only include fields that were supplied in the call

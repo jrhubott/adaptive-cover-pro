@@ -10,46 +10,21 @@ whether the install is inverted.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from custom_components.adaptive_cover_pro.const import CONF_INTERP, CONF_INVERSE_STATE
-from custom_components.adaptive_cover_pro.coordinator import (
-    AdaptiveDataUpdateCoordinator,
-)
-from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.sensor import _cover_position_attrs
+
+from tests._helpers.cover_position_sensor import make_cover_position_sensor
 
 pytestmark = pytest.mark.unit
 
 
-def _inverted_for(options: dict) -> bool:
-    """Evaluate the real coordinator property against *options*."""
-    coord = SimpleNamespace(
-        _policy=get_policy("cover_blind"),
-        config_entry=SimpleNamespace(options=options),
-    )
-    return AdaptiveDataUpdateCoordinator.position_axis_inverted.fget(coord)
-
-
 def _make_sensor(*, options: dict, positions: dict | None) -> MagicMock:
-    """Minimal sensor mock exercising the snapshot.cover_positions branch."""
-    s = MagicMock()
-    s.data.attributes = {}
-    s.data.states = {"control": "solar", "state": 70, "held_position": None}
-    s.coordinator._pipeline_result = None
-    s.coordinator.data.diagnostics = None
-    s.coordinator._cmd_svc.transit_states.return_value = {}
-    s.coordinator._cmd_svc._position_tolerance = 2
-    s.coordinator._snapshot = (
-        SimpleNamespace(cover_positions=positions) if positions is not None else None
-    )
-    # lift_travel_metres None -> _compute_distance_attrs returns None (skip).
-    s.coordinator._policy.lift_travel_metres.return_value = None
-    s.coordinator.position_axis_inverted = _inverted_for(options)
-    return s
+    """Shared stub, pinned to this module's snapshot.cover_positions branch."""
+    return make_cover_position_sensor(options=options, positions=positions)
 
 
 def test_linear_actual_positions_inverted() -> None:

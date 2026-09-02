@@ -330,6 +330,17 @@ class TestTiltBounds:
         res = _evaluate([_slot(1, tilt_min=50)], winner=_StubWinner(50, tilt=20))
         assert (res.tilt_low, res.tilt_high) == (None, None)
 
+    def test_tilt_only_without_fixed_tilt_still_clamps_winner_tilt(self) -> None:
+        """Issue #1215: tilt_only + tilt_min on the SAME slot, with no fixed
+        slat angle, must clamp a tilt the winner already set — exactly like a
+        plain tilt_min slot (``test_tilt_min_raises_winner_tilt`` above). A
+        vacuous ``tilt_only`` FIXED claim must not swallow the bound.
+        """
+        res = _evaluate(
+            [_slot(1, tilt_only=True, tilt_min=50)], winner=_StubWinner(50, tilt=46)
+        )
+        assert res.tilt == 50
+
 
 class TestTiltOnlyOverlayThenClamp:
     """FIXED fills when unset; bounds then clamp the filled value."""

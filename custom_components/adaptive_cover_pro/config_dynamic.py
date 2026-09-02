@@ -91,6 +91,7 @@ from .const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENABLED,
+    CONF_WEATHER_OUTSIDE_WINDOW,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_RAINING_TEMPLATE,
@@ -126,6 +127,7 @@ from .const import (
     DEFAULT_OUTSIDE_TEMP_SOURCE,
     DEFAULT_TRACKING_SEASONS,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
+    DEFAULT_WEATHER_STATE,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
@@ -262,6 +264,51 @@ def window_facing_schema(
                 metric_step=0.1,
             )
         )
+    return vol.Schema(fields)
+
+
+def solar_properties_schema(
+    hass: HomeAssistant | None = None, options: Mapping | None = None
+) -> vol.Schema:
+    """Build the optional solar-property description fields (#1236, #1237).
+
+    Six fields — a master toggle, mounting side, shade darkness, an optional
+    direct ``g_total`` override, the unshaded glazing g-value, and the optional
+    glazed-area override — composed onto EVERY cover type's geometry step
+    through this single seam, exactly like :func:`window_facing_schema`. How
+    much solar energy the assembly rejects, and how much glass there is, are
+    properties of the window rather than of the drive mechanism, so there is no
+    per-policy branch and no key duplicated into ten geometry schemas.
+
+    The area override in particular MUST reach every cover type: the types that
+    cannot derive an area from their geometry are precisely the ones whose users
+    need to type one in.
+
+    Markers and selectors come straight from the ``config_fields`` registry so
+    the bounds, defaults and validators stay single-sourced; this function owns
+    only the grouping and the order.
+    """
+    from .config_fields import (
+        CONF_SOLAR_COVER_SHADE,
+        CONF_SOLAR_COVER_SIDE,
+        CONF_SOLAR_G_GLAZING,
+        CONF_SOLAR_G_TOTAL,
+        CONF_SOLAR_PROPERTIES_ENABLED,
+        FIELD_SPECS,
+    )
+    from .const import CONF_GLASS_AREA
+
+    fields: dict = {}
+    for key in (
+        CONF_SOLAR_PROPERTIES_ENABLED,
+        CONF_SOLAR_COVER_SIDE,
+        CONF_SOLAR_COVER_SHADE,
+        CONF_SOLAR_G_TOTAL,
+        CONF_SOLAR_G_GLAZING,
+        CONF_GLASS_AREA,
+    ):
+        marker, sel = FIELD_SPECS[key].to_marker(hass, dict(options or {}))
+        fields[marker] = sel
     return vol.Schema(fields)
 
 
@@ -483,7 +530,10 @@ def blind_spot_slot_schema(slot_n: int, options: dict | None = None) -> vol.Sche
 
 
 def weather_override_schema(
-    hass: HomeAssistant | None = None, options: dict | None = None
+    hass: HomeAssistant | None = None,
+    options: dict | None = None,
+    *,
+    include_tilt: bool = False,
 ) -> vol.Schema:
     """Weather-override schema. Wind/rain thresholds accept number or template.
 
@@ -491,6 +541,11 @@ def weather_override_schema(
     every cover type, alongside the thresholds/position/timeout fields. Linked
     covers also show the profile-owned pickers (pre-filled with the inherited
     value) under the inherit/override model — changing one records a local override.
+
+    ``include_tilt`` adds the retraction slat angle (#1297). Off by default so
+    the module-level ``WEATHER_OVERRIDE_SCHEMA`` and every single-axis cover
+    type render exactly as before; callers pass the value of the policy's
+    ``weather_override_includes_tilt``, never a cover-type comparison.
     """
     schema: dict = {
         # Master on/off toggle for the whole feature (issue #719). New covers
@@ -498,6 +553,14 @@ def weather_override_schema(
         # convention, matching the other bool toggles); pre-existing covers are
         # migrated to ON via async_migrate_entry (v3.5 → v3.6).
         vol.Optional(CONF_WEATHER_ENABLED, default=False): selector.BooleanSelector(),
+        # Scope switch for the whole feature (issue #1308): ticked = weather
+        # keeps its outside-the-window licence, which is today's behaviour and
+        # what makes it a safety override. The literal default follows the
+        # selector-default convention sanctioned above; ``const`` owns the
+        # runtime default both weather seats read.
+        vol.Optional(
+            CONF_WEATHER_OUTSIDE_WINDOW, default=True
+        ): selector.BooleanSelector(),
         vol.Optional(
             CONF_WEATHER_BYPASS_AUTO_CONTROL, default=True
         ): selector.BooleanSelector(),
@@ -557,6 +620,21 @@ def weather_override_schema(
                     unit_of_measurement="%",
                 )
             ),
+        }
+    )
+    if include_tilt:
+        # Straight from the registry so the marker's clearable/no-default shape
+        # and the slider config are stated once, in the FieldSpec — the same
+        # single-source idiom ``light_cloud_schema`` uses for the irradiance
+        # plane. Rendered here, between the position it accompanies and the
+        # min-mode switch that decides how both are applied.
+        from .config_fields import FIELD_SPECS
+        from .const import CONF_WEATHER_OVERRIDE_TILT
+
+        marker, sel = FIELD_SPECS[CONF_WEATHER_OVERRIDE_TILT].to_marker(hass, options)
+        schema[marker] = sel
+    schema.update(
+        {
             vol.Optional(
                 CONF_WEATHER_OVERRIDE_MIN_MODE, default=False
             ): selector.BooleanSelector(),
@@ -580,6 +658,13 @@ def light_cloud_schema(
     hass: HomeAssistant | None = None, options: dict | None = None
 ) -> vol.Schema:
     """Light/cloud schema. Lux/irradiance thresholds accept number or template."""
+    from .config_fields import FIELD_SPECS
+    from .const import CONF_IRRADIANCE_PLANE
+
+    _irradiance_plane_marker, _irradiance_plane_selector = FIELD_SPECS[
+        CONF_IRRADIANCE_PLANE
+    ].to_marker(hass, options)
+
     schema: dict = {
         vol.Optional(CONF_CLOUD_SUPPRESSION, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_CLOUDY_POSITION): selector.NumberSelector(
@@ -606,11 +691,16 @@ def light_cloud_schema(
         vol.Optional(CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED): numeric_selector(
             device_class="irradiance"
         ),
+        # Which plane the sensor above measures (#1237) — rendered immediately
+        # after it, from the field registry so the options and default stay
+        # single-sourced. Affects only the estimated-solar-gain figure; the
+        # cloud-suppression threshold reads the same entity unchanged.
+        _irradiance_plane_marker: _irradiance_plane_selector,
         vol.Optional(
             CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
         ): numeric_selector(),
         vol.Optional(
-            CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "cloudy", "clear"]
+            CONF_WEATHER_STATE, default=DEFAULT_WEATHER_STATE
         ): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 multiple=True,

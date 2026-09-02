@@ -45,7 +45,8 @@
           "create_new": "Create new cover",
           "create_building_profile": "Create building profile",
           "duplicate_existing": "Duplicate from existing cover",
-          "create_group": "Create cover group"
+          "create_group": "Create cover group",
+          "create_command_queue": "Create command queue"
         }
       },
       "create_new": {
@@ -81,6 +82,12 @@
           "window_depth": "Window Depth (Reveal)",
           "sill_height": "Window Sill Height",
           "window_width": "Window Width",
+          "solar_properties_enabled": "Describe solar properties (estimate)",
+          "solar_cover_side": "Cover mounting side",
+          "solar_cover_shade": "Cover shade",
+          "solar_g_total": "Total solar transmittance (g), closed",
+          "solar_g_glazing": "Glazing solar transmittance (g), uncovered",
+          "glass_area": "Glazed area (optional)",
           "length_awning": "Awning Span Length",
           "angle": "Awning Angle",
           "awning_shade_mode": "Awning Shade Mode",
@@ -89,6 +96,7 @@
           "tilt_mode": "Tilt Mode",
           "tilt_angle_0": "Tilt Angle at 0%",
           "tilt_angle_100": "Tilt Angle at 100%",
+          "tilt_horizontal_percent": "Tilt Percentage at Horizontal",
           "venetian_tilt_skip_above": "Skip Tilt Above Position (%)",
           "venetian_tilt_skip_mode": "Skip-Tilt Mode",
           "venetian_tilt_transform": "Tilt Output Transform",
@@ -96,6 +104,7 @@
           "venetian_tilt_reset_direction": "Drift-reset direction",
           "venetian_tilt_reset_scope": "Drift-reset scope",
           "venetian_mode": "Operating Mode",
+          "venetian_tilt_only_scope": "Tilt-only scope",
           "venetian_post_settle_hold": "Post-settle Hold (s)",
           "venetian_post_settle_mode": "Post-settle Wait Mode",
           "venetian_backrotate_publish_lag": "Publish-lag window (s)",
@@ -139,6 +148,12 @@
           "window_depth": "Depth of window reveal/frame from the wall surface. Shown in the unit Home Assistant is configured for. Optional parameter for advanced accuracy — set to 0 (default) to disable. Typical values: Flush mount = 0.05 m / 2 in, Standard frame = 0.10 m / 4 in, Deep reveal = 0.15 m / 6 in. Measure from the outer wall surface to the inner edge of the window frame. The reveal casts its own shadow across the top of the glass — the same area the cover protects from the top. When that shadow alone already covers everything the cover would otherwise have had to cover, the cover can open fully. Short of that, the reveal makes no difference to the calculated position.",
           "sill_height": "Height from the floor to the bottom of your window. Shown in the unit Home Assistant is configured for. Set to 0 (default) for floor-level windows or when unknown. Example: for a sill 1 m / 39 in above the floor, enter that value. Improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0–50 m / 0–1968 in. Measure from the floor to the bottom edge of the glass area (the sill). Note: Window Height is still measured from bottom to top of glass — these are independent measurements.",
           "window_width": "Width of the window opening. Shown in the unit Home Assistant is configured for. Used by glare zones to determine which floor zones can receive direct sunlight based on the sun's horizontal angle. Measure the inside width of the glass area. Examples: Standard window = 0.9–1.2 m / 35–47 in, Double window = 1.5–1.8 m / 59–71 in, Patio door = 2.0–3.0 m / 79–118 in. Only relevant when glare zones are enabled.",
+          "solar_properties_enabled": "Turn on to describe how much solar HEAT this window assembly lets through, so diagnostics can estimate it. Off by default and purely informational — nothing about how the cover moves changes either way. Every figure it produces is an estimate from published glazing and shading-fabric bands, not a measurement of your hardware.",
+          "solar_cover_side": "Where the cover hangs relative to the glass. **External**: outside the glazing, so absorbed heat is re-radiated to the outdoors — typically two to three times more effective at rejecting solar heat. **Internal**: inside the room, so sunlight has already crossed the glass and most of the heat the fabric absorbs stays indoors.",
+          "solar_cover_shade": "How dark the fabric is, optically. **Light** reflects most of what hits it; **Dark** absorbs most of it. Used with the mounting side to look up an estimated solar transmittance from the published bands. Ignored when you enter a Total solar transmittance below.",
+          "solar_g_total": "Optional: the fully-closed assembly's solar transmittance (g-value, 0.0–1.0), if your fabric or blind datasheet quotes one. Leave it empty to use the estimate from the mounting side and shade above. 0.0 means fully opaque to solar energy and is a real value, not 'unset'.",
+          "solar_g_glazing": "Solar transmittance of the glass alone, with the cover fully out of the way (g-value, 0.0–1.0). Default 0.70 is typical of common double glazing; single glazing is nearer 0.85 and modern triple or solar-control glass nearer 0.35–0.50. Check the glazing datasheet if you have one.",
+          "glass_area": "Optional: the glazed area of this window in square metres, used only by the Estimated Solar Gain sensor. Leave it empty to derive the area from the window height and width above — that gives the rough opening, and a frame typically eats 10–25% of it, so enter a measured glass area here if you want a closer figure. Required for cover types that do not record both a window height and a width (awnings, tilt-only blinds, sliding curtains, louvered roofs), which otherwise report the gain as unknown.",
           "length_awning": "Maximum extension length of your awning when fully extended. Shown in the unit Home Assistant is configured for. Measure from mounting point to the end of the fabric when fully out. Examples: Standard patio awning = 2.0–3.0 m / 79–118 in, Small window awning = 1.0–1.5 m / 39–59 in, Large commercial = 4.0 m / 157 in or more. Used to calculate how far the awning needs to extend to block sun.",
           "angle": "Angle of the awning when extended (0-45°). 0° = Horizontal/flat (maximum coverage), 15° = Slight slope (typical for drainage), 30° = Steep slope (strong sun angle), 45° = Very steep (rarely used). Check your awning manufacturer specs. Most awnings are 0-15°. Affects shadow calculation for proper sun blocking.",
           "awning_shade_mode": "Whether the awning shades the window glass or the whole area in front of it. **Shade window glass** (default): extend just far enough to keep direct sun off the window, retracting as the sun moves toward the side of the window — best for cutting glare and heat at the glass. **Shade area in front (patio)**: stay fully extended whenever the sun is in front of the awning, to shade a patio or seating area rather than the window.",
@@ -147,13 +162,15 @@
           "tilt_mode": "How the tilt percentage maps to slat angle. **Single direction** (0% = closed / 100% = open): the slats rotate one way only. **Bi-directional** (0% = closed / 50% = open / 100% = closed): the slats open at 50% and close in either direction. **Specify angles**: set the exact raw slat angle at 0% and 100% tilt below, for hardware whose travel matches neither preset.",
           "tilt_angle_0": "Raw slat angle when the cover reports 0% tilt: 0° = closed downward, 90° = horizontal, 180° = closed upward. Only used when Tilt Mode is set to Specify angles.",
           "tilt_angle_100": "Raw slat angle when the cover reports 100% tilt: 0° = closed downward, 90° = horizontal, 180° = closed upward. Only used when Tilt Mode is set to Specify angles.",
+          "tilt_horizontal_percent": "Optional third calibration point for Specify Angles: the tilt percentage your cover reports when the slats are exactly horizontal (90°). 0 = disabled, so the scale runs straight from the 0% angle to the 100% angle. Set it when your slats reach horizontal somewhere other than the midpoint of their reported travel — the scale then uses two straight segments meeting at this point, for example 0° at 0%, horizontal at 50%, and 130° at 100%. Requires the 0% and 100% angles to sit on opposite sides of 90°. Only used when Tilt Mode is set to Specify angles.",
           "venetian_tilt_skip_above": "When the cover is commanded above this position (0–100%), the tilt command is skipped. At high positions the slats retract into the housing and tilting is physically meaningless. Default 95%. Increase if your blind tilts correctly near the top; decrease if it tries to tilt when fully raised.",
           "venetian_tilt_skip_mode": "What happens to the tilt command once the cover is commanded above the skip threshold. **Neutral** (default): send a neutral fully-open tilt to overwrite the actuator's cached tilt — needed for KNX/Shelly motors that otherwise re-assert the previous slat angle on a raised blind. **Suppress**: send no tilt command at all. Choose Suppress for mechanically-coupled exterior venetians (e.g. Somfy on a Shelly) where any tilt command at the fully-open endpoint drags the carriage off its resting position.",
           "venetian_tilt_transform": "How the sun-tracking slat tilt demand is fitted into the Minimum–Maximum Slat Tilt band. **Clamp** (default): flat-cap the value at Maximum Slat Tilt, so any calculated tilt above the cap flat-lines at the cap. **Proportional**: linearly scale the full 0–100% solar demand into the Min–Max band, preserving the proportional relationship between sun angle and slat angle instead of flat-lining. Example with Min 0% / Max 40%: a calculated 50% becomes 20% under Proportional, where Clamp would give 40%. For Proportional, set Maximum Slat Tilt greater than Minimum Slat Tilt.",
           "venetian_tilt_reset_threshold": "Drive the slats fully open and back to flush accumulated mechanical drift once this much commanded tilt change has accumulated. 0 disables drift reset.",
           "venetian_tilt_reset_direction": "Which way the drift-reset drives the slats before returning to the target. **Open** (default): drive fully open, then back — the original behaviour. **Close**: drive fully closed, then back. Choose Close when the cover sits near-closed during tracking (a quieter, faster reset) or when your actuator re-zeroes the slats on a close command.",
           "venetian_tilt_reset_scope": "Which tilt commands are allowed to accumulate drift and trigger a reset. **All tilt commands** (default): every tilt movement counts — the original behaviour. **Sun-tracking only**: only solar-tracking movements accumulate drift, so custom-position, manual, and climate tilts no longer trigger the full-open-then-return reset cycle.",
-          "venetian_mode": "How the venetian blind uses both axes when the sun is in the tracking window. **Position and tilt** (default): the cover lowers to the calculated position and the slats tilt to the optimal angle — best for combined shading and privacy. **Tilt only**: the cover stays closed (position 0%) and only the slat angle tracks the sun — best when you always want full coverage and want continuous glare control via tilt.",
+          "venetian_mode": "How the venetian blind uses both axes. **Position and tilt** (default): the cover lowers to the calculated position and the slats tilt to the optimal angle — best for combined shading and privacy. **Tilt only**: the cover stays closed (position 0%) and only the slat angle tracks the sun — best when you always want full coverage and want continuous glare control via tilt. By default Tilt only holds the cover closed for every automatic decision, not only sun tracking; use **Tilt-only scope** to narrow it to sun-tracking decisions.",
+          "venetian_tilt_only_scope": "Which decisions the Tilt only mode's carriage pin applies to. Only used when Operating Mode is **Tilt only**. **All automatic control** (default): the cover is held closed (0%) for every automatic decision — sun tracking, cloud suppression and climate — which is how Tilt only has always behaved. **Sun-tracking only**: the cover is held closed only when sun tracking wins; cloud-suppression and climate (summer / winter / extreme heat) decisions move the carriage normally. Choose this when a tilt-only venetian covers a door or a walkway that must not stay blocked on overcast days. Note: on a cloud-suppression win the carriage rises but the slats keep their last angle — cloud suppression does not command a tilt. Manual, custom-position, weather, motion and out-of-window decisions already move the carriage under both settings.",
           "venetian_post_settle_hold": "How long (in seconds) to wait after the carriage settles before sending the tilt command. Default 2.0 s suits most actuators. Raise to 4–6 s for KNX FGR223 or other firmware that re-asserts a tilt-to-open shortly after the carriage stops — without the extra hold the tilt command races that re-assert and loses. Range 0.0–10.0 s.",
           "venetian_post_settle_mode": "How the integration waits between the carriage settling and sending the tilt command. **Fixed delay** (default): always wait the configured Post-settle Hold before tilting — safe for every actuator. **Entity state**: instead poll the cover's own state and send tilt the moment it is no longer 'opening'/'closing', for actuators (e.g. Shelly 2PM) with reliable motion states. Falls back to the fixed hold if the state is unavailable or the carriage is still moving once the hold duration has elapsed.",
           "venetian_backrotate_publish_lag": "How long (in seconds) the integration tolerates a late position-state publish from your actuator before treating it as a real user touch. Default 45 s suits Somfy IO via Tahoma. Increase to 60–120 s if your hardware (slow KNX bus, Fibaro/Shelly republish) publishes the post-move current_position long after the cover has physically stopped — symptom is spurious 'manual_override_set' events fired ~30–90 s after a commanded move. Decrease only if you have an unusually fast actuator and want tighter false-touch detection. Range 15–180 s.",
@@ -280,11 +297,24 @@
           "member_covers": "Plain covers are commanded directly with the scene target. A cover already controlled by a selected member is skipped.",
           "group_area": "Optional: covers in this area join the group automatically and membership tracks registry changes. Combined with the lists above."
         }
+      },
+      "create_command_queue": {
+        "title": "Create Command Queue",
+        "description": "A command queue makes covers take turns transmitting, so one-way radio backends (Somfy RTS, RFXtrx) stop losing frames to collisions. Covers join by naming this queue on their Movement & Schedule page. Creating this entry is optional — a named queue already serializes at the default gap; this is where you change that gap and see who joined. [Learn more]({learn_more})",
+        "data": {
+          "name": "Queue name",
+          "command_queue_gap": "Gap between commands"
+        },
+        "data_description": {
+          "name": "Covers reference this queue by name in their Movement & Schedule settings. Matching ignores case and extra spaces.",
+          "command_queue_gap": "Seconds the queue stays busy after any cover on this queue transmits, before the next cover may go. Default: 5 seconds."
+        }
       }
     },
     "abort": {
       "user_cancelled": "Action cancelled by user",
-      "source_not_found": "The source cover no longer exists."
+      "source_not_found": "The source cover no longer exists.",
+      "already_configured": "A Command Queue with that name already exists. Covers join a queue by name, so one entry per name — open the existing entry to change its gap."
     }
   },
   "options": {
@@ -311,6 +341,7 @@
           "summary": "📋 Configuration Summary",
           "troubleshoot": "🩺 Troubleshoot",
           "sync": "🔄 Copy to Other Covers",
+          "card": "🖼️ Dashboard Card",
           "debug": "🔍 Debug & Diagnostics",
           "done": "✅ Save & Close",
           "light_cloud": "☁️ Weather, Light & Cloud",
@@ -321,8 +352,30 @@
           "profile_overrides": "🧹 Local Overrides",
           "group_membership": "👥 Group Members",
           "group_arbitration": "⚖️ Arbitration & Timing",
-          "group_entities": "🧩 Exposed Entities"
+          "group_entities": "🧩 Exposed Entities",
+          "queue_settings": "🚦 Queue Settings",
+          "queue_overview": "🚦 Queue Overview"
         }
+      },
+      "card_installed": {
+        "title": "Dashboard Card",
+        "description": "✅ The companion **Adaptive Cover Pro Card** is installed, but the version could not be determined.\n\nThe cards read this integration's entities directly, so there is nothing to configure here. See [Dashboard Cards]({learn_more}) for what each card shows and how to add one to a dashboard.\n\nAfter a card upgrade, run the `lovelace.reload_resources` action and hard-refresh the browser — Home Assistant caches dashboard modules hard enough that a plain reload keeps serving the old one."
+      },
+      "card_installed_version": {
+        "title": "Dashboard Card",
+        "description": "✅ The companion **Adaptive Cover Pro Card** is installed, on version **{installed_version}**.\n\nThe cards read this integration's entities directly, so there is nothing to configure here. See [Dashboard Cards]({learn_more}) for what each card shows and how to add one to a dashboard.\n\nAfter a card upgrade, run the `lovelace.reload_resources` action and hard-refresh the browser — Home Assistant caches dashboard modules hard enough that a plain reload keeps serving the old one."
+      },
+      "card_installed_update": {
+        "title": "Dashboard Card",
+        "description": "✅ The companion **Adaptive Cover Pro Card** is installed, on version **{installed_version}**.\n\n⬆️ Version **{available_version}** is available. Open HACS to download it.\n\nThe cards read this integration's entities directly, so there is nothing to configure here. See [Dashboard Cards]({learn_more}) for what each card shows and how to add one to a dashboard.\n\nAfter the upgrade, run the `lovelace.reload_resources` action and hard-refresh the browser — Home Assistant caches dashboard modules hard enough that a plain reload keeps serving the old one."
+      },
+      "card_add": {
+        "title": "Dashboard Card",
+        "description": "The companion **Adaptive Cover Pro Card** turns this integration's sensors into a dashboard you can read at a glance — sun and window geometry, the decision trace, and live cover positions with inline controls.\n\nIt is not installed on this system.\n\n➕ [Add the card to HACS]({install_url})\n\nHACS opens the card's page, asking you to confirm the repository first if it is not already tracked. Download it there, then refresh the browser and the cards appear in the card picker under **Adaptive Cover Pro**.\n\nSee [Dashboard Cards]({learn_more}) for what each card shows."
+      },
+      "card_manual": {
+        "title": "Dashboard Card",
+        "description": "The companion **Adaptive Cover Pro Card** is not installed, and HACS was not found on this system.\n\nInstall [HACS]({hacs_url}) and reopen this page for a one-click add — that is the route worth taking, because HACS also handles upgrades.\n\nTo do it by hand instead: [download the card]({download_url}), place `adaptive-cover-pro-card.js` in `www/community/adaptive-cover-pro-card/`, then register it under **Settings → Dashboards → ⋮ → Resources** as a JavaScript module.\n\nSee [Dashboard Cards]({learn_more}) for the full instructions."
       },
       "pipeline_priorities": {
         "title": "Handler Priorities",
@@ -357,7 +410,8 @@
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
           "minimize_movements": "Minimize movements",
-          "max_coverage_steps": "Maximum coverage steps"
+          "max_coverage_steps": "Maximum coverage steps",
+          "command_queue": "Command queue"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -367,7 +421,8 @@
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
           "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
-          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the sun acceptance angle and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1."
+          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the sun acceptance angle and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1.",
+          "command_queue": "Serialize this cover's commands against other covers assigned to the same queue name. Covers sharing a queue never transmit at the same moment — useful for one-way radio backends (Somfy RTS, RFXtrx) where simultaneous commands collide and are lost. The gap between commands is set on the Command Queue entry with the same name, or defaults to 5 seconds if none exists. Leave blank for no queue (default)."
         }
       },
       "change_cover_type": {
@@ -417,6 +472,12 @@
           "window_depth": "Window Depth (Reveal)",
           "sill_height": "Window Sill Height",
           "window_width": "Window Width",
+          "solar_properties_enabled": "Describe solar properties (estimate)",
+          "solar_cover_side": "Cover mounting side",
+          "solar_cover_shade": "Cover shade",
+          "solar_g_total": "Total solar transmittance (g), closed",
+          "solar_g_glazing": "Glazing solar transmittance (g), uncovered",
+          "glass_area": "Glazed area (optional)",
           "length_awning": "Awning Span Length",
           "angle": "Awning Angle",
           "awning_shade_mode": "Awning Shade Mode",
@@ -425,6 +486,7 @@
           "tilt_mode": "Tilt Mode",
           "tilt_angle_0": "Tilt Angle at 0%",
           "tilt_angle_100": "Tilt Angle at 100%",
+          "tilt_horizontal_percent": "Tilt Percentage at Horizontal",
           "venetian_tilt_skip_above": "Skip Tilt Above Position (%)",
           "venetian_tilt_skip_mode": "Skip-Tilt Mode",
           "venetian_tilt_transform": "Tilt Output Transform",
@@ -432,6 +494,7 @@
           "venetian_tilt_reset_direction": "Drift-reset direction",
           "venetian_tilt_reset_scope": "Drift-reset scope",
           "venetian_mode": "Operating Mode",
+          "venetian_tilt_only_scope": "Tilt-only scope",
           "venetian_post_settle_hold": "Post-settle Hold (s)",
           "venetian_post_settle_mode": "Post-settle Wait Mode",
           "venetian_backrotate_publish_lag": "Publish-lag window (s)",
@@ -475,6 +538,12 @@
           "window_depth": "Depth of window reveal/frame from the wall surface. Shown in the unit Home Assistant is configured for. Optional parameter for advanced accuracy — set to 0 (default) to disable. Typical values: Flush mount = 0.05 m / 2 in, Standard frame = 0.10 m / 4 in, Deep reveal = 0.15 m / 6 in. Measure from the outer wall surface to the inner edge of the window frame. The reveal casts its own shadow across the top of the glass — the same area the cover protects from the top. When that shadow alone already covers everything the cover would otherwise have had to cover, the cover can open fully. Short of that, the reveal makes no difference to the calculated position.",
           "sill_height": "Height from the floor to the bottom of your window. Shown in the unit Home Assistant is configured for. Set to 0 (default) for floor-level windows or when unknown. Example: for a sill 1 m / 39 in above the floor, enter that value. Improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0–50 m / 0–1968 in. Measure from the floor to the bottom edge of the glass area (the sill). Note: Window Height is still measured from bottom to top of glass — these are independent measurements.",
           "window_width": "Width of the window opening. Shown in the unit Home Assistant is configured for. Used by glare zones to determine which floor zones can receive direct sunlight based on the sun's horizontal angle. Measure the inside width of the glass area. Examples: Standard window = 0.9–1.2 m / 35–47 in, Double window = 1.5–1.8 m / 59–71 in, Patio door = 2.0–3.0 m / 79–118 in. Only relevant when glare zones are enabled.",
+          "solar_properties_enabled": "Turn on to describe how much solar HEAT this window assembly lets through, so diagnostics can estimate it. Off by default and purely informational — nothing about how the cover moves changes either way. Every figure it produces is an estimate from published glazing and shading-fabric bands, not a measurement of your hardware.",
+          "solar_cover_side": "Where the cover hangs relative to the glass. **External**: outside the glazing, so absorbed heat is re-radiated to the outdoors — typically two to three times more effective at rejecting solar heat. **Internal**: inside the room, so sunlight has already crossed the glass and most of the heat the fabric absorbs stays indoors.",
+          "solar_cover_shade": "How dark the fabric is, optically. **Light** reflects most of what hits it; **Dark** absorbs most of it. Used with the mounting side to look up an estimated solar transmittance from the published bands. Ignored when you enter a Total solar transmittance below.",
+          "solar_g_total": "Optional: the fully-closed assembly's solar transmittance (g-value, 0.0–1.0), if your fabric or blind datasheet quotes one. Leave it empty to use the estimate from the mounting side and shade above. 0.0 means fully opaque to solar energy and is a real value, not 'unset'.",
+          "solar_g_glazing": "Solar transmittance of the glass alone, with the cover fully out of the way (g-value, 0.0–1.0). Default 0.70 is typical of common double glazing; single glazing is nearer 0.85 and modern triple or solar-control glass nearer 0.35–0.50. Check the glazing datasheet if you have one.",
+          "glass_area": "Optional: the glazed area of this window in square metres, used only by the Estimated Solar Gain sensor. Leave it empty to derive the area from the window height and width above — that gives the rough opening, and a frame typically eats 10–25% of it, so enter a measured glass area here if you want a closer figure. Required for cover types that do not record both a window height and a width (awnings, tilt-only blinds, sliding curtains, louvered roofs), which otherwise report the gain as unknown.",
           "length_awning": "Maximum extension length of your awning when fully extended. Shown in the unit Home Assistant is configured for. Measure from mounting point to the end of the fabric when fully out. Examples: Standard patio awning = 2.0–3.0 m / 79–118 in, Small window awning = 1.0–1.5 m / 39–59 in, Large commercial = 4.0 m / 157 in or more. Used to calculate how far the awning needs to extend to block sun.",
           "angle": "Angle of the awning when extended (0-45°). 0° = Horizontal/flat (maximum coverage), 15° = Slight slope (typical for drainage), 30° = Steep slope (strong sun angle), 45° = Very steep (rarely used). Check your awning manufacturer specs. Most awnings are 0-15°. Affects shadow calculation for proper sun blocking.",
           "awning_shade_mode": "Whether the awning shades the window glass or the whole area in front of it. **Shade window glass** (default): extend just far enough to keep direct sun off the window, retracting as the sun moves toward the side of the window — best for cutting glare and heat at the glass. **Shade area in front (patio)**: stay fully extended whenever the sun is in front of the awning, to shade a patio or seating area rather than the window.",
@@ -483,13 +552,15 @@
           "tilt_mode": "How the tilt percentage maps to slat angle. **Single direction** (0% = closed / 100% = open): the slats rotate one way only. **Bi-directional** (0% = closed / 50% = open / 100% = closed): the slats open at 50% and close in either direction. **Specify angles**: set the exact raw slat angle at 0% and 100% tilt below, for hardware whose travel matches neither preset.",
           "tilt_angle_0": "Raw slat angle when the cover reports 0% tilt: 0° = closed downward, 90° = horizontal, 180° = closed upward. Only used when Tilt Mode is set to Specify angles.",
           "tilt_angle_100": "Raw slat angle when the cover reports 100% tilt: 0° = closed downward, 90° = horizontal, 180° = closed upward. Only used when Tilt Mode is set to Specify angles.",
+          "tilt_horizontal_percent": "Optional third calibration point for Specify Angles: the tilt percentage your cover reports when the slats are exactly horizontal (90°). 0 = disabled, so the scale runs straight from the 0% angle to the 100% angle. Set it when your slats reach horizontal somewhere other than the midpoint of their reported travel — the scale then uses two straight segments meeting at this point, for example 0° at 0%, horizontal at 50%, and 130° at 100%. Requires the 0% and 100% angles to sit on opposite sides of 90°. Only used when Tilt Mode is set to Specify angles.",
           "venetian_tilt_skip_above": "When the cover is commanded above this position (0–100%), the tilt command is skipped. At high positions the slats retract into the housing and tilting is physically meaningless. Default 95%. Increase if your blind tilts correctly near the top; decrease if it tries to tilt when fully raised.",
           "venetian_tilt_skip_mode": "What happens to the tilt command once the cover is commanded above the skip threshold. **Neutral** (default): send a neutral fully-open tilt to overwrite the actuator's cached tilt — needed for KNX/Shelly motors that otherwise re-assert the previous slat angle on a raised blind. **Suppress**: send no tilt command at all. Choose Suppress for mechanically-coupled exterior venetians (e.g. Somfy on a Shelly) where any tilt command at the fully-open endpoint drags the carriage off its resting position.",
           "venetian_tilt_transform": "How the sun-tracking slat tilt demand is fitted into the Minimum–Maximum Slat Tilt band. **Clamp** (default): flat-cap the value at Maximum Slat Tilt, so any calculated tilt above the cap flat-lines at the cap. **Proportional**: linearly scale the full 0–100% solar demand into the Min–Max band, preserving the proportional relationship between sun angle and slat angle instead of flat-lining. Example with Min 0% / Max 40%: a calculated 50% becomes 20% under Proportional, where Clamp would give 40%. For Proportional, set Maximum Slat Tilt greater than Minimum Slat Tilt.",
           "venetian_tilt_reset_threshold": "Drive the slats fully open and back to flush accumulated mechanical drift once this much commanded tilt change has accumulated. 0 disables drift reset.",
           "venetian_tilt_reset_direction": "Which way the drift-reset drives the slats before returning to the target. **Open** (default): drive fully open, then back — the original behaviour. **Close**: drive fully closed, then back. Choose Close when the cover sits near-closed during tracking (a quieter, faster reset) or when your actuator re-zeroes the slats on a close command.",
           "venetian_tilt_reset_scope": "Which tilt commands are allowed to accumulate drift and trigger a reset. **All tilt commands** (default): every tilt movement counts — the original behaviour. **Sun-tracking only**: only solar-tracking movements accumulate drift, so custom-position, manual, and climate tilts no longer trigger the full-open-then-return reset cycle.",
-          "venetian_mode": "How the venetian blind uses both axes when the sun is in the tracking window. **Position and tilt** (default): the cover lowers to the calculated position and the slats tilt to the optimal angle — best for combined shading and privacy. **Tilt only**: the cover stays closed (position 0%) and only the slat angle tracks the sun — best when you always want full coverage and want continuous glare control via tilt.",
+          "venetian_mode": "How the venetian blind uses both axes. **Position and tilt** (default): the cover lowers to the calculated position and the slats tilt to the optimal angle — best for combined shading and privacy. **Tilt only**: the cover stays closed (position 0%) and only the slat angle tracks the sun — best when you always want full coverage and want continuous glare control via tilt. By default Tilt only holds the cover closed for every automatic decision, not only sun tracking; use **Tilt-only scope** to narrow it to sun-tracking decisions.",
+          "venetian_tilt_only_scope": "Which decisions the Tilt only mode's carriage pin applies to. Only used when Operating Mode is **Tilt only**. **All automatic control** (default): the cover is held closed (0%) for every automatic decision — sun tracking, cloud suppression and climate — which is how Tilt only has always behaved. **Sun-tracking only**: the cover is held closed only when sun tracking wins; cloud-suppression and climate (summer / winter / extreme heat) decisions move the carriage normally. Choose this when a tilt-only venetian covers a door or a walkway that must not stay blocked on overcast days. Note: on a cloud-suppression win the carriage rises but the slats keep their last angle — cloud suppression does not command a tilt. Manual, custom-position, weather, motion and out-of-window decisions already move the carriage under both settings.",
           "venetian_post_settle_hold": "How long (in seconds) to wait after the carriage settles before sending the tilt command. Default 2.0 s suits most actuators. Raise to 4–6 s for KNX FGR223 or other firmware that re-asserts a tilt-to-open shortly after the carriage stops — without the extra hold the tilt command races that re-assert and loses. Range 0.0–10.0 s.",
           "venetian_post_settle_mode": "How the integration waits between the carriage settling and sending the tilt command. **Fixed delay** (default): always wait the configured Post-settle Hold before tilting — safe for every actuator. **Entity state**: instead poll the cover's own state and send tilt the moment it is no longer 'opening'/'closing', for actuators (e.g. Shelly 2PM) with reliable motion states. Falls back to the fixed hold if the state is unavailable or the carriage is still moving once the hold duration has elapsed.",
           "venetian_backrotate_publish_lag": "How long (in seconds) the integration tolerates a late position-state publish from your actuator before treating it as a real user touch. Default 45 s suits Somfy IO via Tahoma. Increase to 60–120 s if your hardware (slow KNX bus, Fibaro/Shelly republish) publishes the post-move current_position long after the cover has physically stopped — symptom is spurious 'manual_override_set' events fired ~30–90 s after a commanded move. Decrease only if you have an unusually fast actuator and want tighter false-touch detection. Range 15–180 s.",
@@ -638,7 +709,7 @@
           "manual_override_duration": "How long (minutes) to pause automatic control after manual adjustment. When you manually move the cover, automatic control pauses. Typical values: 10-15 min (short pause, resume tracking soon), 30 min (medium pause, balanced), 60-120 min (long pause, keep manual position longer), 0 (disabled, immediately resume automatic control - not recommended). Gives you control when you want it, resumes automation later.",
           "manual_override_duration_mode": "Choose whether the hold above is a fixed stretch of time or runs until a sun or schedule boundary. 'Fixed duration' uses the duration above unchanged — this is the default and matches how manual override has always worked. The other options hold until the first sunset, sunrise, sun event, or end of the operating window that falls after the moment you moved the cover, which is what you want for the close-the-blind-at-dusk case: it stays closed all night instead of reopening at 2 a.m. Sunset and sunrise mean the same instants the rest of Adaptive Cover Pro uses, including any custom sunset/sunrise entities and offsets you have configured. If that boundary cannot be worked out — for example 'Until the time window ends' with no end time set — the duration above is used as the fallback, so the override never holds forever.",
           "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
-          "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
+          "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move the cover by more than this amount, override detection triggers. A move of exactly this amount does not: that is the same difference Adaptive Cover Pro treats as the cover having arrived at its target, so counting it as a manual touch would contradict itself. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
           "manual_ignore_external": "When enabled, only position changes sent through the Adaptive Cover Pro proxy entity or the adaptive_cover_pro.set_position service engage manual override. Position changes from other sources (other automations, the default Home Assistant cover card, physical or RF remotes) are ignored and automatic control continues uninterrupted. Useful when you only ever drive the cover via ACP itself and want noisy external state changes to not pause automation. Default: off.",
           "manual_override_input_entities": "Binary sensors (or switches/input_booleans) whose off-to-on transition engages manual override on every cover in this instance. Intended for a physical wall switch wired to an input (e.g. a Shelly 2PM exposing binary_sensor.*_cover_input_0): pressing it pauses automatic control for the override duration instead of inferring a manual move from the cover's position. Combine with 'Only engage manual override from Adaptive Cover Pro commands' to make these sensors the sole override trigger. Default: none.",
@@ -679,6 +750,7 @@
         "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.\n\n[Learn more]({learn_more})\n\n{profile_inherit}",
         "data": {
           "weather_enabled": "Enable weather override",
+          "weather_outside_window": "Act outside the time window",
           "weather_bypass_auto_control": "Active when Automatic Control is off",
           "weather_wind_speed_sensor": "Wind speed sensor",
           "weather_wind_direction_sensor": "Wind direction sensor (optional)",
@@ -696,11 +768,13 @@
           "weather_severe_template_mode": "Severe weather template logic",
           "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
           "weather_override_position": "Override position",
+          "weather_override_tilt": "Override tilt",
           "weather_override_min_mode": "Minimum position mode",
           "weather_timeout": "Clear delay"
         },
         "data_description": {
           "weather_enabled": "Master switch for weather safety overrides (wind, rain, severe conditions). When off, configured weather sensors are ignored. Existing covers keep this on after upgrade; new covers start off.",
+          "weather_outside_window": "When enabled (the default), weather overrides keep protecting covers after the operational time window closes — a storm at 03:00 still retracts an awning. Turn this off to scope weather safety to the configured start/end window; outside it the cover follows the end-of-window or sunset position instead and weather will not protect it overnight. Leave it on unless you use the weather override as a comfort rule rather than hardware protection.",
           "weather_bypass_auto_control": "When enabled, weather override will still move covers to the configured position even when the Automatic Control switch is turned off. This ensures wind, rain, and severe weather protection is always active regardless of the automation state. Disable this only if you want weather override to follow the Automatic Control switch.",
           "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed.",
           "weather_wind_direction_sensor": "Optional: only trigger wind override when wind blows toward this window's azimuth (within the direction tolerance). Leave empty to trigger on wind speed alone regardless of direction.",
@@ -718,6 +792,7 @@
           "weather_severe_template_mode": "How the severe weather template combines with the severe weather sensors above. 'OR' (default) — severe when the template is truthy OR any sensor is ON. 'AND' — severe only when the template is truthy AND at least one sensor is ON. With no sensors configured, the template alone decides in either mode. Only has an effect when a severe weather template is set above.",
           "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
           "weather_override_position": "Position (0-100%) to move covers to when weather override is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "weather_override_tilt": "Slat tilt (0-100%) to set when the weather override is active. 0% = slats closed, 100% = slats open. Leave empty to keep the slats where they are (today's behaviour). Not applied while 'Minimum position mode' is on — in that mode weather only raises a position floor.",
           "weather_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position.",
           "weather_timeout": "Seconds to wait after ALL conditions clear before resuming normal control. Prevents rapid toggling during gusty or intermittent conditions. Set to 0 for instant resume."
         }
@@ -727,7 +802,7 @@
           "weather_state": "Weather Conditions"
         },
         "data_description": {
-          "weather_state": "Select weather states that mean 'sun is out' for climate mode. Recommended selection (pre-filled): ☑ sunny (direct sun), ☑ partlycloudy (some sun), ☐ cloudy (no direct sun), ☐ clear (usually night). When current weather matches selection: Apply climate strategies. When no match: Use default position (no sun assumed). Most users should keep the defaults."
+          "weather_state": "Weather states that mean 'sun is out'. This is a fallback for the sun-detection check, consulted only when no Is Sunny sensor or template is configured, or when one is configured but has not yet produced an opinion. When the live weather state matches one of these, the sun is treated as present; when it does not, cloud suppression's default or cloudy position may apply (if enabled), and it counts toward climate mode's low-light check. Defaults: sunny, partlycloudy, clear."
         },
         "title": "Weather Conditions",
         "description": "Select the weather states that count as \"sun is out\" for climate mode. The integration compares the live weather entity state to this list — matching states enable solar-based cover control. States not in the list are treated as cloudy, so summer-close and winter-open rules only apply when the weather matches.\n\nTypical choices are \"sunny\" and \"partlycloudy\". The available states depend on your weather integration.\n\n[Learn more]({learn_more})"
@@ -852,6 +927,7 @@
           "lux_entity": "Lux sensor (optional)",
           "lux_threshold": "Lux threshold",
           "irradiance_entity": "Irradiance sensor (optional)",
+          "irradiance_plane": "Irradiance measurement plane",
           "irradiance_threshold": "Irradiance threshold",
           "cloud_coverage_entity": "Cloud coverage sensor (optional)",
           "cloud_coverage_threshold": "Cloud coverage threshold",
@@ -872,6 +948,7 @@
           "lux_entity": "Optional illuminance sensor (indoor or outdoor) for precise sun detection. When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Typical direct-sun values: 5,000–10,000 lux. Leave empty if you don't have this sensor.",
           "lux_threshold": "Illuminance level above which the sun is considered present. Below this value the cover returns to its default position instead of tracking the sun. Typical values: 5,000–10,000 lux for direct sunlight, 2,000–3,000 lux for bright indirect light. **Value is interpreted in the configured lux sensor's unit**. Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "irradiance_entity": "Optional solar irradiance sensor (outdoor) for precise sun detection. Measures solar power in W/m². When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Leave empty if you don't have this sensor.",
+          "irradiance_plane": "Which surface the irradiance sensor above measures. **Global horizontal** (default): the sensor lies flat, facing straight up — the usual pyranometer mounting. The Estimated Solar Gain sensor then converts that reading onto this window's own plane. **Window plane**: the sensor sits on or beside the glass and already reads what the window sees, so the reading is used as-is. Affects only the Estimated Solar Gain figure — cloud suppression reads the same sensor unchanged either way.",
           "irradiance_threshold": "Solar irradiance level above which the sun is considered present. Below this value the cover returns to its default position. Typical values: 300–500 W/m² for direct sunlight, 100–200 W/m² for an overcast day. **Value is interpreted in the configured irradiance sensor's unit**. Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
           "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed. For example, 75 means the cover stops sun-tracking when the sky is 75% or more overcast. Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
@@ -1063,6 +1140,8 @@
           "custom_position_min_mode": "Minimum mode",
           "custom_position_use_my": "Use My position",
           "custom_position_position_max": "Maximum position",
+          "custom_position_outside_window": "Keep constraints active outside time window",
+          "custom_position_scope_to_window": "Only apply within time window",
           "custom_position_tilt": "Tilt",
           "custom_position_tilt_only": "Tilt only",
           "custom_position_tilt_min": "Minimum tilt",
@@ -1079,6 +1158,8 @@
           "custom_position_tilt": "Tilt angle (0-100%) to set when this slot's sensor is active. Venetian covers only — ignored for other cover types. Leave unset to let the engine calculate tilt automatically.",
           "custom_position_tilt_only": "When enabled, this slot fixes only the slat angle (its Tilt value) — sun tracking still drives the carriage position. Venetian covers only. Overrides Minimum mode and Use My position for this slot.",
           "custom_position_position_max": "When set, the position acts as a maximum ceiling while this slot's trigger is active — lower positions from sun tracking or other calculations are allowed through, but anything above is clamped down to this. The mirror of Minimum mode. Leave unset for no maximum. If it conflicts with a minimum, the minimum wins.",
+          "custom_position_outside_window": "When enabled, this slot's minimum/maximum constraints (Minimum mode, Maximum position, Minimum tilt, Maximum tilt) keep clamping after the start/end time window closes, for as long as the trigger stays active — a window contact that must hold the slats open at 3 a.m., for example. Only the axis you limited moves, and only as far as its limit; the other axis is left where it is — an unconstrained carriage is commanded to where the cover already is, and unconstrained slats are sent no command at all — so neither jumps to the default position. An exact position, a fixed slat angle, and Use My position never act outside the window, whatever this is set to. A manual override that is still holding the cover wins out here whatever the slot's priority: while the hold lasts the constraints wait for the window to reopen (inside the window a constraint that outranks the hold still clamps it). When the trigger releases overnight the cover simply stays where the clamp left it.",
+          "custom_position_scope_to_window": "When enabled, this slot stops applying once the start/end time window closes, so the cover can return to its End-of-Window Position (or the current default) instead of staying where the slot put it. Governs this slot's exact Position claim and Use My position only — whether a minimum or maximum bound survives the window is decided by 'Keep constraints active outside time window' instead, and the two are set independently. Priority 100 (safety) ignores this: acting outside the window is what that priority means. Off by default, so an existing slot keeps holding its position all night. The end-time reposition itself still requires 'Move covers to current default position when end time is reached' to be on.",
           "custom_position_tilt_min": "When set, the tilt acts as a minimum while this slot's trigger is active — a calculated tilt below this is raised to it, and anything above is left alone. Unlike Tilt only (which fixes an exact angle), this is a boundary. Venetian covers only. Leave unset for no minimum.",
           "custom_position_tilt_max": "When set, the tilt acts as a maximum while this slot's trigger is active — a calculated tilt above this is lowered to it. Venetian covers only. Leave unset for no maximum."
         }
@@ -1124,6 +1205,20 @@
           "glare_zone_radius": "Protection radius around the zone centre. Shown in the unit Home Assistant is configured for.",
           "glare_zone_z": "Target height above the floor (e.g. desk surface ≈ 0.75 m, seated eyes ≈ 1.1 m, wall TV ≈ 1.5 m). Default 0 protects the floor. Shown in the unit Home Assistant is configured for."
         }
+      },
+      "queue_settings": {
+        "title": "Queue Settings",
+        "description": "How long this queue holds the air after one of its covers transmits. Every cover naming this queue picks the new value up on its next command — no reload needed. [Learn more]({learn_more})",
+        "data": {
+          "command_queue_gap": "Gap between commands"
+        },
+        "data_description": {
+          "command_queue_gap": "Seconds the queue stays busy after any cover on this queue transmits, before the next cover may go. Default: 5 seconds."
+        }
+      },
+      "queue_overview": {
+        "title": "Queue Overview",
+        "description": "{overview}"
       }
     },
     "error": {
@@ -1142,6 +1237,9 @@
     "sensor": {
       "solar_calculation": {
         "name": "Solar Calculation"
+      },
+      "solar_gain": {
+        "name": "Estimated Solar Gain"
       },
       "control_status": {
         "state": {
@@ -1373,6 +1471,25 @@
         "bi_part": "Centre-parting — two leaves meet in the middle"
       }
     },
+    "solar_cover_side": {
+      "options": {
+        "external": "External — mounted outside the glass",
+        "internal": "Internal — mounted inside the room"
+      }
+    },
+    "solar_cover_shade": {
+      "options": {
+        "light": "Light — reflective, pale fabric",
+        "medium": "Medium — mid-tone fabric",
+        "dark": "Dark — absorbent, deep-toned fabric"
+      }
+    },
+    "irradiance_plane": {
+      "options": {
+        "horizontal": "Global horizontal — sensor lies flat, facing up",
+        "window_plane": "Window plane — sensor faces the same way as the glass"
+      }
+    },
     "template_combine_mode": {
       "options": {
         "or": "OR — occupied if the template is true or a sensor is active (default)",
@@ -1474,6 +1591,12 @@
     "venetian_tilt_reset_scope": {
       "options": {
         "all_tilt_commands": "All tilt commands",
+        "sun_tracking_only": "Sun-tracking only"
+      }
+    },
+    "venetian_tilt_only_scope": {
+      "options": {
+        "all_automatic_control": "All automatic control",
         "sun_tracking_only": "Sun-tracking only"
       }
     },
@@ -1671,7 +1794,7 @@
         },
         "manual_threshold": {
           "name": "Detection threshold",
-          "description": "Position change (%) that triggers manual override detection (0–99)."
+          "description": "Position change (%) that triggers manual override detection (0–99). A move must exceed this amount, not merely equal it."
         },
         "manual_ignore_intermediate": {
           "name": "Ignore intermediate states",
@@ -1740,6 +1863,10 @@
         "use_my": {
           "name": "Use Somfy My",
           "description": "If true, use my_position_value instead of position."
+        },
+        "scope_to_window": {
+          "name": "Only apply within time window",
+          "description": "If true, this slot's exact position (or Use My) stops applying once the start/end time window closes, so the end-of-window position can take over. Off by default. Priority 100 (safety) ignores it. The end-time reposition itself still requires 'Move covers to current default position when end time is reached' to be on."
         }
       }
     },
@@ -1785,7 +1912,7 @@
         },
         "weather_state": {
           "name": "Sunny weather states",
-          "description": "Weather condition states considered sunny for sun tracking."
+          "description": "Weather states that mean 'sun is out'. Used as a fallback when no Is Sunny sensor/template applies."
         },
         "lux_entity": {
           "name": "Lux sensor",
@@ -1875,6 +2002,10 @@
           "name": "Bypass automatic control",
           "description": "If true, weather override ignores the Automatic Control toggle."
         },
+        "weather_outside_window": {
+          "name": "Act outside the time window",
+          "description": "If true (default), weather overrides keep acting after the time window closes. Set false to scope weather safety to the configured start/end window."
+        },
         "weather_wind_speed_sensor": {
           "name": "Wind speed sensor",
           "description": "Sensor entity for wind speed. Null = none."
@@ -1914,6 +2045,10 @@
         "weather_override_position": {
           "name": "Weather override position",
           "description": "Position to move to when weather override is triggered (0–100%)."
+        },
+        "weather_override_tilt": {
+          "name": "Weather override tilt",
+          "description": "Slat tilt to set when a weather condition is triggered (0–100%). Venetian blinds only; null = leave the slats alone."
         },
         "weather_override_min_mode": {
           "name": "Minimum position mode",
@@ -2075,9 +2210,9 @@
           "name": "Tilt angle at 100%",
           "description": "Raw slat angle when the cover reports 100% tilt: 0° closed downward, 90° horizontal, 180° closed upward."
         },
-        "venetian_tilt_skip_above": {
-          "name": "Skip tilt above position (%)",
-          "description": "Skip the tilt command when commanded position exceeds this value. Venetian only. Default 95."
+        "tilt_horizontal_percent": {
+          "name": "Tilt percentage at horizontal",
+          "description": "Optional third calibration point: the tilt percentage reported when the slats are exactly horizontal (90°). 0 disables it. Requires tilt angle at 0% and tilt angle at 100% to sit on opposite sides of 90°."
         }
       }
     },

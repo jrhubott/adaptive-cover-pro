@@ -119,6 +119,27 @@ class TestWeatherOverrideHandler:
         assert result is not None
         assert result.position == position
 
+    def test_wins_outside_the_clock_window_by_default(self) -> None:
+        """Weather is a SAFETY override and acts at any hour unless scoped.
+
+        Characterization of the shipped contract (#1308): with no opt-out the
+        handler ignores the clock entirely and stamps ``is_safety``, which is
+        the licence ``coordinator._dispatch`` reads to let a storm retraction
+        reach hardware at 03:00. Nothing pinned this before, so the behaviour
+        every awning install depends on was undocumented by test.
+        """
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=90,
+            clock_window_open=False,
+            in_time_window=False,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method is ControlMethod.WEATHER
+        assert result.position == 90
+        assert result.is_safety is True
+
 
 class TestWeatherOverrideHandlerMinMode:
     """WeatherOverrideHandler defers in min_mode; the registry composes the floor.
@@ -155,3 +176,123 @@ class TestWeatherOverrideHandlerMinMode:
         )
         result = self.handler.evaluate(snap)
         assert result is None
+
+
+class TestWeatherOverrideWindowScope:
+    """``weather_outside_window`` scopes the override to the CLOCK window (#1308).
+
+    Weather is the one override with no window gate, and its ``is_safety`` flag
+    is the outside-window dispatch licence. A user running the override as a
+    *comfort* rule (rain → raise an interior blind) has no way to stop it
+    firing at 03:00 short of turning the whole feature off. The opt-out gives
+    them one; the default keeps every storm-protection install byte-identical.
+
+    The gate reads ``clock_window_open``, NEVER ``in_time_window`` — see
+    ``test_still_acts_when_the_gate_is_dark_but_the_clock_is_open``.
+    """
+
+    handler = WeatherOverrideHandler()
+
+    def test_stands_down_outside_the_clock_window_when_scoped(self) -> None:
+        """Scoped + clock closed → the handler declines and DEFAULT falls through."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=90,
+            clock_window_open=False,
+            in_time_window=False,
+            weather_outside_window=False,
+        )
+        assert self.handler.evaluate(snap) is None
+
+    def test_still_acts_when_the_gate_is_dark_but_the_clock_is_open(self) -> None:
+        """A dark daytime gate mid-clock is NOT "outside the window" (#656/#632).
+
+        ``in_time_window`` folds the sun-tracking daytime gate into the clock
+        window, so it reads False on a gate-dark winter morning at 10:00 while
+        the user's 06:00–18:30 clock is wide open. Gating weather on that field
+        would silently strip storm protection for every gate-configured install
+        — a much larger behaviour change than the one this option promises.
+        Every seat that decides "outside the window" speaks ``clock_window_open``
+        and this one must too.
+        """
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=90,
+            clock_window_open=True,
+            in_time_window=False,
+            weather_outside_window=False,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.is_safety is True
+
+    def test_describe_skip_reads_outside_time_window_when_scoped(self) -> None:
+        """The trace names the gate that actually stopped it, like solar does."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=90,
+            clock_window_open=False,
+            in_time_window=False,
+            weather_outside_window=False,
+        )
+        assert self.handler.describe_skip(snap).code is ReasonCode.SKIP_OUTSIDE_WINDOW
+
+    def test_describe_skip_still_reads_not_active_when_conditions_are_clear(
+        self,
+    ) -> None:
+        """Clear skies out here still read "not active", not "outside window".
+
+        ``describe_skip`` mirrors ``evaluate``'s gate order, and the order is
+        load-bearing: reporting a window scope to a user whose weather sensors
+        are simply quiet sends them looking for the wrong setting. Same
+        principle as ``solar.describe_skip`` splitting gate-closed from
+        tracking-off.
+        """
+        snap = make_snapshot(
+            weather_override_active=False,
+            clock_window_open=False,
+            in_time_window=False,
+            weather_outside_window=False,
+        )
+        assert (
+            self.handler.describe_skip(snap).code is ReasonCode.SKIP_WEATHER_NOT_ACTIVE
+        )
+
+    def test_describe_skip_reads_the_scope_in_min_mode_too(self) -> None:
+        """Min mode + scoped + clock closed reports the scope, and that is right.
+
+        Both later gates hold here, so the reason is a choice rather than a
+        deduction. The scope is the truthful one: the min-mode floor is the
+        *other* seat of this same option, and out here ``_window_eligible``
+        drops it from the same ``weather_outside_window`` field — so nothing
+        weather-shaped acts, and the window scope is what stopped all of it.
+        Nor is a distinction lost: min-mode deferral has never had a reason
+        code of its own and reads ``SKIP_WEATHER_NOT_ACTIVE`` with the clock
+        open, exactly as it did before #1308. What the order buys is that an
+        ACTIVE override stops reporting itself as inactive.
+        """
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_min_mode=True,
+            weather_override_position=60,
+            clock_window_open=False,
+            in_time_window=False,
+            weather_outside_window=False,
+        )
+        assert self.handler.evaluate(snap) is None
+        assert self.handler.describe_skip(snap).code is ReasonCode.SKIP_OUTSIDE_WINDOW
+
+    def test_describe_skip_in_min_mode_is_unchanged_with_the_clock_open(self) -> None:
+        """The pre-#1308 min-mode trace is untouched where the scope cannot apply."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_min_mode=True,
+            weather_override_position=60,
+            clock_window_open=True,
+            in_time_window=True,
+            weather_outside_window=False,
+        )
+        assert self.handler.evaluate(snap) is None
+        assert (
+            self.handler.describe_skip(snap).code is ReasonCode.SKIP_WEATHER_NOT_ACTIVE
+        )

@@ -18,7 +18,7 @@ from ..const import (
 )
 from ..engine.covers import AdaptiveVerticalCover
 from ..unit_system import length_default, length_selector
-from ._helpers import window_dimensions_lines
+from ._helpers import window_dimensions_lines, window_glass_area_m2
 from ._summary_labels import COVER_TYPE_LABELS_EN
 from .base import (
     CAP_HAS_SET_POSITION,
@@ -107,7 +107,7 @@ class BlindPolicy(CoverTypePolicy, register=True):
 
         if section == cf.SECTION_SUN_TRACKING:
             return (CONF_ENABLE_GLARE_ZONES,)
-        return ()
+        return super().extra_field_keys(section)
 
     def wiki_anchor(self) -> str:
         """Vertical-blind geometry page."""
@@ -139,6 +139,14 @@ class BlindPolicy(CoverTypePolicy, register=True):
     ) -> float | None:
         """Vertical blinds travel the configured window height."""
         return config_service.get_vertical_data(options).h_win
+
+    def glass_area_m2(
+        self,
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,
+    ) -> float | None:
+        """Height × width — both dimensions are on the geometry step (#1237)."""
+        return window_glass_area_m2(options)
 
     def geometry_schema(
         self,

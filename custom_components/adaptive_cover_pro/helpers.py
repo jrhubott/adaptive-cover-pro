@@ -1115,6 +1115,104 @@ def resolve_override_deadline(
     return min(upcoming) if upcoming else None
 
 
+@dataclass(frozen=True, slots=True)
+class SunsetVerdict:
+    """The day/night boundary decision, blind to the end-of-window override.
+
+    ``compute_effective_default``'s returned ``is_sunset_active`` means "a
+    night-type default is in effect" — True for BOTH the end-of-window
+    position (issue #625) AND the sunset position. That overload is fine for
+    the pipeline consumers that only care "should tonight's rules apply", but
+    it is the WRONG predicate for detecting the moment the configured SUNSET
+    boundary itself is crossed (issue #1287):
+    ``WindowTransitionTracker.check_sunset_window`` fed the overloaded flag
+    and mistook the end-of-window hold's False→True flip (at clock end_time)
+    for the astronomical-sunset edge, dispatching the raw sunset position
+    hours early and swallowing the real boundary crossing later that night.
+
+    ``window_open`` is the narrower, named answer: does the configured
+    SUNSET boundary own this moment (a configured ``daytime_gate`` OWNS the
+    answer when set — issue #632 — otherwise it is the astral
+    after-sunset-or-before-sunrise check). ``after_sunset`` is the raw astral
+    fact ("today's sunset boundary has passed") that
+    ``compute_effective_default``'s end-of-window phase 1 gates on to decide
+    when to hand off from the end-of-window position to the astral sunset
+    position. It is ``None`` — not a fabricated ``False`` — when a configured
+    ``daytime_gate`` owns the boundary: the gate short-circuits before the
+    astral math ever runs (mirroring the original inline behaviour), so there
+    is no astral fact to report. The one caller that reads this field
+    (``compute_effective_default``'s phase 1) only does so on the path where
+    ``daytime_gate is None``, so it never observes the ``None``.
+    """
+
+    window_open: bool
+    after_sunset: bool | None
+
+
+def resolve_sunset_verdict(
+    sun_data: "SunData",
+    *,
+    sunset_off: int,
+    sunrise_off: int,
+    sunset_time: dt.datetime | None = None,
+    sunrise_time: dt.datetime | None = None,
+    window_explicitly_started: bool = False,
+    eval_time: dt.datetime | None = None,
+    daytime_gate: bool | None = None,
+) -> SunsetVerdict:
+    """Resolve the day/night boundary decision, blind to end-of-window (#1287).
+
+    Single source of truth for the "is the sunset position active" math that
+    used to live inline in :func:`compute_effective_default` — extracted so
+    :func:`read_sunset_window_open` (the sunset-window edge detector's input)
+    and :func:`compute_effective_default` (the pipeline's effective-default
+    resolver) can never derive two different answers for the same instant.
+
+    A configured ``daytime_gate`` OWNS the boundary and short-circuits the
+    astral math entirely (issue #632) — mirrors the original inline
+    short-circuit, including skipping the astral walk when the gate answers
+    the question. See :class:`SunsetVerdict` for what each field means in
+    that case.
+
+    Args:
+        sun_data: ``SunData`` instance providing today's sunset/sunrise times.
+        sunset_off: Minutes *added* to astronomical sunset before the window opens.
+        sunrise_off: Minutes *added* to astronomical sunrise before the window closes.
+        sunset_time: Optional override for the sunset boundary (naive-local datetime).
+        sunrise_time: Optional override for the sunrise boundary (naive-local datetime).
+        window_explicitly_started: See :func:`compute_effective_default`.
+        eval_time: Optional time at which to evaluate the window; ``None`` uses wall-clock now.
+        daytime_gate: Optional tri-state daytime-gate verdict (issue #632).
+
+    """
+    if daytime_gate is not None:
+        # The gate OWNS the boundary — no astral walk, matching the original
+        # inline short-circuit. ``after_sunset=None`` is honest about there
+        # being no astral fact to report here (no caller reads it in this
+        # branch — compute_effective_default's phase 1 never reaches the
+        # astral branch when a gate is configured either).
+        return SunsetVerdict(window_open=daytime_gate is False, after_sunset=None)
+
+    boundaries = resolve_sun_boundaries(
+        sun_data,
+        sunset_time=sunset_time,
+        sunrise_time=sunrise_time,
+        sunset_off=sunset_off,
+        sunrise_off=sunrise_off,
+    )
+    now_naive = (
+        _eval_time_to_utc_naive(eval_time)
+        if eval_time is not None
+        else dt.datetime.now(UTC).replace(tzinfo=None)
+    )
+    after_sunset = now_naive > boundaries.sunset
+    before_sunrise = now_naive < boundaries.sunrise
+    # Suppress before_sunrise only when the operational window has *explicitly*
+    # started: see compute_effective_default's docstring (issue #438/#492).
+    window_open = after_sunset or (before_sunrise and not window_explicitly_started)
+    return SunsetVerdict(window_open=window_open, after_sunset=after_sunset)
+
+
 def compute_effective_default(
     h_def: int,
     sunset_pos: int | None,
@@ -1210,49 +1308,116 @@ def compute_effective_default(
     if sunset_pos is None:
         return h_def, False
 
+    # Single derivation of the day/night decision (issue #1287) — see
+    # resolve_sunset_verdict for what each field means and why a configured
+    # daytime_gate short-circuits it without an astral walk.
+    verdict = resolve_sunset_verdict(
+        sun_data,
+        sunset_off=sunset_off,
+        sunrise_off=sunrise_off,
+        sunset_time=sunset_time,
+        sunrise_time=sunrise_time,
+        window_explicitly_started=window_explicitly_started,
+        eval_time=eval_time,
+        daytime_gate=daytime_gate,
+    )
+
     # A configured daytime gate OWNS the day/night boundary: it fully replaces the
     # astronomical sunset/sunrise calc below (issue #632). Astral is the fallback
     # only when the gate is unconfigured (``daytime_gate is None``).
     if daytime_gate is not None:
-        is_sunset_active = daytime_gate is False
+        is_sunset_active = verdict.window_open
         effective = int(sunset_pos) if is_sunset_active else int(h_def)
         return effective, is_sunset_active
-
-    boundaries = resolve_sun_boundaries(
-        sun_data,
-        sunset_time=sunset_time,
-        sunrise_time=sunrise_time,
-        sunset_off=sunset_off,
-        sunrise_off=sunrise_off,
-    )
-    now_naive = (
-        _eval_time_to_utc_naive(eval_time)
-        if eval_time is not None
-        else dt.datetime.now(UTC).replace(tzinfo=None)
-    )
-
-    after_sunset = now_naive > boundaries.sunset
-    before_sunrise = now_naive < boundaries.sunrise
 
     # End-of-window phase 1 (issue #625): once the operating window is
     # clock-closed, the end-of-window position holds from window-end UNTIL astral
     # sunset; then phase 2 (the astral sunset_pos branch below) takes over. Gated
     # on ``not after_sunset`` so it yields to astral at the handoff. The
-    # daytime_gate branch above intentionally still owns the boundary here.
-    if end_of_window_active and end_of_window_pos is not None and not after_sunset:
+    # daytime_gate branch above intentionally still owns the boundary here —
+    # this line only runs when ``daytime_gate is None``, so ``verdict`` was
+    # resolved on the astral path and ``after_sunset`` is always a real bool
+    # here, never the gated branch's ``None``.
+    if (
+        end_of_window_active
+        and end_of_window_pos is not None
+        and not verdict.after_sunset
+    ):
         return int(end_of_window_pos), True
 
-    # Suppress before_sunrise only when the operational window has *explicitly*
-    # started: a real start_time < astronomical_sunrise is a valid user config
-    # (e.g. start at 08:00, sunrise at 08:15 in winter, issue #438) and once that
-    # window opens nighttime rules end. A blank start_time (issue #492) does NOT
-    # count as explicitly started, so the night position holds after midnight.
-    is_sunset_active = after_sunset or (
-        before_sunrise and not window_explicitly_started
-    )
-
+    is_sunset_active = verdict.window_open
     effective = int(sunset_pos) if is_sunset_active else int(h_def)
     return effective, is_sunset_active
+
+
+@dataclass(frozen=True, slots=True)
+class _EffectiveDefaultInputs:
+    """The live inputs shared by :func:`_read_current_effective_default` and :func:`read_sunset_window_open`.
+
+    Extracted so the option/manager reads (:func:`_read_sun_boundary_options`,
+    ``effective_daytime_gate``, ``window_explicitly_started``) exist exactly
+    once — the two callers derive different predicates (one still overloaded
+    with the end-of-window position, one blind to it — issue #1287) from the
+    same source values, so they cannot silently disagree about what those
+    values were for the same instant (CODING_GUIDELINES.md § no-duplication).
+    """
+
+    h_def: int
+    sunset_pos_cfg: int | None
+    bounds: SunBoundaryOptions
+    daytime_gate: bool | None
+    window_started: bool
+    eow_pos: int | None
+    window_is_closed: bool
+
+
+def _effective_default_inputs(
+    hass: HomeAssistant,
+    options: Mapping,
+    time_mgr: "TimeWindowManager | None",
+) -> _EffectiveDefaultInputs:
+    """Read the live inputs the day/night decision needs, exactly once.
+
+    Args:
+        hass: Used only for the boundary-entity reads in
+            :func:`_read_sun_boundary_options`. An instance with neither time
+            entity configured reads no state at all.
+        options: The config-entry options mapping.
+        time_mgr: The live ``TimeWindowManager``, or ``None``. ``None`` is the
+            contract for a builder constructed without one (tests, legacy call
+            sites): the manager-derived fields degrade to exactly the defaults
+            :func:`compute_effective_default` would have applied anyway.
+
+    """
+    h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
+    sunset_pos_cfg = options.get(CONF_SUNSET_POS)
+    bounds = _read_sun_boundary_options(hass, options)
+    # A configured daytime gate (issue #632) OWNS the day/night boundary:
+    # ``effective_daytime_gate`` is the single tri-state verdict to forward —
+    # True=daytime→no sunset, False=dark→apply sunset position, None=defer to
+    # the astronomical decision. None covers both an unconfigured gate and the
+    # graceful fallback after every gate source has been indeterminate past the
+    # grace window (issue #742).
+    daytime_gate = time_mgr.effective_daytime_gate if time_mgr is not None else None
+    window_started = (
+        time_mgr.window_explicitly_started if time_mgr is not None else False
+    )
+    # End-of-window position (issue #625): an optional, clearable position
+    # applied once the operating window is clock-closed. ``before_end_time``
+    # is True all morning (end is later today), so the override only fires in
+    # the evening — never before the start time. compute_effective_default
+    # owns the two-phase astral handoff; here we only read the inputs.
+    eow_pos = options.get(CONF_END_OF_WINDOW_POS)
+    window_is_closed = (not time_mgr.before_end_time) if time_mgr is not None else False
+    return _EffectiveDefaultInputs(
+        h_def=h_def,
+        sunset_pos_cfg=sunset_pos_cfg,
+        bounds=bounds,
+        daytime_gate=daytime_gate,
+        window_started=window_started,
+        eow_pos=eow_pos,
+        window_is_closed=window_is_closed,
+    )
 
 
 def _read_current_effective_default(
@@ -1299,39 +1464,72 @@ def _read_current_effective_default(
             the live manager.
 
     """
-    h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
-    sunset_pos_cfg = options.get(CONF_SUNSET_POS)
-    bounds = _read_sun_boundary_options(hass, options)
-    # A configured daytime gate (issue #632) OWNS the day/night boundary:
-    # ``effective_daytime_gate`` is the single tri-state verdict to forward —
-    # True=daytime→no sunset, False=dark→apply sunset position, None=defer to
-    # the astronomical decision. None covers both an unconfigured gate and the
-    # graceful fallback after every gate source has been indeterminate past the
-    # grace window (issue #742).
-    daytime_gate = time_mgr.effective_daytime_gate if time_mgr is not None else None
-    window_started = (
-        time_mgr.window_explicitly_started if time_mgr is not None else False
-    )
-    # End-of-window position (issue #625): an optional, clearable position
-    # applied once the operating window is clock-closed. ``before_end_time``
-    # is True all morning (end is later today), so the override only fires in
-    # the evening — never before the start time. compute_effective_default
-    # owns the two-phase astral handoff; here we only read the inputs.
-    eow_pos = options.get(CONF_END_OF_WINDOW_POS)
-    window_is_closed = (not time_mgr.before_end_time) if time_mgr is not None else False
+    inputs = _effective_default_inputs(hass, options, time_mgr)
     return compute_effective_default(
-        h_def=h_def,
-        sunset_pos=sunset_pos_cfg,
+        h_def=inputs.h_def,
+        sunset_pos=inputs.sunset_pos_cfg,
         sun_data=sun_data,
-        sunset_off=bounds.sunset_off,
-        sunrise_off=bounds.sunrise_off,
-        sunset_time=bounds.sunset_time,
-        sunrise_time=bounds.sunrise_time,
-        window_explicitly_started=window_started,
-        daytime_gate=daytime_gate,
-        end_of_window_pos=eow_pos,
-        end_of_window_active=window_is_closed,
+        sunset_off=inputs.bounds.sunset_off,
+        sunrise_off=inputs.bounds.sunrise_off,
+        sunset_time=inputs.bounds.sunset_time,
+        sunrise_time=inputs.bounds.sunrise_time,
+        window_explicitly_started=inputs.window_started,
+        daytime_gate=inputs.daytime_gate,
+        end_of_window_pos=inputs.eow_pos,
+        end_of_window_active=inputs.window_is_closed,
     )
+
+
+def read_sunset_window_open(
+    hass: HomeAssistant,
+    options: Mapping,
+    sun_data: "SunData",
+    time_mgr: "TimeWindowManager | None" = None,
+) -> bool:
+    """Return whether the configured SUNSET boundary owns this moment (#1287).
+
+    This is the predicate :class:`~.state.window_transition_tracker.WindowTransitionTracker`'s
+    ``check_sunset_window`` needs for its False→True edge detector — deliberately
+    BLIND to the end-of-window override (issue #625), unlike
+    :func:`_read_current_effective_default`'s ``is_sunset_active``, which is
+    True for both the end-of-window position and the sunset position. Feeding
+    the tracker that overloaded flag made its edge fire at clock ``end_time``
+    instead of at the configured sunset boundary — the #1287 defect.
+
+    Shares its input reads with :func:`_read_current_effective_default`
+    through :func:`_effective_default_inputs` so the two predicates can never
+    disagree about what "the sunset boundary" means for the same instant.
+
+    Args:
+        hass: Used only for the boundary-entity reads in
+            :func:`_read_sun_boundary_options`.
+        options: The config-entry options mapping.
+        sun_data: Already-resolved ``SunData`` providing today's sunset/sunrise.
+        time_mgr: The live ``TimeWindowManager``, or ``None`` (degrades to the
+            same defaults :func:`compute_effective_default` would apply).
+
+    """
+    inputs = _effective_default_inputs(hass, options, time_mgr)
+    if inputs.sunset_pos_cfg is None:
+        # No sunset position configured: there is nothing for the tracker to
+        # dispatch, so "the boundary owns this moment" is meaningless here.
+        # ``False`` ("boundary not passed") rather than ``True`` is the safe
+        # reading — it can never itself trigger a False→True dispatch edge.
+        # Inert today: ``check_sunset_window`` already returns before calling
+        # this function when ``sunset_pos_cfg is None``
+        # (window_transition_tracker.py). Kept as a defensive default for any
+        # future caller of this predicate that isn't gated the same way.
+        return False
+    verdict = resolve_sunset_verdict(
+        sun_data,
+        sunset_off=inputs.bounds.sunset_off,
+        sunrise_off=inputs.bounds.sunrise_off,
+        sunset_time=inputs.bounds.sunset_time,
+        sunrise_time=inputs.bounds.sunrise_time,
+        window_explicitly_started=inputs.window_started,
+        daytime_gate=inputs.daytime_gate,
+    )
+    return verdict.window_open
 
 
 def should_use_tilt(is_tilt_cover: bool, caps) -> bool:

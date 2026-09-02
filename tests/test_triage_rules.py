@@ -1630,6 +1630,219 @@ _COVER_MENU_STEPS: frozenset[str] = frozenset(
 )
 
 
+# ---------------------------------------------------------------------------
+# Rule 27 — SOLAR_INTERNAL_COVER_WEAK_REJECTION (issue #1236)
+# ---------------------------------------------------------------------------
+
+
+def _solar_view(**overrides) -> dict:
+    block = {
+        "effective_g": 0.55,
+        "g_unshaded": 0.7,
+        "g_shaded": 0.55,
+        "shaded_fraction": 1.0,
+        "position_pct": 0,
+        "cover_side": "internal",
+        "cover_shade": "dark",
+        "source": "preset",
+        "is_estimate": True,
+    }
+    block.update(overrides)
+    return {"options": {}, "solar_transmittance": block}
+
+
+def test_solar_weak_rejection_fires_for_a_weak_internal_cover() -> None:
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _solar_view())
+    assert len(findings) == 1
+    params = _params(findings)[0]
+    assert params["g_shaded"] == 0.55
+    # 55 % of the incident energy gets through a fully-closed internal cover;
+    # the same shade mounted externally admits ~22 %. Both preset-derived facts
+    # ride in nested fragments, because a hand-entered g has neither.
+    assert params["admitted"] == 55
+    assert params["shade_word"].params["shade"] == "dark"
+    assert params["comparison"].params["external_admitted"] == 22
+
+
+def test_solar_weak_rejection_severity_and_wiring() -> None:
+    rule = _RULES_BY_CODE[TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION]
+    assert rule.severity is Severity.INFO
+    assert rule.inputs is RuleInput.CONFIG
+    assert rule.fix_step is None
+    assert rule.issues == (1236,)
+
+
+def test_solar_weak_rejection_does_not_fire_for_an_external_cover() -> None:
+    view = _solar_view(cover_side="external", cover_shade="dark", g_shaded=0.22)
+    assert _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view) == []
+
+
+def test_solar_weak_rejection_does_not_fire_below_the_threshold() -> None:
+    """An internal cover that still rejects most of the heat is not a finding."""
+    view = _solar_view(g_shaded=0.38)
+    assert _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view) == []
+
+
+def test_solar_weak_rejection_does_not_fire_exactly_at_the_threshold() -> None:
+    view = _solar_view(g_shaded=0.40)
+    assert _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view) == []
+
+
+def test_solar_weak_rejection_does_not_fire_when_the_feature_is_off() -> None:
+    """No block ⇒ no finding — the whole feature stays invisible when unset."""
+    assert _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, {"options": {}}) == []
+
+
+def test_solar_weak_rejection_survives_a_junk_block() -> None:
+    view = _solar_view(g_shaded="not-a-number")
+    assert _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view) == []
+
+
+def test_solar_weak_rejection_renders_and_says_estimate() -> None:
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _solar_view())
+    text = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert "estimate" in text.lower()
+    assert "55" in text
+    assert "22" in text
+
+
+_PRESET_TEXT_EN = (
+    "ℹ️ Internal-mounted dark cover: fully closed, this window still admits an "
+    "estimated 55% of incident solar energy (g≈0.55). An external cover of the "
+    "same shade would admit about 22%. Estimate only — not a measurement."
+)
+
+_DIRECT_TEXT_EN = (
+    "ℹ️ Internal-mounted cover: fully closed, this window still admits an "
+    "estimated 62% of incident solar energy (g≈0.62). Estimate only — not a "
+    "measurement."
+)
+
+
+def test_solar_weak_rejection_preset_wording_is_unchanged() -> None:
+    """The preset finding is byte-identical to what it has always rendered."""
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _solar_view())
+    assert render(findings[0].reason, load_troubleshoot_labels("en")) == _PRESET_TEXT_EN
+
+
+def _direct_view() -> dict:
+    """Build a view for a user who typed their own ``solar_g_total``.
+
+    Their ``cover_shade`` is whatever the select happened to hold — never a
+    choice they made about this number.
+    """
+    return _solar_view(source="direct", g_shaded=0.62, cover_shade="light")
+
+
+def test_solar_weak_rejection_still_fires_for_a_hand_entered_g() -> None:
+    """The warning is still true — an internal cover rejects little heat."""
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _direct_view())
+    assert len(findings) == 1
+    params = _params(findings)[0]
+    assert params["g_shaded"] == 0.62
+    assert params["admitted"] == 62
+
+
+def test_a_hand_entered_g_drops_the_shade_word_and_the_preset_comparison() -> None:
+    """The number came from the user, so no preset may be quoted against it.
+
+    ``cover_shade`` still holds its untouched ``medium``/``light`` default, and
+    the external figure comes from a table the user's own number never came
+    from — so the finding used to describe a "light cover" that admits 12 %
+    externally to someone who typed 0.62 by hand and never picked a shade.
+    """
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _direct_view())
+    params = _params(findings)[0]
+    assert params["shade_word"] == ""
+    assert params["comparison"] == ""
+    text = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert text == _DIRECT_TEXT_EN
+    assert "light" not in text
+    assert "external" not in text.lower()
+
+
+def _axis_less_view(*, g_total: float | None = None, cover_shade: str = "dark") -> dict:
+    """Build the block the ENGINE emits for a tilt / louvered-roof cover.
+
+    Built through the real ``solar_transmittance`` rather than hand-written:
+    the regression was the engine erasing an axis-less cover's ``direct``
+    provenance, and a hand-written ``source`` would test the rule against a
+    fiction the engine never produced. A rotation axis yields no coverage
+    fraction, so ``shaded_fraction`` is null and ``effective_g`` collapses onto
+    ``g_shaded``.
+    """
+    from custom_components.adaptive_cover_pro.config_types import SolarPropertiesConfig
+    from custom_components.adaptive_cover_pro.engine.solar_transmittance import (
+        solar_transmittance,
+    )
+
+    result = solar_transmittance(
+        SolarPropertiesConfig(
+            enabled=True,
+            cover_side="internal",
+            cover_shade=cover_shade,
+            g_total=g_total,
+        ),
+        shaded_fraction=None,
+    )
+    assert result is not None
+    return _solar_view(
+        effective_g=result.effective_g,
+        g_unshaded=result.g_unshaded,
+        g_shaded=result.g_shaded,
+        shaded_fraction=result.shaded_fraction,
+        source=result.source,
+        cover_shade=cover_shade,
+        position_pct=40,
+    )
+
+
+def test_an_axis_less_cover_with_a_hand_entered_g_quotes_no_preset() -> None:
+    """The regression: an axis-less cover used to lose its ``direct`` label.
+
+    A tilt cover with ``solar_g_total`` typed in by hand and ``cover_shade``
+    left at its untouched default rendered a shade word and an external-preset
+    comparison against a number that never came from the preset table.
+    """
+    view = _axis_less_view(g_total=0.62, cover_shade="light")
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, view)
+    assert len(findings) == 1
+    params = _params(findings)[0]
+    assert params["g_shaded"] == 0.62
+    assert params["admitted"] == 62
+    assert params["shade_word"] == ""
+    assert params["comparison"] == ""
+    text = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert text == _DIRECT_TEXT_EN
+    assert "light" not in text
+    assert "external" not in text.lower()
+
+
+def test_an_axis_less_cover_with_a_preset_g_still_quotes_the_comparison() -> None:
+    """Preset-derived is preset-derived whether or not the cover blends."""
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _axis_less_view())
+    assert len(findings) == 1
+    params = _params(findings)[0]
+    assert params["shade_word"].params["shade"] == "dark"
+    assert params["comparison"].params["external_admitted"] == 22
+    assert render(findings[0].reason, load_troubleshoot_labels("en")) == _PRESET_TEXT_EN
+
+
+@pytest.mark.parametrize("language", ["de", "fr"])
+def test_the_hand_entered_variant_drops_the_comparison_in_every_language(
+    language: str,
+) -> None:
+    """A translated bundle must not smuggle the preset clause back in."""
+    findings = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _direct_view())
+    preset = _fire(TriageCode.SOLAR_INTERNAL_COVER_WEAK_REJECTION, _solar_view())
+    labels = load_troubleshoot_labels(language)
+    direct_text = render(findings[0].reason, labels)
+    preset_text = render(preset[0].reason, labels)
+    assert len(direct_text) < len(preset_text)
+    assert "12" not in direct_text
+    assert "62" in direct_text
+
+
 _WIKI_RE = re.compile(r"^[A-Za-z0-9-]+#[a-z0-9-]+$")
 
 

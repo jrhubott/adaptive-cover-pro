@@ -28,12 +28,14 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_POS,
     CONF_SUNSET_TIME_ENTITY,
+    CONF_TEMP_EXTREME_HEAT,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     CONF_TRACKING_SEASONS,
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_WINTER_CLOSE_INSULATION,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -41,6 +43,7 @@ from custom_components.adaptive_cover_pro.const import (
     AxisConstraintMode,
     TrackingSeason,
 )
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.pipeline.handlers.weather import (
     WeatherOverrideHandler,
 )
@@ -79,6 +82,8 @@ def _make_builder(
     motion_control: bool = False,
     states: dict | None = None,
     time_mgr=None,
+    policy=None,
+    config_service=None,
 ):
     hass = MagicMock()
     states_map = states or {}
@@ -98,8 +103,9 @@ def _make_builder(
     toggles.switch_mode = switch_mode
     toggles.motion_control = motion_control
 
-    policy = MagicMock()
-    policy.glare_zones_config.return_value = None
+    if policy is None:
+        policy = MagicMock()
+        policy.glare_zones_config.return_value = None
 
     builder = PipelineSnapshotBuilder(
         hass=hass,
@@ -107,7 +113,7 @@ def _make_builder(
         climate_provider=climate_provider,
         toggles=toggles,
         policy=policy,
-        config_service=MagicMock(),
+        config_service=config_service or MagicMock(),
         time_mgr=time_mgr,
     )
     return builder, climate_provider, hass
@@ -534,6 +540,47 @@ def test_build_recomputes_effective_default_when_omitted():
 
 
 @pytest.mark.unit
+def test_snapshot_carries_clock_window_open_default_true():
+    """``clock_window_open`` is a separate predicate from ``in_time_window``.
+
+    ``in_time_window`` is the gate-folded ``check_adaptive_time``; the
+    outside-window constraint capability keys on the user's start/end CLOCK
+    alone (#656's split). Both are threaded independently, and the default is
+    True so every snapshot built without it behaves exactly as before.
+    """
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    cover_data.sun_data.astral_sunset = None
+    cover_data.sun_data.astral_sunrise = None
+    cover_data.sun_data.now = None
+
+    def _build(**kwargs):
+        return builder.build(
+            {CONF_DEFAULT_HEIGHT: 55},
+            cover_data=cover_data,
+            cover_type="cover_blind",
+            climate_readings=None,
+            manual_override_active=False,
+            motion_timeout_active=False,
+            weather_override_active=False,
+            current_cover_position=None,
+            is_glare_zone_enabled=lambda idx: True,
+            **kwargs,
+        )
+
+    assert _build(in_time_window=True).clock_window_open is True
+    # Gate dark but clock open (#656): the two disagree and both are honest.
+    assert (
+        _build(in_time_window=False, clock_window_open=True).clock_window_open is True
+    )
+    assert (
+        _build(in_time_window=False, clock_window_open=False).clock_window_open is False
+    )
+
+
+@pytest.mark.unit
 def test_build_fallback_uses_configured_sunset_time_entity():
     """The fallback branch must honor CONF_SUNSET_TIME_ENTITY, not astral (#1048).
 
@@ -934,6 +981,101 @@ def test_build_climate_temp_flags_default_none():
 
 
 @pytest.mark.unit
+def test_build_threads_climate_extreme_heat_active():
+    """build() resolves climate_extreme_heat_active when Climate Mode is on (#1272).
+
+    The carve-out CloudSuppressionHandler reads must be gated on Climate Mode
+    (``switch_mode``) so an install with Climate Mode off can never get a
+    spurious defer — see the sibling ``_disabled`` test.
+    """
+    builder, _, _ = _make_builder(switch_mode=True)
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    readings = ClimateReadings(
+        outside_temperature=40.0,
+        inside_temperature=22.0,
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+    )
+    snapshot = builder.build(
+        {CONF_DEFAULT_HEIGHT: 0, CONF_TEMP_EXTREME_HEAT: 35.0},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=readings,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.climate_extreme_heat_active is True
+
+
+@pytest.mark.unit
+def test_build_climate_extreme_heat_active_false_when_climate_mode_disabled():
+    """Climate Mode off must never produce a spurious defer (#1272)."""
+    builder, _, _ = _make_builder(switch_mode=False)
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    readings = ClimateReadings(
+        outside_temperature=40.0,
+        inside_temperature=22.0,
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+    )
+    snapshot = builder.build(
+        {CONF_DEFAULT_HEIGHT: 0, CONF_TEMP_EXTREME_HEAT: 35.0},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=readings,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.climate_extreme_heat_active is False
+
+
+@pytest.mark.unit
+def test_build_climate_extreme_heat_active_default_false():
+    """No climate config at all → climate_extreme_heat_active stays False (#1272)."""
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    snapshot = builder.build(
+        {CONF_DEFAULT_HEIGHT: 0},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.climate_extreme_heat_active is False
+
+
+@pytest.mark.unit
 def test_build_forwards_explicit_effective_default():
     builder, _, _ = _make_builder(switch_mode=True, motion_control=True)
     cover_data = MagicMock()
@@ -1213,6 +1355,88 @@ def test_constraint_keys_default_to_none():
     assert state.tilt_max is None
 
 
+@pytest.mark.unit
+def test_outside_window_flag_read_per_slot():
+    """The per-slot opt-in lands on the state; absent reads as off (#943 B)."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    assert _constraint_builder(keys, {keys["position"]: 30}).outside_window is False
+    state = _constraint_builder(
+        keys, {keys["tilt_min"]: 50, keys["outside_window"]: True}
+    )
+    assert state.outside_window is True
+
+
+@pytest.mark.unit
+def test_scope_to_window_flag_read_per_slot():
+    """The per-slot #1318 opt-in lands on the state; absent reads as off.
+
+    Absent MUST read False: that is #895's shipped behaviour (a custom position
+    survives the end-of-window transition) and seeding it any other way would
+    silently reverse it for every install at once.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    assert _constraint_builder(keys, {keys["position"]: 30}).scope_to_window is False
+    state = _constraint_builder(
+        keys, {keys["position"]: 30, keys["scope_to_window"]: True}
+    )
+    assert state.scope_to_window is True
+
+
+@pytest.mark.unit
+def test_scope_to_window_is_independent_of_the_outside_window_opt_in():
+    """The two window keys are inverse-polarity and disjoint — never coupled.
+
+    ``outside_window`` extends a slot's min/max BOUNDS past the clock;
+    ``scope_to_window`` withdraws its FIXED claim at the clock. A slot with a
+    floor and an exact position can legitimately want both, so neither read
+    may normalize the other away.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {
+            keys["position"]: 30,
+            keys["outside_window"]: True,
+            keys["scope_to_window"]: True,
+        },
+    )
+    assert state.outside_window is True
+    assert state.scope_to_window is True
+
+
+@pytest.mark.unit
+def test_outside_window_flag_survives_has_fixed_tilt_normalization():
+    """The opt-in is orthogonal to the #1215 FIXED-tilt bound wipe.
+
+    A vacuous ``tilt_only`` keeps its ``tilt_min`` AND its opt-in; a real fixed
+    slat angle still wipes the bounds, and the opt-in survives as a plain flag
+    with nothing left to apply to.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    vacuous = _constraint_builder(
+        keys,
+        {
+            keys["tilt_only"]: True,
+            keys["tilt_min"]: 50,
+            keys["outside_window"]: True,
+        },
+    )
+    assert vacuous.tilt_min == 50
+    assert vacuous.outside_window is True
+
+    fixed = _constraint_builder(
+        keys,
+        {
+            keys["tilt"]: 20,
+            keys["tilt_only"]: True,
+            keys["tilt_min"]: 50,
+            keys["outside_window"]: True,
+        },
+    )
+    assert fixed.tilt_min is None
+    assert fixed.outside_window is True
+
+
 # --- Position axis ---------------------------------------------------------
 
 
@@ -1371,6 +1595,53 @@ def test_tilt_only_wins_over_tilt_bounds():
     assert state.tilt_max is None
 
 
+@pytest.mark.unit
+def test_tilt_only_without_fixed_tilt_preserves_tilt_bounds():
+    """Issue #1215: tilt_only + tilt_min with NO fixed slat angle must NOT be
+    wiped. ``tilt_only`` alone (no ``tilt``) is a vacuous FIXED claim — it
+    must not suppress the tilt_min the slot was actually configured for.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {keys["tilt_only"]: True, keys["tilt_min"]: 50},
+    )
+    assert state.tilt_min == 50
+    assert state.tilt_mode is AxisConstraintMode.MIN
+
+
+@pytest.mark.unit
+def test_tilt_only_with_fixed_tilt_still_wipes_tilt_bounds():
+    """Issue #1215 regression guard: a REAL fixed tilt still wins and wipes
+    the stored bound — the #514 precedence is preserved unchanged.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {keys["tilt"]: 20, keys["tilt_only"]: True, keys["tilt_min"]: 50},
+    )
+    assert state.tilt_min is None
+    assert state.tilt_mode is AxisConstraintMode.FIXED
+
+
+@pytest.mark.unit
+def test_tilt_only_still_wipes_position_max_without_fixed_tilt():
+    """Issue #1215: the position-axis disclaimer stays keyed on the bare
+    ``tilt_only`` flag regardless of whether a slat angle is configured — a
+    tilt-only slot always disclaims the position axis (issue #514).
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {
+            keys["tilt_only"]: True,
+            keys["tilt_min"]: 50,
+            keys["position_max"]: 60,
+        },
+    )
+    assert state.position_max is None
+
+
 # ---------------------------------------------------------------------------
 # acp self-reference namespace in custom-position slot templates (issue #1159)
 # ---------------------------------------------------------------------------
@@ -1498,6 +1769,109 @@ def test_build_carries_a_closed_gate_onto_the_snapshot():
 
 
 @pytest.mark.unit
+def test_build_carries_the_interpolation_curve():
+    """The curve reaches the pure pipeline as data, not as a coordinator handle.
+
+    ``_judge_position_axis`` compares a held cover's RAW read against a logical
+    bound and needs the full inverse of ``_to_cover_frame`` to do it (#1230).
+    The curve lived only on the coordinator, which a 0-HA-import module cannot
+    reach — so this binding is the whole transport.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_INTERP,
+        CONF_INTERP_END,
+        CONF_INTERP_LIST,
+        CONF_INTERP_LIST_NEW,
+        CONF_INTERP_START,
+    )
+    from custom_components.adaptive_cover_pro.position_utils import InterpolationCurve
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(
+        builder,
+        {CONF_INTERP: True, CONF_INTERP_START: 20, CONF_INTERP_END: 80},
+    )
+    assert snapshot.interp_curve == InterpolationCurve(start_value=20, end_value=80)
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(
+        builder,
+        {
+            CONF_INTERP: True,
+            CONF_INTERP_LIST: [0, 50, 100],
+            CONF_INTERP_LIST_NEW: [10, 40, 90],
+        },
+    )
+    assert snapshot.interp_curve == InterpolationCurve(
+        normal_list=[0, 50, 100], new_list=[10, 40, 90]
+    )
+
+
+@pytest.mark.unit
+def test_build_without_interp_leaves_the_curve_none():
+    """No curve configured -> ``None``, even with stray start/end values stored.
+
+    ``coordinator._to_cover_frame`` gates the forward map on the master enable
+    alone, so the inverse has to be gated identically — a disabled curve whose
+    endpoints were never cleared must not start un-mapping reads. ``None`` is
+    also what keeps every uncalibrated snapshot byte-identical.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_INTERP,
+        CONF_INTERP_END,
+        CONF_INTERP_START,
+    )
+
+    builder, _, _ = _make_builder()
+    assert _build_minimal(builder, {}).interp_curve is None
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(
+        builder,
+        {CONF_INTERP: False, CONF_INTERP_START: 20, CONF_INTERP_END: 80},
+    )
+    assert snapshot.interp_curve is None
+
+
+@pytest.mark.unit
+def test_toggling_interpolation_reloads_rather_than_patching_a_live_coordinator():
+    """The builder reads ``CONF_INTERP`` per cycle; the coordinator caches it once.
+
+    ``coordinator._use_interpolation`` is assigned in ``__init__`` and never
+    refreshed — ``_update_options`` re-reads ``start_value``/``end_value``/
+    ``normal_list``/``new_list`` every cycle but not the enable flag — while
+    this builder now reads ``CONF_INTERP`` fresh out of ``options`` on every
+    build. Those two only stay in step because the option cannot change under a
+    live coordinator: it is not in ``_RUNTIME_APPLICABLE_OPTIONS``, so
+    ``_async_update_listener`` reloads the whole config entry and ``__init__``
+    re-reads it.
+
+    Without that, switching interpolation ON would have the judge un-map a
+    device read while ``_to_cover_frame`` declined to re-map the answer — 42
+    judged as 37 and then commanded as 37. Pinned here rather than left as a
+    comment because the divergence is silent and the rule lives in a different
+    module from either half of it.
+    """
+    from custom_components.adaptive_cover_pro import _RUNTIME_APPLICABLE_OPTIONS
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_INTERP,
+        CONF_INTERP_END,
+        CONF_INTERP_LIST,
+        CONF_INTERP_LIST_NEW,
+        CONF_INTERP_START,
+    )
+
+    for key in (
+        CONF_INTERP,
+        CONF_INTERP_START,
+        CONF_INTERP_END,
+        CONF_INTERP_LIST,
+        CONF_INTERP_LIST_NEW,
+    ):
+        assert key not in _RUNTIME_APPLICABLE_OPTIONS
+
+
+@pytest.mark.unit
 def test_build_carries_the_effective_weather_priority_onto_the_snapshot():
     """The weather floor's own priority must be the user-configured one (#1170).
 
@@ -1519,6 +1893,30 @@ def test_build_falls_back_to_the_weather_class_default_priority():
     builder, _, _ = _make_builder()
     snapshot = _build_minimal(builder, {})
     assert snapshot.weather_override_priority == WeatherOverrideHandler.priority
+
+
+@pytest.mark.unit
+def test_weather_outside_window_defaults_true_when_absent():
+    """An entry that never saw the option keeps weather's night shift (#1308)."""
+    from custom_components.adaptive_cover_pro.const import (
+        DEFAULT_WEATHER_OUTSIDE_WINDOW,
+    )
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(builder, {})
+    assert snapshot.weather_outside_window is DEFAULT_WEATHER_OUTSIDE_WINDOW is True
+
+
+@pytest.mark.unit
+def test_weather_outside_window_reads_the_stored_false():
+    """The opt-out has to cross the HA boundary to reach either weather seat."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_OUTSIDE_WINDOW,
+    )
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(builder, {CONF_WEATHER_OUTSIDE_WINDOW: False})
+    assert snapshot.weather_outside_window is False
 
 
 # ---------------------------------------------------------------------------
@@ -1575,3 +1973,93 @@ async def test_update_cycle_threads_cover_positions_into_build(hass):
 
     assert captured["cover_positions"] == captured["live"]
     assert captured["cover_positions"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("opts", "expected"),
+    [
+        ({CONF_WEATHER_OVERRIDE_TILT: 100}, 100),
+        ({CONF_WEATHER_OVERRIDE_TILT: 0}, 0),
+        ({}, None),
+    ],
+    ids=["configured", "zero-is-not-unset", "absent"],
+)
+def test_build_reads_the_weather_override_tilt(opts, expected):
+    """The weather slat angle rides onto the snapshot beside its position (#1297).
+
+    The ``absent`` row is the one that matters: no stored key must produce
+    ``None``, not a default, because ``None`` is what tells the handler to
+    claim no tilt and leave the slats alone. The ``0`` row guards the usual
+    optional-percentage trap — a closed slat is a real value, not "unset".
+    """
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+
+    snapshot = builder.build(
+        opts,
+        cover_data=cover_data,
+        cover_type="cover_venetian",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=True,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: False,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.weather_override_tilt == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("cover_type", "expected"),
+    [
+        ("cover_venetian", 100),
+        ("cover_day_night_shade", None),
+    ],
+    ids=["venetian-claims-the-slat-angle", "day-night-shade-drops-it"],
+)
+def test_build_gates_the_weather_override_tilt_on_the_policy(cover_type, expected):
+    """A stored slat angle only reaches the pipeline on a type that has slats.
+
+    ``weather_override_includes_tilt`` gates the config-flow field, but the key
+    can still be *stored* on a type that never shows it: ``acp.set_weather_safety``
+    writes it without a cover-type gate, and a venetian → day/night cover-type
+    switch deliberately deletes nothing (#1132). Read ungated, a day/night shade
+    holding ``weather_override_tilt: 100`` would be driven to a 100 % blackout
+    fabric on every weather retraction — an axis its policy says the weather
+    override must never touch, with no UI field to see or clear it.
+
+    Gating the read here rather than in the handler closes all three routes at
+    once (service, type switch, hand-edited options) on the one seam that builds
+    every ``PipelineSnapshot``.
+
+    The venetian row is the no-change guard: ``weather_override_includes_tilt``
+    is True there, so ``options.get()`` is reached exactly as it was before.
+    """
+    policy = get_policy(cover_type)
+    builder, _, _ = _make_builder(policy=policy)
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+
+    snapshot = builder.build(
+        {CONF_WEATHER_OVERRIDE_TILT: 100},
+        cover_data=cover_data,
+        cover_type=cover_type,
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=True,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: False,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.weather_override_tilt == expected

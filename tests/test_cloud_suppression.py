@@ -9,8 +9,9 @@ Covers:
 
 from __future__ import annotations
 
+import pytest
 
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.const import ClimateStrategy, ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
     CustomPositionHandler,
@@ -401,6 +402,112 @@ class TestCloudSuppressionPipelineIntegration:
         result = registry.evaluate(snapshot)
         assert result.control_method == ControlMethod.DEFAULT
         assert result.position == 60
+
+    def test_climate_low_light_wins_on_cloud_coverage_outside_fov(self) -> None:
+        """Issue #1238 behaviour change (b): the low-light trigger set widens.
+
+        ``cloud_suppression_active`` includes ``cloud_coverage_above_threshold``;
+        the raw ``is_low_light`` predicate never read that field. Gating low light
+        on the resolved bool therefore widens the trigger set — shadowed by
+        ``CloudSuppressionHandler`` at priority 60 in every state EXCEPT this
+        one, where the sun sits outside the window's FOV so priority 60 declines
+        (issue #417) and the climate branch is reached.
+
+        The position is the effective default either way; what changes is the
+        winning handler (``default`` → ``climate``) and the strategy.
+        """
+        registry = self._make_registry()
+        snapshot = make_snapshot(
+            direct_sun_valid=False,
+            climate_mode_enabled=True,
+            default_position=60,
+            climate_readings=make_weather_readings(
+                is_sunny=True,
+                lux_below_threshold=False,
+                irradiance_below_threshold=False,
+                cloud_coverage_above_threshold=True,
+            ),
+            climate_options=ClimateOptions(
+                temp_low=None,
+                temp_high=None,
+                temp_switch=True,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=True,
+                winter_close_insulation=False,
+            ),
+        )
+        result = registry.evaluate(snapshot)
+        winner = next(step for step in result.decision_trace if step.matched)
+        assert winner.handler == "climate"
+        assert result.climate_strategy == ClimateStrategy.LOW_LIGHT
+        assert result.control_method == ControlMethod.DEFAULT
+        assert result.position == 60
+
+    @pytest.mark.parametrize(
+        ("is_sunset_active", "min_tilt", "max_tilt", "expected_tilt"),
+        [
+            (False, 0, 100, 35),  # unconstrained → default_tilt as configured
+            (True, 0, 100, 5),  # unconstrained → sunset_tilt as configured
+            (False, 10, 30, 30),  # #503 clamp pulls default_tilt down to max
+            (True, 10, 30, 5),  # #128 carve-out: sunset_tilt stays unclamped
+        ],
+    )
+    def test_venetian_cloud_coverage_outside_fov_keeps_the_default_tilt(
+        self, is_sunset_active: bool, min_tilt: int, max_tilt: int, expected_tilt: int
+    ) -> None:
+        """The #1214 tilt outcome for the widened branch, pinned explicitly.
+
+        On a venetian the LOW_LIGHT branch has ``position_from_default=True``, so
+        ``ClimateHandler`` calls ``compute_default_tilt`` — where the previous
+        winner, ``DefaultHandler``, called the very same helper. Both must land on
+        the identical slat angle: this branch changes which handler answers, and
+        it must not change what the slats do. Parametrised over the sunset
+        carve-out (that is where the two tilt sources differ) crossed with the
+        tilt limits, because the two paths through ``compute_default_tilt``
+        disagree about clamping: only the non-sunset ``default_tilt`` honours the
+        #503 min/max, while ``sunset_tilt`` keeps the #128 bypass.
+        """
+        readings = make_weather_readings(
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=True,
+        )
+        options = ClimateOptions(
+            temp_low=None,
+            temp_high=None,
+            temp_switch=True,
+            transparent_blind=False,
+            temp_summer_outside=None,
+            cloud_suppression_enabled=True,
+            winter_close_insulation=False,
+        )
+        kwargs = {
+            "cover_type": "cover_venetian",
+            "direct_sun_valid": False,
+            "default_position": 60,
+            "default_tilt": 35,
+            "sunset_tilt": 5,
+            "min_tilt": min_tilt,
+            "max_tilt": max_tilt,
+            "is_sunset_active": is_sunset_active,
+            "climate_readings": readings,
+            "climate_options": options,
+        }
+        # What DefaultHandler answers today, with climate mode off.
+        baseline = DefaultHandler().evaluate(
+            make_snapshot(climate_mode_enabled=False, **kwargs)
+        )
+        result = self._make_registry().evaluate(
+            make_snapshot(climate_mode_enabled=True, **kwargs)
+        )
+
+        winner = next(step for step in result.decision_trace if step.matched)
+        assert winner.handler == "climate"
+        assert result.climate_strategy == ClimateStrategy.LOW_LIGHT
+        assert result.position == baseline.position == 60
+        assert result.tilt == baseline.tilt == expected_tilt
 
     def test_cloud_suppression_overrides_climate(self) -> None:
         """Cloud suppression (priority 60) fires before climate handler (priority 50)."""

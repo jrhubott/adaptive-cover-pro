@@ -158,6 +158,11 @@ from .const import (
     CONF_SLIDING_POINT2_X,
     CONF_SLIDING_POINT2_Y,
     CONF_SLIDING_SLIDE_DIRECTION,
+    CONF_SOLAR_COVER_SHADE,
+    CONF_SOLAR_COVER_SIDE,
+    CONF_SOLAR_G_GLAZING,
+    CONF_SOLAR_G_TOTAL,
+    CONF_SOLAR_PROPERTIES_ENABLED,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
     CONF_TEMP_EXTREME_HEAT,
@@ -170,12 +175,14 @@ from .const import (
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_TRANSIT_TIMEOUT,
     CONF_TRANSPARENT_BLIND,
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
+    CONF_VENETIAN_TILT_ONLY_SCOPE,
     CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_SCOPE,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
@@ -191,8 +198,10 @@ from .const import (
     CONF_WEATHER_IS_WINDY_SENSOR,
     CONF_WEATHER_IS_WINDY_TEMPLATE,
     CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
+    CONF_WEATHER_OUTSIDE_WINDOW,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
     CONF_WEATHER_SEVERE_SENSORS,
@@ -222,6 +231,7 @@ from .const import (
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_MOTION_TIMEOUT_MODE,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
+    DEFAULT_WEATHER_OUTSIDE_WINDOW,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -262,6 +272,9 @@ SECTION_DEBUG = "debug"
 # section never renders in a cover's options flow — it exists so group
 # numeric fields feed OPTION_RANGES / FIELD_VALIDATORS like every other one.
 SECTION_GROUP = "group"
+# Command-queue-only fields (issue #1189). Same arrangement as SECTION_GROUP:
+# out of COMMON_SECTION_ORDER, present so the gap gets its bounds row.
+SECTION_COMMAND_QUEUE = "command_queue"
 
 
 # =============================================================================
@@ -856,6 +869,40 @@ _AUTOMATION_SPECS = _spec(
         ValidatorKind.TIME,
         make_selector=_time(),
     ),
+    # Named dispatch queue (issue #1189). Lives on Movement & Schedule with the
+    # two sibling rate limiters above: like them it gates an ALREADY-DECIDED
+    # command rather than influencing which position is picked, which is exactly
+    # what that page's own description scopes it to. The selector is built
+    # dynamically in ``async_step_automation`` — its option list is drawn from
+    # the other loaded entries, which a static schema cannot see — so no
+    # ``make_selector`` here; this spec exists to register the key.
+    FieldSpec(
+        const.CONF_COMMAND_QUEUE,
+        SECTION_AUTOMATION,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+)
+
+
+# Command-queue entry fields (issue #1189). Not in COMMON_SECTION_ORDER — the
+# section never renders on a cover's options flow — so this mirrors
+# ``_GROUP_SPECS``: it exists so the queue's numeric field feeds OPTION_RANGES
+# and FIELD_VALIDATORS like every other one.
+_COMMAND_QUEUE_SPECS = _spec(
+    FieldSpec(
+        const.CONF_COMMAND_QUEUE_GAP,
+        SECTION_COMMAND_QUEUE,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_COMMAND_QUEUE_GAP,
+        default=const.DEFAULT_COMMAND_QUEUE_GAP,
+        make_selector=_number(
+            minimum=const._RANGE_COMMAND_QUEUE_GAP[0],
+            maximum=const._RANGE_COMMAND_QUEUE_GAP[1],
+            step=0.5,
+            unit="seconds",
+        ),
+    ),
 )
 
 
@@ -1163,6 +1210,32 @@ def _custom_position_base_specs() -> list[FieldSpec]:
                 make_selector=_const(position_slider),
             )
         )
+        # Keep this slot's min/max claims binding outside the user's start/end
+        # clock window (issue #943 item B). Deliberately in the ALWAYS-rendered
+        # spec list, not the venetian-only tilt one: it governs `min_mode` and
+        # `position_max` too, which every cover type has.
+        specs.append(
+            FieldSpec(
+                slot["outside_window"],
+                SECTION_CUSTOM_POSITION,
+                ValidatorKind.BOOL,
+                default=False,
+                make_selector=_bool(),
+            )
+        )
+        # Stand this slot's exact-position / Use-My claim down once the clock
+        # window closes (issue #1318). Also ALWAYS rendered, and for the mirror
+        # reason: it governs the position claim every cover type can make.
+        # Absent = off, so no DEFAULT_* constant exists for it either.
+        specs.append(
+            FieldSpec(
+                slot["scope_to_window"],
+                SECTION_CUSTOM_POSITION,
+                ValidatorKind.BOOL,
+                default=False,
+                make_selector=_bool(),
+            )
+        )
     return specs
 
 
@@ -1189,8 +1262,11 @@ def _custom_position_tilt_specs() -> list[FieldSpec]:
                 make_selector=_bool(),
             )
         )
-        # Tilt bounds (issue #943). Absent = off. `tilt_only` (a FIXED tilt
-        # claim) wins over these — normalized once in the snapshot builder.
+        # Tilt bounds (issue #943). Absent = off. A REAL fixed tilt
+        # (`tilt_only` *with* a configured slat angle) wins over these —
+        # normalized once in the snapshot builder via `has_fixed_tilt`. A
+        # `tilt_only` slot with no slat angle makes no FIXED claim, so its
+        # bounds are NOT discarded (issue #1215).
         for sub in ("tilt_min", "tilt_max"):
             specs.append(
                 FieldSpec(
@@ -1258,6 +1334,17 @@ def _custom_position_slot_fields(
     # tilt bounds ride the same `include_tilt` gate as `tilt` / `tilt_only`,
     # which the caller derives from the policy — never from a cover-type string.
     schema[vol.Optional(keys["position_max"])] = position_slider()
+    # Outside-window opt-in (issue #943 item B) — UNGATED by `include_tilt`: it
+    # governs the position floor and ceiling as well as the tilt bounds, so it
+    # is as relevant to a plain blind as to a venetian.
+    schema[vol.Optional(keys["outside_window"], default=False)] = (
+        selector.BooleanSelector()
+    )
+    # Scope-to-window opt-in (issue #1318) — UNGATED for the mirror reason: it
+    # governs the slot's exact position and Use My, which every cover type has.
+    schema[vol.Optional(keys["scope_to_window"], default=False)] = (
+        selector.BooleanSelector()
+    )
     if include_tilt:
         schema[vol.Optional(keys["tilt"])] = position_slider()
         schema[vol.Optional(keys["tilt_only"], default=False)] = (
@@ -1391,6 +1478,12 @@ _WEATHER_OVERRIDE_SPECS = _spec(
         default=True,
     ),
     FieldSpec(
+        CONF_WEATHER_OUTSIDE_WINDOW,
+        SECTION_WEATHER_OVERRIDE,
+        ValidatorKind.BOOL,
+        default=DEFAULT_WEATHER_OUTSIDE_WINDOW,
+    ),
+    FieldSpec(
         CONF_WEATHER_WIND_SPEED_SENSOR,
         SECTION_WEATHER_OVERRIDE,
         ValidatorKind.ENTITY,
@@ -1469,6 +1562,21 @@ _WEATHER_OVERRIDE_SPECS = _spec(
         rng=const._RANGE_WEATHER_OVERRIDE_POSITION,
         default=0,
     ),
+    # Slat angle during a weather retraction (#1297). Venetian-only — surfaced
+    # via CoverTypePolicy.weather_override_includes_tilt. Clearable with NO
+    # default: absent => None => the handler names no tilt and the slats are
+    # left alone, which is the pre-#1297 behaviour (so no config migration).
+    # Carries make_selector (unlike its dynamic siblings in this section)
+    # because the generic extra_field_keys loop in cover_types/base.py skips
+    # specs without one.
+    FieldSpec(
+        CONF_WEATHER_OVERRIDE_TILT,
+        SECTION_WEATHER_OVERRIDE,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TILT,
+        clearable=True,
+        make_selector=_const(position_slider),
+    ),
     FieldSpec(
         CONF_WEATHER_OVERRIDE_MIN_MODE,
         SECTION_WEATHER_OVERRIDE,
@@ -1509,6 +1617,20 @@ _LIGHT_CLOUD_SPECS = _spec(
         ValidatorKind.ENTITY,
         clearable=True,
     ),
+    # Which plane the sensor above measures (#1237). Declared immediately after
+    # it so the two render together: the reading is meaningless to the
+    # solar-gain estimate without knowing its plane, and it changes nothing
+    # about the cloud-suppression threshold the same entity feeds.
+    FieldSpec(
+        const.CONF_IRRADIANCE_PLANE,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.SELECT,
+        select_options=const.IRRADIANCE_PLANES,
+        default=const.DEFAULT_IRRADIANCE_PLANE,
+        make_selector=_select(
+            *const.IRRADIANCE_PLANES, translation_key=const.CONF_IRRADIANCE_PLANE
+        ),
+    ),
     FieldSpec(
         CONF_CLOUD_COVERAGE_ENTITY,
         SECTION_LIGHT_CLOUD,
@@ -1519,7 +1641,7 @@ _LIGHT_CLOUD_SPECS = _spec(
         CONF_WEATHER_STATE,
         SECTION_LIGHT_CLOUD,
         ValidatorKind.NONE,
-        default=["sunny", "partlycloudy", "cloudy", "clear"],
+        default=const.DEFAULT_WEATHER_STATE,
     ),
     FieldSpec(
         CONF_LUX_THRESHOLD, SECTION_LIGHT_CLOUD, ValidatorKind.NONE, default=1000
@@ -1943,6 +2065,73 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.BOOL,
     ),
+    # Optional solar-transmittance description (#1236). Rendered for every
+    # cover type by ``config_dynamic.solar_properties_schema``; these specs
+    # single-source the bounds / validator entries for OPTION_RANGES +
+    # FIELD_VALIDATORS. ``solar_g_total`` is clearable so a cleared override
+    # round-trips back to the preset lookup rather than sticking at 0 (#1267).
+    FieldSpec(
+        CONF_SOLAR_PROPERTIES_ENABLED,
+        SECTION_GEOMETRY,
+        ValidatorKind.BOOL,
+        default=False,
+        make_selector=_bool(),
+    ),
+    FieldSpec(
+        CONF_SOLAR_COVER_SIDE,
+        SECTION_GEOMETRY,
+        ValidatorKind.SELECT,
+        select_options=const.SOLAR_COVER_SIDES,
+        default=const.DEFAULT_SOLAR_COVER_SIDE,
+        make_selector=_select(
+            *const.SOLAR_COVER_SIDES, translation_key=CONF_SOLAR_COVER_SIDE
+        ),
+    ),
+    FieldSpec(
+        CONF_SOLAR_COVER_SHADE,
+        SECTION_GEOMETRY,
+        ValidatorKind.SELECT,
+        select_options=const.SOLAR_COVER_SHADES,
+        default=const.DEFAULT_SOLAR_COVER_SHADE,
+        make_selector=_select(
+            *const.SOLAR_COVER_SHADES, translation_key=CONF_SOLAR_COVER_SHADE
+        ),
+    ),
+    # SLIDER (not BOX) and no default: BOX saves 0 on clear, and an absent
+    # value is what selects the preset lookup, so it must round-trip absent.
+    FieldSpec(
+        CONF_SOLAR_G_TOTAL,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SOLAR_G,
+        clearable=True,
+        make_selector=_number(minimum=0.0, maximum=1.0, step=0.01),
+    ),
+    FieldSpec(
+        CONF_SOLAR_G_GLAZING,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SOLAR_G,
+        default=const.DEFAULT_SOLAR_G_GLAZING,
+        make_selector=_number(minimum=0.0, maximum=1.0, step=0.01),
+    ),
+    # Optional glazed-area override for the solar-gain estimate (#1237).
+    # SLIDER + clearable + no default for the same reason as ``solar_g_total``:
+    # blank means "derive it from the window geometry", and a BOX would save 0
+    # on clear, which the estimate would then have to read as an area.
+    FieldSpec(
+        const.CONF_GLASS_AREA,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_GLASS_AREA,
+        clearable=True,
+        make_selector=_number(
+            minimum=const._RANGE_GLASS_AREA[0],
+            maximum=const._RANGE_GLASS_AREA[1],
+            step=0.1,
+            unit="m²",
+        ),
+    ),
     FieldSpec(
         CONF_TILT_DEPTH,
         SECTION_GEOMETRY,
@@ -1972,6 +2161,12 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_TILT_ANGLE_100,
+    ),
+    FieldSpec(
+        CONF_TILT_HORIZONTAL_PERCENT,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TILT_HORIZONTAL_PERCENT,
     ),
     FieldSpec(
         CONF_MAX_TILT, SECTION_GEOMETRY, ValidatorKind.RANGE, rng=const._RANGE_MAX_TILT
@@ -2039,6 +2234,12 @@ _GEOMETRY_SPECS = _spec(
         ValidatorKind.SELECT,
         select_options=const.VENETIAN_TILT_RESET_SCOPES,
     ),
+    FieldSpec(
+        CONF_VENETIAN_TILT_ONLY_SCOPE,
+        SECTION_GEOMETRY,
+        ValidatorKind.SELECT,
+        select_options=const.VENETIAN_TILT_ONLY_SCOPES,
+    ),
 )
 
 # Glare-zone per-zone fields (vertical-only). 4 zones × x/y/radius/z.
@@ -2102,6 +2303,7 @@ _ALL_SPEC_GROUPS: tuple[list[FieldSpec], ...] = (
     _PIPELINE_PRIORITY_SPECS,
     _DEBUG_SPECS,
     _GROUP_SPECS,
+    _COMMAND_QUEUE_SPECS,
 )
 
 
@@ -2328,6 +2530,7 @@ _POSITION_ROLES: dict[str, PositionRole] = {
     CONF_SUNSET_TILT: PositionRole.TILT,
     CONF_MIN_TILT: PositionRole.TILT,
     CONF_MAX_TILT: PositionRole.TILT,
+    CONF_WEATHER_OVERRIDE_TILT: PositionRole.TILT,
     # ---- percentages that are not travel positions -----------------------
     # Magnitudes and hardware-frame thresholds. A type switch changes which end
     # of the axis shades the window; it does not renumber the axis, so a delta,

@@ -73,6 +73,10 @@ def _ctx(
         lux=lux,
         irradiance=irradiance,
         is_sunny=is_sunny,
+        # ``ClimateContext.is_low_light`` delegates to the data object so the
+        # smoothed cloud-suppression bool can override the readings (#1238).
+        # These tests never smooth, so the double supplies the raw OR.
+        is_low_light=(lux or irradiance or not is_sunny),
         winter_close_insulation=winter_close_insulation,
         transparent_blind=transparent_blind,
         # Extreme-heat mode is off in these tests; the shared _TOP_OVERRIDES
@@ -80,7 +84,14 @@ def _ctx(
         is_extreme_heat=False,
         policy=policy,
     )
-    cover = SimpleNamespace(valid=valid, mode=mode)
+    # ``climate_tilt_percentage`` returning None is this stub declining the
+    # engine's angle→percentage seam (#1222): it models a mode, not a tilt
+    # scale, so the policy's mode-based formula answers as it always has.
+    cover = SimpleNamespace(
+        valid=valid,
+        mode=mode,
+        climate_tilt_percentage=lambda *args, **kwargs: None,
+    )
     return ClimateContext(
         data=data,
         cover=cover,

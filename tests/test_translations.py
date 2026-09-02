@@ -490,6 +490,78 @@ def test_priority_field_documents_all_three_gates() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Issue #1300 — the shipped CONF_WEATHER_STATE default and its own help text
+# drifted apart once already (default included "cloudy", both help strings
+# said it shouldn't). Lock the two in sync going forward.
+# ---------------------------------------------------------------------------
+
+# Markers are matched in order; each pairs an opening phrase with the
+# character that closes the enumeration it introduces. Keyed on these short,
+# stable substrings (not the surrounding sentence) so prose can be reworded
+# freely around the list without this test needing an edit.
+_WEATHER_STATE_DEFAULTS_MARKERS: tuple[tuple[str, str], ...] = (
+    ("Defaults: ", "."),
+    ("the defaults (", ")"),
+)
+
+
+def _parse_weather_state_defaults(desc: str) -> list[str]:
+    """Extract the comma-separated list following a defaults-enumeration marker.
+
+    Raises AssertionError (with the offending text) if no known marker is
+    found, or a marker is found with no matching terminator — a silent empty
+    result would let this guard pass vacuously if the help text is reworded
+    to drop the enumeration entirely.
+    """
+    for marker, terminator in _WEATHER_STATE_DEFAULTS_MARKERS:
+        start = desc.find(marker)
+        if start == -1:
+            continue
+        start += len(marker)
+        end = desc.find(terminator, start)
+        assert end != -1, (
+            f"found defaults marker {marker!r} but no closing {terminator!r} "
+            f"in: {desc!r}"
+        )
+        items = [s.strip() for s in desc[start:end].split(",") if s.strip()]
+        assert items, f"defaults marker {marker!r} enumerated nothing in: {desc!r}"
+        return items
+    raise AssertionError(
+        "no defaults-enumeration marker "
+        f"({[m for m, _ in _WEATHER_STATE_DEFAULTS_MARKERS]!r}) found in: {desc!r}"
+    )
+
+
+def test_weather_state_help_text_matches_default_weather_state() -> None:
+    """en.json's weather_state help text must enumerate exactly
+    const.DEFAULT_WEATHER_STATE (issue #1300).
+
+    The shipped default and its own documented default drifted apart once
+    already: the default list included "cloudy" while both maintainer-authored
+    help strings said the recommended default excludes it. This guards both
+    surfaces (options.step.weather and its options.step.light_cloud sibling)
+    against the same drift recurring, by parsing the enumerated list rather
+    than pinning the whole sentence — so rewording the prose around the list
+    doesn't force an edit here (and isn't tempting to just delete).
+    """
+    from custom_components.adaptive_cover_pro.const import DEFAULT_WEATHER_STATE
+
+    en = _load(TRANSLATIONS_DIR / "en.json")
+    expected = set(DEFAULT_WEATHER_STATE)
+    sites = (
+        ("options.step.weather.data_description.weather_state", "weather"),
+        ("options.step.light_cloud.data_description.weather_state", "light_cloud"),
+    )
+    for label, step in sites:
+        desc = en["options"]["step"][step]["data_description"]["weather_state"]
+        actual = set(_parse_weather_state_defaults(desc))
+        assert actual == expected, (
+            f"{label} enumerates {sorted(actual)} but "
+            f"const.DEFAULT_WEATHER_STATE is {sorted(expected)}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Issue #457 — FR cloud_suppression decision trace label must use action-oriented phrasing
 # ---------------------------------------------------------------------------
 
@@ -947,3 +1019,262 @@ def test_every_offered_cover_type_has_a_selector_mode_label() -> None:
         "cover types the picker offers with no selector.mode.options label, so "
         f"the dropdown renders their raw key: {missing}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Issue #1203 — intra-bundle wording consistency the #1201/#1202 parity guards
+# don't reach. Those guards only compare one key's label *across* bundles
+# (picker vs. confirm); they say nothing about a single term being reused
+# consistently for unrelated keys *within* one language, and never touch
+# `services.*` at all.
+#
+# One table, one assertion body: each row names a bundle + key path and the
+# terms that key's value must/must-not contain. A site that shares a term
+# with another site (e.g. a picker label and the help text that should echo
+# it) gets its own row rather than a shared derivation — cheap to add a row,
+# expensive to special-case a shape.
+#
+# ``same_term_as`` (re-audit follow-up) is the one exception: a row can point
+# at another ``(bundle, key_path)`` whose value carries a trailing
+# parenthetical — e.g. "Store à projection (bras de projection)" — and demand
+# that its own value echo whatever term is *actually* inside that
+# parenthetical right now. The term is derived at test time with the same
+# ``_PAREN_TAIL`` regex the picker/confirm parity guard uses above, not
+# restated as a literal, so renaming the referenced parenthetical (and
+# updating only its own row's ``must_contain``) is enough to turn every row
+# that points at it red without anyone touching them — the cross-key
+# guarantee the original single-purpose test gave for the FR drop-arm term
+# before it was folded into this table.
+# ---------------------------------------------------------------------------
+
+
+def _bundle_path(bundle: str) -> Path:
+    """Resolve a ``"<dir>/<file>.json"`` shorthand to its path on disk."""
+    directory, filename = bundle.split("/", 1)
+    if directory == "translations":
+        return TRANSLATIONS_DIR / filename
+    if directory == "summary_i18n":
+        return TRANSLATIONS_DIR.parent / "summary_i18n" / filename
+    raise ValueError(f"unknown bundle directory: {directory!r}")
+
+
+def _location(bundle: str, key_path: tuple[str, ...]) -> str:
+    """Render a ``(bundle, key_path)`` pair as the ``"<bundle>:<dotted path>"``
+    string every assertion message in this table uses to name its site.
+    """
+    return f"{bundle}:{'.'.join(key_path)}"
+
+
+def _resolve(bundle: str, key_path: tuple[str, ...]) -> str:
+    """Load *bundle*, walk *key_path*, and return the leaf — which must be a str.
+
+    Centralizing the walk means every caller — a row's own lock and any
+    ``same_term_as`` coupling that resolves the referenced key path — gets
+    the same guard: a ``key_path`` that stops one segment short lands on a
+    ``dict``, and without this check an empty ``must_contain``/
+    ``must_not_contain`` (or a coupling term that happens not to appear)
+    would pass silently instead of raising, because ``in`` on a dict checks
+    keys, not text.
+    """
+    value: object = _load(_bundle_path(bundle))
+    for part in key_path:
+        value = value[part]
+    location = _location(bundle, key_path)
+    assert isinstance(value, str), f"{location} did not resolve to a string: {value!r}"
+    return value
+
+
+# Each row's ``same_term_as`` (default: ``None``) points at another
+# ``(bundle, key_path)`` whose trailing parenthetical holds the term *this*
+# row's value must also contain, extracted at test time with ``_PAREN_TAIL``
+# — the same regex ``_split_label`` uses above. Four rows use this today: the
+# two FR arm_length rows and the FR/DE set_tilt rows, pointing at the
+# drop-arm and venetian pickers respectively; the field costs nothing on
+# every other row.
+_FR_OSCILLATING_AWNING_PICKER = (
+    "translations/fr.json",
+    ("selector", "mode", "options", "cover_oscillating_awning"),
+)
+_FR_VENETIAN_PICKER = (
+    "translations/fr.json",
+    ("selector", "mode", "options", "cover_venetian"),
+)
+_DE_VENETIAN_PICKER = (
+    "translations/de.json",
+    ("selector", "mode", "options", "cover_venetian"),
+)
+
+_WORDING_LOCKS = [
+    # -- #1203: cover_blind names a fabric shade, not a slatted Jalousie.
+    # "Jalousie" already correctly names cover_tilt/cover_venetian; "Rollo"
+    # already names the other position-only cover (cover_day_night_shade).
+    pytest.param(
+        "translations/de.json",
+        ("selector", "mode", "options", "cover_blind"),
+        ("Vertikales Rollo",),
+        ("Jalousie",),
+        None,
+        id="de-cover_blind-picker",
+    ),
+    pytest.param(
+        "summary_i18n/de.json",
+        ("cover_types", "blind"),
+        ("Vertikales Rollo",),
+        ("Jalousie",),
+        None,
+        id="de-cover_blind-confirm",
+    ),
+    # -- #1203: FR names the oscillating awning's drop arm the same way
+    # everywhere. A prior fix landed "bras oscillant" on the picker while the
+    # arm_length help text (both steps) still said "bras pivotant" — two
+    # words for the same part within one bundle. ``same_term_as`` restores
+    # the cross-key coupling the original (pre-table) test had: each
+    # arm_length row must echo whatever the picker's parenthetical actually
+    # says right now, not just the literal "bras de projection" below.
+    pytest.param(
+        *_FR_OSCILLATING_AWNING_PICKER,
+        ("bras de projection",),
+        ("bras oscillant", "bras pivotant"),
+        None,
+        id="fr-oscillating_awning-picker",
+    ),
+    pytest.param(
+        "translations/fr.json",
+        ("config", "step", "geometry", "data_description", "arm_length"),
+        ("bras de projection",),
+        ("bras oscillant", "bras pivotant"),
+        _FR_OSCILLATING_AWNING_PICKER,
+        id="fr-arm_length-config",
+    ),
+    pytest.param(
+        "translations/fr.json",
+        ("options", "step", "geometry", "data_description", "arm_length"),
+        ("bras de projection",),
+        ("bras oscillant", "bras pivotant"),
+        _FR_OSCILLATING_AWNING_PICKER,
+        id="fr-arm_length-options",
+    ),
+    # -- #1203: FR set_tilt service description matches the picker's "deux
+    # axes" wording. PR#1202 moved cover_venetian to "Store vénitien (deux
+    # axes)", but its parity guard only walks selector.mode.options vs.
+    # display_label() — it never reaches services.*. ``same_term_as`` couples
+    # the description back to the picker's own parenthetical (round-2 audit
+    # fix, #1203): renaming the picker's qualifier without touching this row
+    # now fails on the coupling, not just on the (now-stale) literal below.
+    pytest.param(
+        *_FR_VENETIAN_PICKER,
+        ("(deux axes)",),
+        ("à double axe",),
+        None,
+        id="fr-cover_venetian-picker",
+    ),
+    pytest.param(
+        "translations/fr.json",
+        ("services", "set_tilt", "description"),
+        ("(deux axes)",),
+        ("à double axe",),
+        _FR_VENETIAN_PICKER,
+        id="fr-set_tilt-description",
+    ),
+    # -- #1203: DE arm_length help text names the arm and pivot correctly.
+    # #1201 fixed the noun to "Fallarmmarkise" (matching
+    # cover_oscillating_awning) but left the surrounding sentence saying
+    # "Schwenkarmes" (should be "Fallarmes") and "Wandpivot", which is not a
+    # German word ("Wanddrehpunkt" is the trade term).
+    pytest.param(
+        "translations/de.json",
+        ("config", "step", "geometry", "data_description", "arm_length"),
+        ("Fallarmes", "Wanddrehpunkt"),
+        ("Schwenkarmes", "Wandpivot"),
+        None,
+        id="de-arm_length-config",
+    ),
+    pytest.param(
+        "translations/de.json",
+        ("options", "step", "geometry", "data_description", "arm_length"),
+        ("Fallarmes", "Wanddrehpunkt"),
+        ("Schwenkarmes", "Wandpivot"),
+        None,
+        id="de-arm_length-options",
+    ),
+    # -- #1203 follow-up: DE set_tilt service description matches the
+    # picker's "zweiachsig" wording. Same drift class as the FR "deux axes"
+    # row above, caught in the same audit pass: the picker (cover_venetian =
+    # "Jalousie (zweiachsig)") uses the German term, but the service
+    # description still carried the untranslated English qualifier
+    # "dual-axis" — services.* is outside every picker/confirm parity guard.
+    # Unlike FR, DE had no row locking the picker's own literal, so this row
+    # is added first (round-2 audit fix) to give ``de-set_tilt-description``'s
+    # ``same_term_as`` coupling below the same backstop the FR side has.
+    pytest.param(
+        *_DE_VENETIAN_PICKER,
+        ("zweiachsig",),
+        ("zwei Achsen",),
+        None,
+        id="de-cover_venetian-picker",
+    ),
+    pytest.param(
+        "translations/de.json",
+        ("services", "set_tilt", "description"),
+        ("zweiachsig",),
+        ("dual-axis",),
+        _DE_VENETIAN_PICKER,
+        id="de-set_tilt-description",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "bundle, key_path, must_contain, must_not_contain, same_term_as",
+    _WORDING_LOCKS,
+)
+def test_intra_bundle_wording_is_consistent(
+    bundle: str,
+    key_path: tuple[str, ...],
+    must_contain: tuple[str, ...],
+    must_not_contain: tuple[str, ...],
+    same_term_as: tuple[str, tuple[str, ...]] | None,
+) -> None:
+    """A single site's value carries the current term, not a drifted one (#1203).
+
+    Each parametrize case is one lock: one bundle, one key path, the term(s)
+    it must carry, and the term(s) it must not. Adding a new intra-bundle
+    consistency lock costs one row, not a new hand-rolled test.
+
+    A non-``None`` ``same_term_as`` adds a runtime coupling on top: it names
+    another ``(bundle, key_path)`` whose value carries a trailing
+    parenthetical (peeled with ``_PAREN_TAIL``, same as the picker/confirm
+    parity guard above), and whatever term is actually inside it — not this
+    row's own ``must_contain`` literal — must also appear in *this* row's
+    value. Rename the referenced parenthetical without updating this row and
+    it goes red on the coupling, not just on its own (unchanged) literal. A
+    source whose parenthetical is present but empty (``"... ()"``) fails
+    loudly on its own, rather than letting an empty-string ``in`` check pass
+    vacuously.
+    """
+    value = _resolve(bundle, key_path)
+
+    location = _location(bundle, key_path)
+    for term in must_contain:
+        assert term in value, f"{location} should contain {term!r}: {value!r}"
+    for term in must_not_contain:
+        assert term not in value, f"{location} still contains {term!r}: {value!r}"
+
+    if same_term_as is not None:
+        source_bundle, source_key_path = same_term_as
+        source_value = _resolve(source_bundle, source_key_path)
+        source_location = _location(source_bundle, source_key_path)
+        match = _PAREN_TAIL.search(source_value)
+        assert match, (
+            f"{source_location} has no trailing parenthetical for {location} "
+            f"to echo: {source_value!r}"
+        )
+        term = " ".join(match.group(1).split())
+        assert term, (
+            f"{source_location}'s parenthetical is empty — nothing for "
+            f"{location} to echo: {source_value!r}"
+        )
+        assert term in value, (
+            f"{location} does not echo {source_location}'s parenthetical "
+            f"term {term!r}: {value!r}"
+        )

@@ -38,7 +38,7 @@ from ..const import (
 )
 from ..engine.covers import AdaptiveRoofWindowCover
 from ..unit_system import length_default, length_selector
-from ._helpers import window_dimensions_lines
+from ._helpers import window_dimensions_lines, window_glass_area_m2
 from ._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from .base import (
     CAP_HAS_SET_POSITION,
@@ -202,6 +202,14 @@ class RoofWindowPolicy(CoverTypePolicy, register=True):
     ) -> float | None:
         """Roof windows travel the configured window height down the slope."""
         return config_service.get_vertical_data(options).h_win
+
+    def glass_area_m2(
+        self,
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,
+    ) -> float | None:
+        """Height × width — both dimensions are on the geometry step (#1237)."""
+        return window_glass_area_m2(options)
 
     def build_calc_engine(
         self,

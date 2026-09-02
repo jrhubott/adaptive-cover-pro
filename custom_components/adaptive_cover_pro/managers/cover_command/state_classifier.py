@@ -3,12 +3,12 @@
 `StateClassifier` is the single piece of code that decides whether a
 post-command cover state change represents the integration's own transit
 (grace period, mid-transit pause, forward progress, settle) or genuine
-user activity (manual override).  The logic stays *byte-for-byte
-equivalent* to the body that lived inline on the coordinator before this
-extraction — every issue-fix comment is preserved verbatim.  Refactoring
-this code is not in scope; relocating it is.
+user activity (manual override).  The body that lived inline on the
+coordinator before this extraction is preserved verbatim, every issue-fix
+comment included; #1139 and #1306 are the first behaviour changes made
+directly in this module rather than relocated into it.
 
-Background — the inline implementation accumulated five issue-numbered
+Background — the inline implementation accumulated seven issue-numbered
 behaviour fixes over its lifetime:
 
 - **#147** — clearing wait_for_target on intermediate states caused
@@ -22,6 +22,15 @@ behaviour fixes over its lifetime:
   covers are not prematurely cleared.
 - **#285** — direction/progress check runs for covers that never emit
   "opening"/"closing", based purely on position delta.
+- **#1139** — a cover that has not reacted to a dispatched command at all
+  (still resting exactly on its pre-command position, same HA state string)
+  must keep wait_for_target, bounded by the same transit-timeout backstop as
+  every other arm — distinct from a genuine mid-travel stall, which must
+  still clear.
+- **#1306** — a cover that acked a command with a transit state and then
+  settled without progress has been stopped or reversed — neither a #186
+  pause nor a #1139 unreacted command — so neither arm may suppress that
+  event.
 
 The classifier is composed by :class:`CoverCommandService` and accessed
 through its public :meth:`classify_state_change` wrapper.  External state
@@ -52,6 +61,64 @@ if TYPE_CHECKING:
 
 
 DebugLogFn = Callable[..., None]
+
+
+def _is_reversal_after_ack(
+    *,
+    old_position: int | None,
+    position: int | None,
+    target: int | None,
+    position_at_send: int | None,
+) -> bool:
+    """Issue #1306: does the position math show a reversal rather than progress.
+
+    Consulted (via ``transit_to_settled and _is_reversal_after_ack(...)``,
+    the combined ``reversal_after_ack`` seen in :meth:`StateClassifier.classify`)
+    by BOTH suppression arms in that method — the #186 step-motor pause arm
+    immediately after this predicate is bound, and the #1139 unreacted-
+    command arm ~200 lines further down. A genuine #186 pause always
+    *advances* between pulses, and a genuine #1139 unreacted command never
+    acks with a transit state at all (``transit_to_settled`` is already
+    False for it) — a reversal is neither: the cover acked the command by
+    entering "opening"/"closing" and then left transit without getting any
+    closer to the target. On covers that publish no intermediate positions
+    (Velux roof window via KLF-200) this is the ONLY event a user reversal
+    ever produces, so suppressing it destroys the evidence and the override
+    can structurally never engage.
+
+    The discriminator is NOT progress alone: a cover that only reports a
+    position when it changes settles a pause with old_distance ==
+    new_distance too (the position didn't change between the last transit
+    report and the settle). That equal-distance shape is genuinely
+    ambiguous between a pause and a reversal-to-origin UNLESS the dispatch
+    origin is known — a pause has moved away from ``position_at_send``
+    since dispatch; a reversal that lands back on the origin has not. So
+    the equal-distance case only counts as a reversal when the cover is
+    still resting exactly where the command found it; strictly-worse
+    distance always counts, regardless of dispatch origin.
+
+    Two ambiguities are resolved rather than eliminated, both in favour of
+    calling the event a reversal:
+    - A pause that has NOT moved at all since dispatch is genuinely
+      indistinguishable from a reversal that lands back on the origin.
+    - On a cover that DOES publish intermediate positions, a settle landing
+      equidistant from the target but on the OPPOSITE side from the last
+      transit report also satisfies the equal-distance check above — the
+      discriminator here is ``position_at_send``, not which side of the
+      target the cover ends up on, so that shape is also read as a
+      reversal rather than a pause. No report in this repo describes it;
+      it is named here rather than assumed away.
+
+    An unreadable old position leaves the direction unknowable — returns
+    False (the historical suppression stays in force).
+    """
+    return old_position is not None and (
+        abs(position - target) > abs(old_position - target)
+        or (
+            abs(position - target) == abs(old_position - target)
+            and position == position_at_send
+        )
+    )
 
 
 class StateClassifier:
@@ -162,13 +229,32 @@ class StateClassifier:
                 was_transitioning = event.old_state is not None and is_state_in_transit(
                     event.old_state.state
                 )
-                if (
-                    not cover_is_transitioning
-                    and was_transitioning
+                # Issue #1306: the shared precondition for ONE
+                # ``reversal_after_ack`` predicate consulted by both
+                # suppression arms below (this #186 pause arm and the
+                # #1139 unreacted-command arm ~200 lines further down) —
+                # named once so neither arm re-lists the same four
+                # conditions. See ``_is_reversal_after_ack`` above for the
+                # full reasoning (progress vs. reversal, the equal-distance
+                # dispatch-origin discriminator, and the documented
+                # ambiguities it resolves).
+                transit_to_settled = (
+                    was_transitioning
+                    and not cover_is_transitioning
                     and target is not None
                     and position is not None
-                    and position != target
-                ):
+                )
+                # Looked up once and shared by both arms below —
+                # get_position_at_send() is a cheap dict.get, but there is
+                # no reason to pay for it twice on the same event.
+                position_at_send = cmd_svc.get_position_at_send(entity_id)
+                reversal_after_ack = transit_to_settled and _is_reversal_after_ack(
+                    old_position=old_position,
+                    position=position,
+                    target=target,
+                    position_at_send=position_at_send,
+                )
+                if transit_to_settled and position != target and not reversal_after_ack:
                     grace_mgr.start_command_grace_period(entity_id)
                     self._debug_log(
                         "manual_override",
@@ -291,10 +377,16 @@ class StateClassifier:
                         # Positions equal — could be startup delay or stall.
                         # Startup delay: motor just engaged; state transitions from
                         # non-transitional (e.g. "closed") to something else.
-                        # Stall: state didn't change and cover was already in transit;
-                        # fall through to clear (e.g. opening→opening same position).
-                        # open→open same position with no state change is also a
-                        # genuine stop — fall through (Issue #172 regression guard).
+                        # Stall: state didn't change and cover was already in transit
+                        # (e.g. opening→opening same position); open→open same
+                        # position with no state change is the same signature
+                        # (Issue #172 regression guard). Neither falls straight
+                        # through to clear any more: the unreacted-command arm
+                        # below (Issue #1139) intercepts both when the position
+                        # still matches the dispatch origin, keeping
+                        # wait_for_target. Only a genuine mid-travel stall — the
+                        # position has moved away from where the command found
+                        # it — reaches the clear at the bottom of this block.
                         old_state_str = (
                             event.old_state.state
                             if event.old_state is not None
@@ -322,6 +414,87 @@ class StateClassifier:
                                         "old_state": old_state_str,
                                         "new_state": new_state_str,
                                         "target": target,
+                                    }
+                                )
+                            if logger is not None:
+                                logger.debug(
+                                    "Wait for target: %s", cmd_svc.waiting_entities()
+                                )
+                            return
+
+                        # Unreacted-command guard (Issue #1139): the cover has
+                        # not moved AT ALL since the command was dispatched —
+                        # it is still resting exactly on its pre-command
+                        # origin, not merely at the position it last
+                        # reported. This covers same-state republishes the
+                        # #172 guard above misses (open->open, closing->
+                        # closing) — the discriminator is dispatch origin,
+                        # not the HA state string. Requiring old_position ==
+                        # position (not just position_at_send) rules out a
+                        # genuine straddle move where equal distances are
+                        # coincidental (e.g. target 50, 40->60).
+                        #
+                        # Bounded by the SAME sent_at-anchored clock the
+                        # backstop above already reads
+                        # (transit_elapsed_without_progress) — this arm must
+                        # NOT call record_progress() or
+                        # start_command_grace_period(), or the suppression
+                        # stops being bounded by transit_timeout.
+                        #
+                        # Issue #1306: on a cover that publishes no
+                        # intermediate positions (Velux via KLF-200), a user
+                        # reversal mid-transit produces exactly this
+                        # signature — old_position == position ==
+                        # position_at_send, because position_at_send is
+                        # stamped at dispatch and the single reported event
+                        # never moves off it. ``reversal_after_ack`` (bound
+                        # above, alongside ``was_transitioning`` — see
+                        # ``_is_reversal_after_ack`` for the full reasoning)
+                        # is the discriminator: this arm exists to protect a
+                        # command the cover never acked with a transit
+                        # state at all, which a reversal is not (it acked,
+                        # then settled without progress) — so a reversal
+                        # must not be swallowed here either. ``position_at_send``
+                        # itself is also bound above, shared with arm 1
+                        # rather than looked up a second time here.
+                        if (
+                            position_at_send is not None
+                            and old_position == position == position_at_send
+                            and elapsed is not None
+                            and not reversal_after_ack
+                        ):
+                            # `now` / `elapsed` are the same locals the
+                            # backstop above already computed on this
+                            # identical code path — reusing them (rather
+                            # than recomputing) keeps the buffer event's
+                            # ``ts`` aligned with the backstop's own clock.
+                            # `elapsed is not None` makes the bound explicit:
+                            # both this arm and the backstop above depend on
+                            # a live clock to stay bounded by
+                            # transit_timeout, so the arm must not engage
+                            # when there is none to measure against.
+                            self._debug_log(
+                                "manual_override",
+                                "Grace expired but %s has not reacted to the "
+                                "dispatched command yet (still at %s, "
+                                "position at send was %s) "
+                                "— keeping wait_for_target",
+                                entity_id,
+                                position,
+                                position_at_send,
+                            )
+                            if self._event_buffer is not None:
+                                self._event_buffer.record(
+                                    {
+                                        "ts": now.isoformat(),
+                                        "event": "transit_awaiting_reaction",
+                                        "entity_id": entity_id,
+                                        "position": position,
+                                        "position_at_send": position_at_send,
+                                        "target": target,
+                                        "cover_state": event.new_state.state,
+                                        "elapsed_seconds": round(elapsed, 1),
+                                        "timeout_seconds": cmd_svc.transit_timeout_seconds,
                                     }
                                 )
                             if logger is not None:

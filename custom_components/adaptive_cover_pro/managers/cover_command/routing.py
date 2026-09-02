@@ -184,6 +184,88 @@ def route_service_call(
     )
 
 
+def is_my_preset_target(
+    caps: dict[str, bool], axis: CoverAxis, target: int | None
+) -> bool:
+    """Whether a booked ``target`` can only have come from a My-preset dispatch.
+
+    :func:`route_service_call` is invertible on the axis that matters. Where
+    ``caps_get(caps, axis.capability_key)`` is False, exactly three branches are
+    reachable: the My branch (``routed_target = state``, requires
+    ``use_my_position``), the open/close threshold branch (``routed_target`` is
+    0 or 100), and the no-capable-service branch — which never books at all,
+    because ``_prepare_service_call`` returns before its state-mutation block.
+    The endpoint-substitution branch requires ``supports_position`` and is
+    unreachable there. So a booked NON-endpoint target on a
+    non-position-capable axis can only have been put there by a My dispatch.
+
+    That covers ``_prepare_service_call``. A SECOND site books
+    ``plan.routed_target`` — ``apply_position``'s ``same_position`` skip (issue
+    #1158) — and it has no ``service is None`` check of its own, so the
+    inference has to survive it too. It does, because of the gate's arms rather
+    than any explicit guard:
+
+    * Arms 1 and 2 both require a GENUINE ``_current``, and on a
+      non-position-capable axis ``read_axis_value`` falls through to
+      ``get_open_close_state``, which returns only 0, 100 or ``None``. Arm 1
+      books ``routed_target == position == _current`` and arm 2's own gate is
+      ``_current == routed_target``, so either way the booked number is one of
+      those endpoints. Arm 1's endpoint-tolerance sub-arm is the single case
+      where ``routed_target`` may diverge from ``_current``, and it books
+      nothing at all.
+    * Arm 3 fires only when ``_current`` is ``None`` or a synthetic open/close
+      mapping, and its gate IS ``last_target == plan.routed_target``
+      (``_same_position_via_target_fallback``). By the time it books, the
+      booking's own value-change guard is already False, so the ``set_target``
+      is a no-op — it can never introduce a number that was not already there.
+
+    A future change that let the skip branch book a ``routed_target`` the gate
+    did not compare against — a new arm, or dropping ``_current_is_genuine`` —
+    would break that half; the ``same_position``-booking tests in
+    ``tests/test_managers/test_cover_command.py`` are what catch it. The
+    routing-algebra half is pinned in the same file by
+    ``test_route_service_call_blind_axis_obeys_the_my_preset_trichotomy``
+    (every blind-axis capability shape) and, for the unbookability of the
+    no-capable-service branch specifically,
+    ``test_prepare_service_call_books_nothing_when_no_capable_service``.
+
+    Two consequences hang off all of that, which is why the predicate is shared
+    rather than spelled out twice:
+
+    * A reconciliation resend of such a target must re-route through
+      ``stop_cover`` (issue #1134). Left to ``use_my_position=False`` the resend
+      falls to the threshold branch and sends ``close_cover``/``open_cover``,
+      physically slamming the cover to an endpoint AND rebooking the user's My
+      percent as 0 or 100.
+    * Such a target can never be verified against a reported position (issue
+      #990). A cover that cannot report the axis it was commanded on surfaces
+      only endpoints, so a My percent never registers as reached and
+      ``is_target_unreached`` must stay quiet rather than nag forever.
+
+    Derived from CURRENT capabilities at the moment it is asked, so it needs no
+    stored flag and cannot go stale — unlike a remembered ``use_my_position``,
+    whose forget-value would silently mis-route.
+
+    At the two ambiguous values (a My preset configured to exactly 0 or 100)
+    this answers "not My", and the resulting ``close_cover``/``open_cover``
+    reaches the identical routed target — physically equivalent, no drift.
+
+    Args:
+        caps: Capabilities for the entity, read now (not at booking time).
+        axis: The policy-selected default axis for this cover.
+        target: The booked target, or ``None`` when nothing is booked.
+
+    Returns:
+        True when ``target`` is a My preset on this cover.
+
+    """
+    if target is None:
+        return False
+    if caps_get(caps, axis.capability_key, default=True):
+        return False
+    return target not in (POSITION_CLOSED, POSITION_OPEN)
+
+
 def build_special_positions(options: dict) -> list[int]:
     """Build list of special positions from options.
 

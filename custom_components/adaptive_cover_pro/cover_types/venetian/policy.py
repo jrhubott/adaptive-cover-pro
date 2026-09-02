@@ -36,6 +36,7 @@ from ...const import (
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_POST_SETTLE_MODE,
+    CONF_VENETIAN_TILT_ONLY_SCOPE,
     CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_SCOPE,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
@@ -53,6 +54,7 @@ from ...const import (
     DEFAULT_VENETIAN_MODE,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
     DEFAULT_VENETIAN_POST_SETTLE_MODE,
+    DEFAULT_VENETIAN_TILT_ONLY_SCOPE,
     DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
     DEFAULT_VENETIAN_TILT_RESET_SCOPE,
     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
@@ -72,6 +74,9 @@ from ...const import (
     VENETIAN_MODE_TILT_ONLY,
     VENETIAN_MODES,
     VENETIAN_POST_SETTLE_MODES,
+    VENETIAN_TILT_ONLY_SCOPE_ALL,
+    VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+    VENETIAN_TILT_ONLY_SCOPES,
     VENETIAN_TILT_RESET_DIRECTIONS,
     VENETIAN_TILT_RESET_SCOPE_ALL,
     VENETIAN_TILT_RESET_SCOPE_SOLAR,
@@ -84,11 +89,12 @@ from ...engine.covers import AdaptiveVerticalCover, VenetianCoverCalculation
 from ...managers.manual_override import (
     SecondaryAxisCheck,
     resolve_dispatched_secondary_expected,
+    resolve_single_axis_suppression,
 )
 from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
 from ...position_utils import PositionConverter
-from .._helpers import window_dimensions_lines
+from .._helpers import window_dimensions_lines, window_glass_area_m2
 from .._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from ..base import (
     CAP_HAS_SET_POSITION,
@@ -215,6 +221,10 @@ def _venetian_extras_schema() -> dict:
             CONF_VENETIAN_MODE, default=DEFAULT_VENETIAN_MODE
         ): _venetian_select(VENETIAN_MODES, "venetian_mode"),
         vol.Optional(
+            CONF_VENETIAN_TILT_ONLY_SCOPE,
+            default=DEFAULT_VENETIAN_TILT_ONLY_SCOPE,
+        ): _venetian_select(VENETIAN_TILT_ONLY_SCOPES, "venetian_tilt_only_scope"),
+        vol.Optional(
             CONF_VENETIAN_POST_SETTLE_HOLD,
             default=DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
         ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
@@ -261,19 +271,15 @@ class VenetianPolicy(CoverTypePolicy, register=True):
     axes: ClassVar[tuple[CoverAxis, ...]] = (POSITION_AXIS, TILT_AXIS)
     exposes_dual_axis_sensor: ClassVar[bool] = True
     custom_position_includes_tilt: ClassVar[bool] = True
+    # Venetians are the one cover type with an independent slat angle, so they
+    # are the one type that can be told what angle to take during a weather
+    # retraction (#1297).
+    weather_override_includes_tilt: ClassVar[bool] = True
     # Venetians carry the same window geometry (width + reveal depth) and fov
     # sliders as vertical blinds, so they get the "Generate FOV from
     # measurements" button too (#565). The toggle is inserted by the shared
     # ``fov_compute_schema`` on the base policy.
     supports_fov_compute: ClassVar[bool] = True
-
-    def extra_field_keys(self, section: str) -> tuple[str, ...]:
-        """Venetians add per-slot + global tilt fields to custom position."""
-        from ... import config_fields as cf
-
-        if section == cf.SECTION_CUSTOM_POSITION:
-            return cf.CUSTOM_POSITION_TILT_KEYS
-        return ()
 
     def wiki_anchor(self) -> str:
         """Dual-axis venetian wiki page."""
@@ -291,6 +297,9 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self._tilt_skip_above: int = DEFAULT_VENETIAN_TILT_SKIP_ABOVE
         self._tilt_skip_mode: str = DEFAULT_VENETIAN_TILT_SKIP_MODE
         self._venetian_mode: str = DEFAULT_VENETIAN_MODE
+        # Tilt-only carriage-pin scope (issue #1330); overwritten by
+        # attach(). Defaults to the back-compat "pin every winner" scope.
+        self._tilt_only_scope: str = DEFAULT_VENETIAN_TILT_ONLY_SCOPE
         self._last_tilt: int | None = None
         # Drift-reset scope gate (issue #808); replaced by the live lambda in
         # attach(). Defaults to the back-compat "count every tilt send" scope.
@@ -349,28 +358,13 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self, config: dict[str, Any], labels: dict[str, str] | None = None
     ) -> list[str]:
         """Render window dimensions plus the slat-config block."""
-        from ...const import (
-            CONF_TILT_ANGLE_0,
-            CONF_TILT_ANGLE_100,
-            CONF_TILT_DEPTH,
-            CONF_TILT_DISTANCE,
-            CONF_TILT_MODE,
-            TiltMode,
-        )
+        from .._helpers import slat_geometry_parts
 
         L = {**GEOMETRY_LABELS_EN, **(labels or {})}
-        tilt_parts: list[str] = []
-        if (v := config.get(CONF_TILT_DEPTH)) is not None:
-            tilt_parts.append(L["geometry.slat.depth"].format(v=v))
-        if (v := config.get(CONF_TILT_DISTANCE)) is not None:
-            tilt_parts.append(L["geometry.slat.spacing"].format(v=v))
-        if (v := config.get(CONF_TILT_MODE)) is not None:
-            tilt_parts.append(L["geometry.slat.mode"].format(v=v))
-        if config.get(CONF_TILT_MODE) == TiltMode.SPECIFY_ANGLES.value:
-            if (v := config.get(CONF_TILT_ANGLE_0)) is not None:
-                tilt_parts.append(L["geometry.slat.angle_0"].format(v=v))
-            if (v := config.get(CONF_TILT_ANGLE_100)) is not None:
-                tilt_parts.append(L["geometry.slat.angle_100"].format(v=v))
+        # Same fragment the tilt-only policy renders, and deliberately the same
+        # call: venetian's geometry schema composes the tilt one, so a field
+        # added there has to surface here too, without a second edit.
+        tilt_parts = slat_geometry_parts(config, labels)
         slat_line = [", ".join(tilt_parts)] if tilt_parts else []
         skip_above = config.get(
             CONF_VENETIAN_TILT_SKIP_ABOVE, DEFAULT_VENETIAN_TILT_SKIP_ABOVE
@@ -393,7 +387,21 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             ],
             VENETIAN_MODE_TILT_ONLY: L["geometry.venetian.mode_tilt_only"],
         }.get(venetian_mode, venetian_mode)
-        mode_line = [L["geometry.slat.mode"].format(v=_mode_label)]
+        mode_text = L["geometry.slat.mode"].format(v=_mode_label)
+        # Scope suffix appears only when tilt-only is narrowed to sun-tracking
+        # wins (#1330); the default all_automatic_control keeps today's exact
+        # single-line phrasing. Double-gated on the mode too, so a
+        # position_and_tilt install never renders a line about a pin it has no
+        # use for.
+        if (
+            venetian_mode == VENETIAN_MODE_TILT_ONLY
+            and config.get(
+                CONF_VENETIAN_TILT_ONLY_SCOPE, DEFAULT_VENETIAN_TILT_ONLY_SCOPE
+            )
+            == VENETIAN_TILT_ONLY_SCOPE_SOLAR
+        ):
+            mode_text += " — " + L["geometry.venetian.tilt_only_scope_solar"]
+        mode_line = [mode_text]
         inverse_tilt_line = (
             [L["geometry.venetian.inverse_tilt"]]
             if config.get(CONF_INVERSE_TILT)
@@ -522,6 +530,14 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         """Venetian lift axis travels the configured window height."""
         return config_service.get_vertical_data(options).h_win
 
+    def glass_area_m2(
+        self,
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,
+    ) -> float | None:
+        """Height × width — both dimensions are on the geometry step (#1237)."""
+        return window_glass_area_m2(options)
+
     def build_calc_engine(
         self,
         *,
@@ -560,6 +576,30 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             return True
         return cover is None or not cover.direct_sun_valid
 
+    def _tilt_only_pin_applies(self, result: PipelineResult) -> bool:
+        """Whether the tilt-only carriage pin is in scope for this winner (#1330).
+
+        ``all_automatic_control`` (default) pins every winner the three
+        exemptions in :meth:`_pin_tilt_only_carriage` did not already
+        release. ``sun_tracking_only`` narrows the pin to solar-tracking
+        wins, so cloud-suppression and climate decisions move the carriage
+        normally — the door-access case in #1330, and what
+        ``venetian_mode``'s own shipped description has always promised.
+
+        Deliberately mirrors :meth:`_drift_reset_eligible` (#808): same
+        vocabulary, same back-compat default, and the same rule that the
+        ``== ControlMethod.SOLAR`` decision lives inside ``cover_types/``.
+        This is the file's third ``== SOLAR`` comparison
+        (``_engine_tilt_suppressed``, ``_drift_reset_eligible``, this one).
+        They read different objects and answer different questions — "may
+        the engine compute a tilt", "may this send accumulate drift", "is
+        the carriage pin in scope" — so they stay separate.
+        """
+        return (
+            self._tilt_only_scope == VENETIAN_TILT_ONLY_SCOPE_ALL
+            or result.control_method == ControlMethod.SOLAR
+        )
+
     def _pin_tilt_only_carriage(
         self,
         result: PipelineResult,
@@ -596,12 +636,31 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         tilt-only install. This is deliberately a separate condition rather
         than a member of ``_EXPLICIT_USER_POSITION_METHODS``: DEFAULT is not
         explicit user intent, it is the absence of any handler intent.
+
+        Finally, the whole pin is gated on :meth:`_tilt_only_pin_applies`
+        (issue #1330) — a fourth INDEPENDENT, option-gated clause, following
+        the #1153 ``DEFAULT`` precedent rather than growing
+        ``_EXPLICIT_USER_POSITION_METHODS`` (``CLOUD`` and the climate
+        methods are automatic handlers, not explicit user positions, so
+        putting them in that frozenset would make its name a lie and change
+        behaviour for everyone). Under the shipped default the predicate
+        short-circuits ``True`` on the scope value BEFORE it reads
+        ``control_method``, so the clause is ``not True`` → ``False`` and
+        this ``if`` reduces to exactly the three-term expression it has
+        always been. That is why every pin test in
+        ``test_venetian_post_pipeline.py`` — all of which build a bare
+        ``VenetianPolicy()`` — stays green untouched. Note this leaves the
+        file holding three ``== ControlMethod.SOLAR`` comparisons
+        (``_engine_tilt_suppressed``, ``_drift_reset_eligible``,
+        ``_tilt_only_pin_applies``); they answer three different questions
+        and must not be merged.
         """
         if (
             self._venetian_mode != VENETIAN_MODE_TILT_ONLY
             or result.control_method in _EXPLICIT_USER_POSITION_METHODS
             or result.control_method == ControlMethod.DEFAULT
             or result.tilt_only_contribution_active
+            or not self._tilt_only_pin_applies(result)
         ):
             return position
         trace.append(
@@ -713,13 +772,32 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         The base predicate derives its answer from three hooks, and this policy
         trips one of them: it overrides ``post_pipeline_resolve``. That hook's
         only write to ``PipelineResult.position`` is
-        :meth:`_pin_tilt_only_carriage`, and that pin is skipped for every
-        control method in ``_EXPLICIT_USER_POSITION_METHODS`` — which contains
-        both ``MANUAL`` and ``GROUP_LOCK``, the only two winners that ever set
-        ``held_position`` and so the only two the registry ever judges per
-        cover. Under a hold this hook resolves a tilt and leaves the position
+        :meth:`_pin_tilt_only_carriage`, and the pin is skipped for every winner
+        the registry can hand per-cover verdicts. That is SIX control methods,
+        not the two real holds:
+
+        * ``MANUAL`` and ``GROUP_LOCK`` set ``held_position`` themselves — both
+          are in ``_EXPLICIT_USER_POSITION_METHODS``;
+        * since #943 item B, ``_as_outside_window_pseudo_hold`` sets it on
+          whichever non-safety handler computed a closed-clock cycle, which is
+          reachable for ``DEFAULT``, ``CUSTOM_POSITION``, ``MOTION`` and
+          ``GROUP_SCENE``. Those four are the whole set, derived from the
+          handlers rather than counted: every windowed handler (solar, climate,
+          cloud suppression, glare zone) returns ``None`` out there, ``WEATHER``
+          is declined as ``is_safety``, and the two real holds never reach the
+          conversion. ``MOTION`` qualifies because only its hold_position branch
+          reads ``in_time_window`` — outside the window it falls through to the
+          ungated return-to-default branch, which sets no ``held_position``.
+          ``CUSTOM_POSITION``, ``MOTION`` and ``GROUP_SCENE`` are in the exempt
+          set; ``DEFAULT`` is skipped by its own separate condition (#1153
+          finding 2).
+
+        Under any of the six this hook resolves a tilt and leaves the position
         exactly as the registry left it, which is the condition the base
-        predicate is really asking about.
+        predicate is really asking about. The pseudo-hold also strips
+        ``held_position`` back off before the result leaves the registry, so
+        what actually arrives here is an ordinary-looking result — one more
+        reason the premise has to be locked by name rather than inferred.
 
         Nothing else here is per-entity: ``resolve_entity_target`` is the
         identity default (one slat angle and one carriage position per cover),
@@ -729,9 +807,11 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         cover's slats without moving anybody's carriage, which is precisely
         what one shared position cannot express.
 
-        ``tests/test_cover_types/test_venetian_post_pipeline.py`` locks the
-        premise — if the pin ever starts firing under a hold, that test fails
-        rather than this silently becoming wrong.
+        ``tests/test_cover_types/test_venetian_post_pipeline.py``
+        ``::test_tilt_only_pin_skips_every_per_cover_judged_winner`` locks the
+        premise as a set — if the pin ever starts firing under one of them, or a
+        seventh method becomes per-cover judgable, that test fails rather than
+        this silently becoming wrong.
         """
         return True
 
@@ -917,6 +997,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
                 "backrotate_publish_lag_seconds",
                 DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             ),
+            mark_air_busy=kwargs.get("mark_air_busy"),
         )
         # Drift-reset scope (issue #808) is a policy-level gate: the policy owns
         # the ControlMethod == SOLAR decision (cover-type knowledge stays inside
@@ -931,6 +1012,8 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             self._tilt_skip_mode = str(kwargs["venetian_tilt_skip_mode"])
         if "venetian_mode" in kwargs:
             self._venetian_mode = str(kwargs["venetian_mode"])
+        if "venetian_tilt_only_scope" in kwargs:
+            self._tilt_only_scope = str(kwargs["venetian_tilt_only_scope"])
         # Coordinator wake callback for deferred-tilt flushing (issue #756).
         self._schedule_refresh_after = kwargs.get("schedule_refresh_after")
 
@@ -942,16 +1025,41 @@ class VenetianPolicy(CoverTypePolicy, register=True):
     def is_in_tilt_suppression(self, entity_id: str, delta: float = 0.0) -> bool:
         """Suppress back-rotate drift only when ``delta`` is plausibly motor drift.
 
-        Delegates to the sequencer's delta-aware gate. Large deltas inside the
-        window are user moves, not motor drift, and fall through to the
-        manual-override numeric path (issue #33 follow-on). The ``delta``
-        default matches the base signature so the method is interchangeable
-        with other policies when passed as a ``SecondaryAxisCheck.suppression``
-        callback.
+        This is the TILT-axis gate — wired to :meth:`secondary_axis_check`'s
+        ``single_axis_suppression`` callback, NOT ``suppression=`` (which
+        stays :meth:`primary_axis_suppression`; see that wiring's docstring
+        for why the two must stay separate — issue #930 finding #2). It ORs
+        two windows so a tilt-only send is never left unguarded (issue
+        #1329):
+
+        * :meth:`primary_axis_suppression` — the position-anchored window,
+          re-evaluated here so this method is correct as a standalone
+          predicate. In the one production call path this disjunct is
+          always False by the time ``evaluate`` reaches
+          ``single_axis_suppression``: it already tried the identical call
+          as ``suppression=`` and falls through to this method only when
+          that returned False. Retained for correctness when this method is
+          called directly, not because the production wiring needs it.
+        * ``sequencer.is_in_tilt_publish_lag`` — a SEPARATE window anchored to
+          ACP's own last tilt dispatch (``_tilt_sent_at``), delta-capped at
+          ``VENETIAN_TILT_VERIFY_TOLERANCE``. This is what actually protects
+          a routine tilt-only send once the position window is closed (or was
+          never opened at all).
+
+        Large deltas outside both windows are user moves, not motor drift,
+        and fall through to the manual-override numeric path (issue #33
+        follow-on). The ``delta`` default matches the base signature so the
+        method is interchangeable with other policies when passed as a
+        ``SecondaryAxisCheck.single_axis_suppression`` callback.
+
+        The OR-composition itself lives in the shared
+        :func:`resolve_single_axis_suppression` (issue #1333) — day/night-shade's
+        blend axis, driving the same sequencer, composes the identical two
+        windows and delegates to the same helper.
         """
-        if self._sequencer is None:
-            return False
-        return self._sequencer.is_in_suppression_with_cap(entity_id, delta)
+        return resolve_single_axis_suppression(
+            self._sequencer, entity_id, delta, self.primary_axis_suppression
+        )
 
     def primary_axis_suppression(self, entity_id: str, delta: float = 0.0) -> bool:
         """Apply the tilt-axis publish-lag window to the position axis too.
@@ -1171,7 +1279,26 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         (issue #33 Phase 5 cross-axis): the motor back-rotate window
         OR'd with the command-grace period. Sharing one callback across
         both axes keeps the publish-lag and grace logic from drifting per
-        CODING_GUIDELINES.md § "No Code Duplication".
+        CODING_GUIDELINES.md § "No Code Duplication". A True result here
+        means the POSITION axis may be co-drifting from the same physical
+        motor action, so ``SecondaryAxisCheck.evaluate`` consumes (blinds)
+        both axes' checks together for this cycle.
+
+        ``single_axis_suppression`` wires :meth:`is_in_tilt_suppression`
+        (issue #1329) — the tilt-only publish-lag window, anchored to ACP's
+        own last tilt DISPATCH (``_tilt_sent_at``) rather than a position
+        command. A tilt-only send does not *command* the carriage — though
+        real motors briefly back-drive it (``VENETIAN_POST_TILT_REBASE_DELAY_SECONDS``)
+        — so unlike ``suppression`` above a True result here must NOT blind
+        the position axis: because this suppression is non-consuming, the
+        position axis' own check still runs on that same publish, so a
+        back-driven ``current_position`` is evaluated on its own merits
+        rather than being blinded (issue #930 finding #2). ``evaluate``
+        consults ``single_axis_suppression`` only as a narrower, single-axis
+        fallback right before it would otherwise declare a tilt manual move.
+        At the point ``evaluate`` reaches it, ``suppression`` above has
+        already returned False, so in practice this behaves as
+        ``sequencer.is_in_tilt_publish_lag`` alone.
 
         ``excursion_match`` wires the drift-reset endpoint guard (issue #927)
         onto the TILT axis only. It is value-based (matches the raw published
@@ -1190,11 +1317,15 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             attribute="current_tilt_position",
             label="tilt",
             suppression=self.primary_axis_suppression,
+            single_axis_suppression=self.is_in_tilt_suppression,
             excursion_match=(
                 self._sequencer.is_reset_excursion_publish
                 if self._sequencer is not None
                 else None
             ),
+            # Inverse-tilt normalisation (issue #1227) — see
+            # ``SecondaryAxisCheck.inverted`` for the wire/logical rationale.
+            inverted=(self._sequencer is not None and self._sequencer.tilt_inverted),
         )
 
     def _drift_reset_eligible(self, context: Any) -> bool:

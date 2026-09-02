@@ -3,7 +3,7 @@
 Units: all glare zone coordinates (x, y, radius) and window_width are metres.
 """
 
-from math import radians, tan
+from math import cos, radians, tan
 
 import pytest
 from unittest.mock import MagicMock
@@ -53,24 +53,57 @@ class TestGlareZoneDataModel:
 
 
 class TestElevationOffset:
-    """The shared elevation-offset trig helper used by sill geometry and zone Z."""
+    """The shared elevation-offset trig helper used by sill geometry and zone Z.
+
+    Returns a PERPENDICULAR offset (discussion #1283): the ray's horizontal
+    path (``height / tan(elev)``) foreshortened by ``cos(gamma)`` down to the
+    component normal to the window. At ``gamma=0`` (``cos(gamma)=1``) this is
+    an exact no-op vs. the pre-#1283 path-length-only formula, so the
+    existing gamma=0 cases below are unchanged; ``test_gamma_scales_by_cosine``
+    pins the new factor directly.
+    """
 
     def test_zero_height_returns_zero(self):
-        assert _elevation_offset(0.0, 45.0) == pytest.approx(0.0)
+        assert _elevation_offset(0.0, 45.0, gamma=0.0) == pytest.approx(0.0)
 
     def test_height_one_at_45_degrees(self):
         # tan(45°) = 1 → height / tan = height
-        assert _elevation_offset(1.0, 45.0) == pytest.approx(1.0, rel=1e-9)
+        assert _elevation_offset(1.0, 45.0, gamma=0.0) == pytest.approx(1.0, rel=1e-9)
 
     def test_height_two_at_30_degrees(self):
         expected = 2.0 / tan(radians(30.0))
-        assert _elevation_offset(2.0, 30.0) == pytest.approx(expected, rel=1e-9)
+        assert _elevation_offset(2.0, 30.0, gamma=0.0) == pytest.approx(
+            expected, rel=1e-9
+        )
 
     def test_low_elevation_clamped(self):
         # Below the MIN_TAN_ELEVATION_CLAMP threshold, denominator caps so result stays finite.
-        result_low = _elevation_offset(1.0, 0.01)
+        result_low = _elevation_offset(1.0, 0.01, gamma=0.0)
         expected_cap = 1.0 / MIN_TAN_ELEVATION_CLAMP
         assert result_low == pytest.approx(expected_cap, rel=1e-9)
+
+    def test_gamma_scales_by_cosine(self):
+        """Non-zero gamma foreshortens the offset by cos(gamma) (discussion #1283).
+
+        Before the fix, this helper returned the bare ray path length
+        (``height / tan(elev)``) regardless of gamma; callers then subtracted
+        that path length from a perpendicular ``distance`` and divided the
+        difference by ``cos(gamma)`` a second time, over-subtracting by
+        ``1/cos(gamma)``. The helper itself must now fold in ``cos(gamma)``.
+        """
+        path_length = 2.0 / tan(radians(30.0))
+        expected = path_length * cos(radians(60.0))
+        assert _elevation_offset(2.0, 30.0, gamma=60.0) == pytest.approx(
+            expected, rel=1e-9
+        )
+        # Symmetric in sign — cos(gamma) is even.
+        assert _elevation_offset(2.0, 30.0, gamma=60.0) == pytest.approx(
+            _elevation_offset(2.0, 30.0, gamma=-60.0), rel=1e-9
+        )
+        # gamma=0 must reproduce the pre-#1283 no-cos path length exactly.
+        assert _elevation_offset(2.0, 30.0, gamma=0.0) == pytest.approx(
+            path_length, rel=1e-9
+        )
 
 
 class TestGlareZoneZHeight:
@@ -106,6 +139,33 @@ class TestGlareZoneZHeight:
         )
         expected = (2.0 - 0.3) + (1.0 / MIN_TAN_ELEVATION_CLAMP)
         assert dist == pytest.approx(expected, rel=1e-9)
+
+    def test_z_positive_with_nonzero_gamma_uses_perpendicular_offset(self):
+        """Z-offset at gamma != 0 is perpendicular (discussion #1283): the
+        elevation offset for the z (height-above-floor) term must be
+        ``z·cos(gamma)/tan(elev)``, not the bare path length ``z/tan(elev)``.
+
+        ``glare_zone_effective_distance`` shares ``_elevation_offset`` with
+        sill geometry in ``calculate_position`` — this pins the second of
+        the two call sites the fix touches (the first is sill_offset,
+        covered by tests/test_sill_height.py::TestSillOffsetIsPerpendicular).
+        """
+        zone_floor = GlareZone(name="Floor", x=0.0, y=2.0, radius=0.3, z=0.0)
+        zone_eye = GlareZone(name="Eye", x=0.0, y=2.0, radius=0.3, z=1.1)
+        gamma = 20.0
+        floor = _glare_zone_effective_distance(
+            zone_floor, gamma=gamma, sol_elev=45.0, window_half_width=1.0
+        )
+        eye = _glare_zone_effective_distance(
+            zone_eye, gamma=gamma, sol_elev=45.0, window_half_width=1.0
+        )
+        assert floor is not None and eye is not None
+        expected_delta = 1.1 * cos(radians(gamma)) / tan(radians(45.0))
+        assert eye == pytest.approx(floor + expected_delta, rel=1e-9)
+        # The pre-#1283 formula (bare path length, no cos(gamma)) would give a
+        # delta of 1.1/tan(45°) = 1.1 exactly — strictly larger. Confirms the
+        # cos(gamma) foreshortening is actually applied, not a no-op.
+        assert expected_delta < 1.1
 
     def test_z_does_not_bypass_window_aperture_gate(self):
         """Z>0 cannot rescue a zone whose sun ray enters outside the window."""

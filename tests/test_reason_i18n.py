@@ -332,6 +332,31 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         {"from_tilt": 30, "to_tilt": 50, "label": "Door sensor"},
         "tilt clamped from 30% to 50% by Door sensor",
     ),
+    (
+        ReasonCode.REGISTRY_CONSTRAINT_OUTSIDE_WINDOW,
+        {
+            "low_label": "50%",
+            "high_label": "—",
+            "axis": Reason(ReasonCode.FRAGMENT_AXIS_TILT),
+            "label": "Door sensor",
+        },
+        # Deliberately says nothing about THIS slot's own flag: the dropped
+        # claim can be the FIXED claim of a slot that DID opt in, and a FIXED
+        # claim is never eligible whatever the checkbox says.
+        "bound 50%–— (tilt) from Door sensor not applied — outside the time "
+        "window, where only min/max constraints set to stay active apply",
+    ),
+    (
+        ReasonCode.REGISTRY_TILT_BOUND_ENFORCED,
+        {
+            "low_label": "50%",
+            "high_label": "—",
+            "label": "Door sensor",
+            "tilt": 50,
+        },
+        "tilt bound 50%–— enforced at 50% by Door sensor (nothing resolved a "
+        "tilt this cycle)",
+    ),
     # --- builder ---
     (ReasonCode.BUILDER_UNKNOWN, {}, "Unknown"),
     (ReasonCode.BUILDER_CONTROL_OCCUPANCY_TIMEOUT, {}, "Occupancy Timeout"),
@@ -412,6 +437,11 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         ReasonCode.SKIP_CLOUD_INACTIVE,
         {},
         "cloud suppression inactive (direct sun present or feature disabled)",
+    ),
+    (
+        ReasonCode.SKIP_CLOUD_DEFERRED_EXTREME_HEAT,
+        {},
+        "cloud suppression deferred — extreme-heat hold takes precedence",
     ),
     (ReasonCode.SKIP_WEATHER_NOT_ACTIVE, {}, "weather override not active"),
     (

@@ -25,6 +25,7 @@ from .const import (
     CONF_AWNING_SHADE_MODE,
     CONF_BUILDING_PROFILE_ID,
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_COMMAND_QUEUE_GAP,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
     CONF_SUN_TRACKING_GATE_SENSORS,
@@ -68,6 +69,7 @@ from .const import (
     CONF_WINDOW_WIDTH,
     CUSTOM_POSITION_SAFETY_PRIORITY,
     CUSTOM_POSITION_SLOTS,
+    DEFAULT_COMMAND_QUEUE_GAP,
     DIAG_CACHE_KEY,
     DOMAIN,
     POSITION_CLOSED,
@@ -80,6 +82,7 @@ from .const import (
 )
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
+from .managers.cover_command.queue import get_command_queue, normalize_queue_name
 from .group_coordinator import GroupCoordinator
 from .helpers import (
     copy_legacy_slot_sensors_to_list,
@@ -343,6 +346,66 @@ def _register_option_template_trackers(
     )
 
 
+def _command_queue_for_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """Return the shared queue a Command Queue entry owns, or ``None``.
+
+    Identity is the entry's CREATION-TIME name (``entry.data["name"]``),
+    normalized — never its ``entry_id``. That is what makes a name usable
+    before, and after, any entry exists to own it: a cover naming a queue
+    nobody created still serializes at the default gap, and deleting the entry
+    reverts its members to that default rather than breaking them.
+    """
+    name = normalize_queue_name(entry.data.get("name"))
+    if not name:
+        return None
+    return get_command_queue(hass, name)
+
+
+def _command_queue_gap(entry: ConfigEntry) -> float:
+    """Return the gap this queue entry configures, defaulted from one constant."""
+    return entry.options.get(CONF_COMMAND_QUEUE_GAP, DEFAULT_COMMAND_QUEUE_GAP)
+
+
+def _setup_command_queue_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Bind a Command Queue entry's gap onto the shared queue (issue #1189).
+
+    No platforms, no coordinator: the entry exists only to own a gap and give
+    the queue a place in the UI. It attaches to the queue like any member, so a
+    queue whose covers are all unloaded still survives while its own entry is
+    loaded — and disappears when nothing references it at all.
+    """
+    queue = _command_queue_for_entry(hass, entry)
+    if queue is None:
+        return
+    queue.attach()
+    queue.set_gap(_command_queue_gap(entry))
+    entry.async_on_unload(entry.add_update_listener(_async_command_queue_update))
+
+    def _release() -> None:
+        # Reverting the gap before detaching matters: members may still hold
+        # references, and they must fall back to the default rather than keep
+        # the gap of an entry that is gone.
+        queue.set_gap(None)
+        queue.detach()
+
+    entry.async_on_unload(_release)
+
+
+async def _async_command_queue_update(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Re-apply a Command Queue entry's gap in place — members are NOT reloaded.
+
+    Members read ``queue.gap_seconds`` live at release time rather than copying
+    it at setup, so editing the gap takes effect on the very next transmission
+    without tearing down every cover on the queue. Reloading them would be the
+    obvious implementation and the wrong one: on the 16-instance install this
+    feature was built for it would restart sixteen coordinators to change one
+    number.
+    """
+    queue = _command_queue_for_entry(hass, entry)
+    if queue is not None:
+        queue.set_gap(_command_queue_gap(entry))
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> bool:
     """Set up Adaptive Cover Pro from a config entry."""
 
@@ -356,6 +419,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     # platforms.
     policy = get_policy(entry.data[CONF_SENSOR_TYPE])
     if not policy.controls_cover:
+        # Two virtual entry types share ``controls_cover == False``, and they
+        # want opposite things from setup, so the second capability flag splits
+        # them (never the cover-type string).
+        if policy.is_command_queue:
+            _setup_command_queue_entry(hass, entry)
+            return True
         entry.async_on_unload(entry.add_update_listener(_async_profile_propagate))
         return True
 
@@ -616,9 +685,16 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     Also drops the entry's last-good diagnostics snapshot from the hass.data cache
     (written each update cycle, kept across reloads) so it does not leak.
+
+    A deleted Command Queue entry gets NO sweep at all (issue #1189): its
+    members reference it by name, not by ``entry_id``, and a dangling name is a
+    working configuration — the covers keep serializing against each other at
+    the default gap. Stripping the assignment would silently un-serialize a
+    radio the user is still sharing, which is the original bug.
     """
     hass.data.get(DIAG_CACHE_KEY, {}).pop(entry.entry_id, None)
-    if get_policy(entry.data.get(CONF_SENSOR_TYPE)).controls_cover:
+    policy = get_policy(entry.data.get(CONF_SENSOR_TYPE))
+    if policy.controls_cover or policy.is_command_queue:
         return
     for cover in _covers_linked_to(hass, entry):
         hass.config_entries.async_update_entry(
@@ -1034,6 +1110,64 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ignores the three it does not know, reverting to the plain bool toggle.
     new_minor = _advance_noop_minor(new_version, new_minor, 16)
 
+    # v3.16 → v3.17: added the additive named command-queue options —
+    # command_queue on covers, command_queue_gap on the new Command Queue entry
+    # type (issue #1189). An absent key already reads as "no queue", which is
+    # exactly the dispatch behaviour every existing install has today, so
+    # nothing needs seeding; this is a no-op minor bump kept only to advance
+    # entries sitting at minor 16 to 17 so they stop re-triggering migration
+    # every restart (the v3.15 → v3.16 precedent). Rollback-safe: an older build
+    # finds every key exactly as it left it and ignores the one it does not
+    # know, reverting to unserialized dispatch.
+    new_minor = _advance_noop_minor(new_version, new_minor, 17)
+
+    # v3.17 → v3.18: added the additive per-slot outside-window constraint flag
+    # custom_position_outside_window_N (issue #943 item B). An absent key already
+    # reads as "this slot's constraints stop at the clock window", which is
+    # exactly what every existing install does today, so nothing needs seeding;
+    # this is a no-op minor bump kept only to advance entries sitting at minor 17
+    # to 18 so they stop re-triggering migration every restart (the v3.16 → v3.17
+    # precedent). Rollback-safe: an older build finds every key exactly as it
+    # left it and ignores the ten it does not know, so those slots simply stop
+    # clamping at night again.
+    new_minor = _advance_noop_minor(new_version, new_minor, 18)
+
+    # v3.18 → v3.19: added the additive optional solar options — the
+    # transmittance description solar_properties_enabled / solar_cover_side /
+    # solar_cover_shade / solar_g_total / solar_g_glazing (issue #1236) and the
+    # estimated-solar-gain inputs glass_area / irradiance_plane (issue #1237).
+    # An absent solar_properties_enabled already reads as "feature off", which
+    # is exactly what every existing install does today, so nothing needs
+    # seeding; this is a no-op minor bump kept only to advance entries sitting
+    # at minor 18 to 19 so they stop re-triggering migration every restart (the
+    # v3.17 → v3.18 precedent). Rollback-safe: an older build finds every key
+    # exactly as it left it and ignores the ones it does not know, so the
+    # diagnostics block and the gain sensor simply disappear again.
+    new_minor = _advance_noop_minor(new_version, new_minor, 19)
+
+    # v3.19 → v3.20: added the additive weather window-scope option
+    # weather_outside_window (issue #1308). An absent key already reads as
+    # "weather keeps acting outside the time window", which is exactly what
+    # every existing install does today, so nothing needs seeding; this is a
+    # no-op minor bump kept only to advance entries sitting at minor 19 to 20
+    # so they stop re-triggering migration every restart (the v3.18 → v3.19
+    # precedent). Rollback-safe: an older build finds every key exactly as it
+    # left it and ignores the one it does not know, so weather simply keeps its
+    # night shift again.
+    new_minor = _advance_noop_minor(new_version, new_minor, 20)
+
+    # v3.20 → v3.21: added the additive per-slot scope-to-window flag
+    # custom_position_scope_to_window_N (issue #1318). An absent key already
+    # reads as "this slot keeps driving its exact position after the clock
+    # window closes", which is what every existing install does today — and
+    # what issue #895 asked for explicitly — so nothing needs seeding; this is a
+    # no-op minor bump kept only to advance entries sitting at minor 20 to 21 so
+    # they stop re-triggering migration every restart (the v3.19 → v3.20
+    # precedent). Rollback-safe: an older build finds every key exactly as it
+    # left it and ignores the ten it does not know, so those slots simply keep
+    # their night shift again.
+    new_minor = _advance_noop_minor(new_version, new_minor, 21)
+
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
     )
@@ -1104,9 +1238,12 @@ async def _async_profile_propagate(hass: HomeAssistant, entry: ConfigEntry) -> N
     cleared key from the linked covers happens at save time instead, where the
     transition is still visible — ``propagate_profile_clears`` (issue #1085).
     """
-    # Guard: only profiles (virtual, controls_cover == False) propagate. A real
-    # cover reaching here would be a wiring bug — its own listener handles reloads.
-    if get_policy(entry.data.get(CONF_SENSOR_TYPE)).controls_cover:
+    # Guard: only profiles propagate. A real cover reaching here would be a
+    # wiring bug — its own listener handles reloads — and so would a Command
+    # Queue, which shares ``controls_cover == False`` but owns a gap, not a set
+    # of shared sensors, and has its own listener (issue #1189).
+    policy = get_policy(entry.data.get(CONF_SENSOR_TYPE))
+    if policy.controls_cover or policy.is_command_queue:
         return
     for cover in _covers_linked_to(hass, entry):
         _copy_profile_to_cover(hass, entry, cover)

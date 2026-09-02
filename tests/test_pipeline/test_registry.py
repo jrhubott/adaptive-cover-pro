@@ -486,3 +486,81 @@ def test_outprioritized_step_carries_reason_payload_code() -> None:
     assert solar_step.reason_payload.code == ReasonCode.REGISTRY_OUTPRIORITIZED
     assert solar_step.reason_payload.params == {"handler": winner.handler}
     assert solar_step.reason == f"outprioritized by {winner.handler}"
+
+
+# ---------------------------------------------------------------------------
+# Scope-to-window composition (issue #1318)
+# ---------------------------------------------------------------------------
+
+
+def _scoped_state(*, scope_to_window: bool) -> CustomPositionSensorState:
+    """Slot-1 FIXED state matching ``_make_custom_position_handler``."""
+    return CustomPositionSensorState(
+        entity_ids=("binary_sensor.custom",),
+        is_on=True,
+        position=50,
+        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+        min_mode=False,
+        use_my=False,
+        slot=1,
+        active_entity_ids=("binary_sensor.custom",),
+        scope_to_window=scope_to_window,
+    )
+
+
+def _closed_clock_snapshot(*, scope_to_window: bool):
+    """Build a live FIXED slot on a shut clock — the #1318 scenario, end to end."""
+    return make_snapshot(
+        custom_position_sensors=[_scoped_state(scope_to_window=scope_to_window)],
+        clock_window_open=False,
+        in_time_window=False,
+    )
+
+
+def test_unscoped_custom_position_still_wins_on_a_closed_clock() -> None:
+    """Default polarity: the slot keeps the pipeline after end_time (#895).
+
+    This is what makes ``coordinator._pipeline_has_active_override`` return
+    True and suppress the end-of-window reposition — the shipped behaviour a
+    second user asked for explicitly, so it must survive #1318 untouched.
+    """
+    registry = PipelineRegistry(
+        [_make_custom_position_handler(), SolarHandler(), DefaultHandler()]
+    )
+    result = registry.evaluate(_closed_clock_snapshot(scope_to_window=False))
+    assert result.control_method is ControlMethod.CUSTOM_POSITION
+    assert result.position == 50
+
+
+def test_scoped_custom_position_hands_the_cycle_to_default() -> None:
+    """Opted in, the slot stands down and DEFAULT wins — no coordinator change.
+
+    The whole #1318 fix rides on this: with ``control_method`` back to
+    ``DEFAULT``, ``_pipeline_has_active_override`` reads False on its own and
+    ``_on_window_closed`` proceeds to send ``end_of_window_position``. Nothing
+    in ``coordinator.py`` had to learn about the new option.
+    """
+    registry = PipelineRegistry(
+        [_make_custom_position_handler(), SolarHandler(), DefaultHandler()]
+    )
+    result = registry.evaluate(_closed_clock_snapshot(scope_to_window=True))
+    assert result.control_method is ControlMethod.DEFAULT
+
+
+def test_scoped_slots_trace_step_names_the_window() -> None:
+    """The decision trace stops claiming the slot is driving the cover.
+
+    The reporter's complaint was two-part: the cover never returns to the
+    end-of-window position, AND the trace keeps reporting Custom Position all
+    night. Both are the same handler never standing down.
+    """
+    from custom_components.adaptive_cover_pro.const import ReasonCode
+
+    registry = PipelineRegistry(
+        [_make_custom_position_handler(), SolarHandler(), DefaultHandler()]
+    )
+    result = registry.evaluate(_closed_clock_snapshot(scope_to_window=True))
+    step = next(s for s in result.decision_trace if s.handler == "custom_position_1")
+    assert step.matched is False
+    assert step.reason_payload is not None
+    assert step.reason_payload.code is ReasonCode.SKIP_OUTSIDE_WINDOW

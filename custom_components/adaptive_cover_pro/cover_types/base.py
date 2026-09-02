@@ -33,6 +33,7 @@ from ..const import (
     CONF_INTERP,
     CONF_INVERSE_STATE,
     CONF_INVERSE_TILT,
+    COVERAGE_DISTANCE_TIE_EPS,
     POSITION_CLOSED,
     POSITION_OPEN,
     GroupScene,
@@ -43,6 +44,7 @@ from ..helpers import (
     should_use_tilt,
     state_attr,
 )
+from ..position_utils import covered_fraction
 from ._summary_labels import AXIS_LABELS_EN
 
 if TYPE_CHECKING:
@@ -94,7 +96,6 @@ AXIS_NAME_TILT = "tilt"
 AXIS_VALUE_MIN = 0
 AXIS_VALUE_MAX = 100
 AXIS_VALUE_UNIT = "%"
-
 
 # ---------------------------------------------------------------------------
 # Config-flow entity-selector filters
@@ -430,6 +431,15 @@ class CoverTypePolicy(ABC):
     # ``controls_cover`` (issue #790).
     is_orchestrator: ClassVar[bool] = False
 
+    # Whether this policy is a named command queue rather than anything that
+    # moves. Only the Command Queue entry type sets this ``True`` (issue #1189).
+    # It shares ``controls_cover = False`` with the Building Profile, so the
+    # existing "virtual entry type" branches would otherwise treat it as a
+    # profile — propagating sensor keys to nothing and offering it in the
+    # profile-link dropdown. A third capability flag keeps that discrimination
+    # off the cover-type string, exactly as ``is_orchestrator`` does for groups.
+    is_command_queue: ClassVar[bool] = False
+
     def __init_subclass__(cls, *, register: bool = False, **kwargs: Any) -> None:
         """Auto-register a concrete policy by its ``cover_type``.
 
@@ -472,6 +482,18 @@ class CoverTypePolicy(ABC):
     # Replaces the ``is_venetian = sensor_type == CoverType.VENETIAN`` branch
     # in ``config_flow._build_custom_position_schema_dict``.
     custom_position_includes_tilt: ClassVar[bool] = False
+
+    # Whether the weather-override config step surfaces a slat-angle slider to
+    # command while a weather retraction holds the full-override seat (#1297).
+    # Deliberately a SECOND ClassVar rather than a reuse of
+    # ``custom_position_includes_tilt``: ``DayNightShadePolicy`` sets that one
+    # True but stays False here, because its second axis is a fabric blend
+    # (sheer ↔ blackout), not a slat angle — "what angle do the slats take in a
+    # storm" simply has no day/night meaning. Cover types whose *primary* axis
+    # is the tilt (``cover_tilt``, ``cover_louvered_roof``) also stay False:
+    # ``weather_override_position`` already sets their slat angle, so a second
+    # field there would be a contradictory duplicate.
+    weather_override_includes_tilt: ClassVar[bool] = False
 
     # Whether the sun-tracking step exposes the "Generate FOV from measurements"
     # button (#565) — a toggle that fills fov_left/right from the window width +
@@ -768,6 +790,10 @@ class CoverTypePolicy(ABC):
         before #1174. A policy that overrides one of them harmlessly may say so
         by overriding this predicate — and owes the argument for why, in its own
         docstring, because nothing else here can check it.
+
+        Answering ``False`` no longer means "judge the group's mean": it means
+        "ask :meth:`hold_reference_position` where this ONE geometry is". See
+        there for what a coupled type owes in return (#1179).
         """
         cls = type(self)
         return (
@@ -775,6 +801,67 @@ class CoverTypePolicy(ABC):
             and cls.post_pipeline_resolve is CoverTypePolicy.post_pipeline_resolve
             and cls.dispatch_order_key is CoverTypePolicy.dispatch_order_key
         )
+
+    def hold_reference_position(
+        self,
+        cover_positions: Mapping[str, int | None],  # noqa: ARG002
+        *,
+        inverted: bool,  # noqa: ARG002
+    ) -> int | None:
+        """Reduce these raw reads to ``PipelineResult.position``'s frame (#1179).
+
+        The algebraic INVERSE of the dispatch chain. Dispatch expands one
+        abstract position into per-entity wire values —
+        :meth:`post_pipeline_resolve` → ``coordinator._to_cover_frame`` →
+        :meth:`resolve_entity_target` — and this reduces the per-entity reads
+        back to that one abstract position. Only the policy knows the mapping,
+        which is why the registry could previously do nothing better than
+        average the reads.
+
+        Consulted ONLY when :meth:`entities_move_independently` is ``False``. A
+        coupled type's entities express one geometry, so a composed floor or
+        ceiling is a statement about that geometry, and the number it has to be
+        compared against is the geometry's own position — not the arithmetic
+        mean of values from different coordinate systems (a Model C middle rail
+        derived from the bottom rail's coverage, a dual-panel back panel's
+        binary privacy state, a Model B wire that folds coverage and fabric
+        together).
+
+        ``cover_positions`` are **RAW** cover-frame reads, exactly as
+        ``PipelineSnapshot.cover_positions`` carries them, and ``inverted``
+        names their frame — the same kwarg :meth:`resolve_entity_target` takes,
+        so the frame is stated and never guessed (#993). The return value is
+        **LOGICAL**: an override that reads a wire encoding must undo the
+        inversion and decode in wire space *before* returning
+        (CODING_GUIDELINES § "Inverse State").
+
+        ``None`` means "no single answer" — an unconfigured entity role, an
+        unreadable anchor, or a cover type with genuinely independent entities
+        — and keeps that cycle on the legacy summary mean. That is the base
+        answer, so a policy which never touches the dispatch hooks is never
+        asked and never has to care.
+
+        ⚠️ **The inverse is partial: interpolation is not unwound.** The forward
+        chain ends at ``coordinator._to_cover_frame``, which applies the
+        calibration curve *and* the inversion to every dispatched value, but an
+        implementation here is only asked to undo the inversion — the reads it
+        receives from an interpolated install sit on the motor's own scale and
+        are treated as if they were linear. Pre-existing and deliberate: the
+        summary mean this hook replaced ignored interpolation identically, so no
+        install's frame changed, and ``day_night_shade.resolve_entity_target``
+        already declines to unwind it in the forward direction for the same
+        reason. It only bites where a read's linear meaning feeds a DECODE
+        rather than a bare comparison, and there it bites twice. A Model B wire
+        near the fabric boundary can stash the wrong fabric half, so the clamped
+        hold re-folds behind a fabric the shade is not physically behind — and,
+        boundary or not, the decode AMPLIFIES whatever error the curve left in
+        the read by the split-range scale. An install whose curve puts logical
+        wire 80 at a motor read of 85 decodes to coverage 70 against a true 60:
+        a 5-point wire error reaches the composed floor/ceiling as a 10-point
+        coverage error. Mapping a motor reading back onto the linear scale is
+        #925's territory, not this hook's.
+        """
+        return None
 
     def order_for_dispatch(
         self,
@@ -1319,6 +1406,36 @@ class CoverTypePolicy(ABC):
             return POSITION_CLOSED if primary.open_blocks_sun else POSITION_OPEN
         return POSITION_OPEN if primary.open_blocks_sun else POSITION_CLOSED
 
+    def shaded_glass_fraction(self, position: float) -> float | None:
+        """Share of the glazing this cover shades at ``position`` (0.0-1.0).
+
+        The position-dependent term of the solar-transmittance estimate
+        (#1236). Polymorphic through ``axes[0].open_blocks_sun`` for exactly
+        the same reason as :meth:`position_for_intent` — an awning shades MORE
+        as it extends, a blind shades more as it drops — so no consumer has to
+        know which family it is holding.
+
+        ``position`` is the LOGICAL, HA-semantics value (0 = closed): the
+        pipeline's target, never the post-inverse-state wire value. Feeding a
+        post-inversion number here silently reports the complement of the truth
+        on every inverse-state install.
+
+        ``None`` means "this cover has no area-coverage axis, do not guess":
+
+        * tilt-only types (``cover_tilt``, ``cover_louvered_roof``) override to
+          ``None`` — a slat angle is a rotation, not a covered fraction;
+        * axis-less virtual policies (group, building profile, command queue)
+          get ``None`` from the guard below, so an unknown registered policy is
+          safe by default.
+
+        v1 limitation: for a venetian the answer is the CARRIAGE coverage on
+        the primary lift axis only — the slat angle does not modulate the
+        shaded g-value yet.
+        """
+        if not self.axes:
+            return None
+        return covered_fraction(position, open_blocks_sun=self.axes[0].open_blocks_sun)
+
     def position_for_scene(self, scene: GroupScene) -> int:
         """Map a cover-group scene to this cover type's primary-axis position.
 
@@ -1365,34 +1482,69 @@ class CoverTypePolicy(ABC):
         the engine where coverage bottoms out and rank by DISTANCE from it
         instead (issue #1104).
 
-        Percentage distance is the right metric because the percentage↔angle map
-        is globally linear on every scale this hook sees (MODE1, MODE2, the
-        louvered roof's ``max_slat_angle``, and the affine ``specify_angles``
-        calibration), so ``|pct − pivot_pct|`` is proportional to
-        ``|angle − 90°|`` on both sides at once — no per-side scaling needed.
-        Linearity is also why this comparator needs no range check on the pivot:
-        proportionality does not care whether the pivot is reachable, so a scale
-        calibrated entirely to one side of horizontal (``max_slat_angle`` under
-        90°, a one-sided ``specify_angles`` pair) is still ranked correctly — and
-        an INVERTED such calibration, where ``axes[0]``'s static flag has the
-        covering end backwards, is ranked correctly only this way. The
-        coverage-step quantiser reaches the same conclusion from the same pivot
-        by a different route (it clamps the pivot onto the reachable travel,
-        because it anchors arithmetic on it rather than ordering by it), and the
-        two must not disagree about which end of one engine covers.
+        HOW FAR from the pivot is the engine's question, not this policy's.
+        ``AdaptiveGeneralCover.coverage_distance`` answers it, and its base
+        answer is the ``|pct − pivot_pct|`` this method used to compute inline —
+        correct while the percentage↔angle map is globally affine (MODE1, MODE2,
+        the louvered roof's ``max_slat_angle``, a two-point ``specify_angles``
+        pair), because percentage distance is then proportional to
+        ``|angle − 90°|`` on both sides at once and the constant cancels out of
+        the comparison. A three-point tilt calibration (#1222) hinges the map at
+        the pivot, giving the two sides different degrees-per-percent, so the
+        constant stops cancelling and a cross-pivot pair can rank backwards.
+        The tilt engine therefore overrides the metric to measure degrees off
+        horizontal directly — proportional to the base answer on every affine
+        scale, and the only correct one under a hinge. Asking the engine is what
+        keeps this policy out of the business of knowing either.
+
+        The pivot is still read here, and read FIRST, because it answers a
+        different question: whether this axis is bi-directional at all. ``None``
+        means coverage is monotonic in the percentage, and then the axis rule
+        below is the whole story — there is no pivot to measure from and the
+        distance metric is not consulted.
+
+        That read is also what makes the two distances below plain floats. Both
+        are typed ``float | None``, and neither is checked, because
+        ``coverage_distance`` answers ``None`` on exactly the engines whose pivot
+        is ``None`` — a coupling stated in its own docstring and pinned by
+        ``tests/test_cover_types/test_protective.py`` ::
+        ``test_a_distance_exists_wherever_a_pivot_does``. Adding a ``None`` check
+        here instead would be the wrong repair: it would let an engine answer
+        "no distance" while claiming a pivot, which is not a state the metric
+        has any meaning in.
+
+        No range check on the pivot is needed, on either metric: neither
+        proportionality nor an angle measurement cares whether the pivot is
+        reachable, so a scale calibrated entirely to one side of horizontal
+        (``max_slat_angle`` under 90°, a one-sided ``specify_angles`` pair) is
+        still ranked correctly — and an INVERTED such calibration, where
+        ``axes[0]``'s static flag has the covering end backwards, is ranked
+        correctly only this way. The coverage-step quantiser reaches the same
+        conclusion from the same pivot by a different route (it clamps the pivot
+        onto the reachable travel, because it anchors arithmetic on it rather
+        than ordering by it), and the two must not disagree about which end of
+        one engine covers.
 
         *cover* is keyword-only and defaults to ``None`` so callers with no
         engine in scope, and every monotonic axis, keep the exact behaviour they
         had. Equal distances fall through to the axis rule rather than being
         decided here, which keeps the symmetric straddle (``30``/``70`` on MODE2,
         both 36° off horizontal) answering ``30`` as it always has.
+
+        "Equal" is measured to ``COVERAGE_DISTANCE_TIE_EPS`` and NOT exactly.
+        The percentage metric these ties used to be scored on was exact
+        arithmetic on integers; measuring in degrees is not, and an exact ``!=``
+        turned the ulp between ``44 → 79.2°`` and ``56 → 100.8°`` into a real
+        difference — 13 symmetric MODE2 pairs flipped to the far side of the
+        axis rule, up to an 82-point command swing (#1222 audit). Pinned by
+        ``tests/test_cover_types/test_protective.py`` ::
+        ``test_symmetric_mode2_pairs_all_fall_through_to_the_axis_rule``.
         """
-        if cover is not None:
-            pivot = cover.coverage_pivot_percentage()
-            if pivot is not None:
-                distance_a, distance_b = abs(a - pivot), abs(b - pivot)
-                if distance_a != distance_b:
-                    return a if distance_a > distance_b else b
+        if cover is not None and cover.coverage_pivot_percentage() is not None:
+            distance_a = cover.coverage_distance(a)
+            distance_b = cover.coverage_distance(b)
+            if abs(distance_a - distance_b) > COVERAGE_DISTANCE_TIE_EPS:
+                return a if distance_a > distance_b else b
         if self.axes[0].open_blocks_sun:
             return max(a, b)
         return min(a, b)
@@ -1463,13 +1615,30 @@ class CoverTypePolicy(ABC):
 
         return (config_fields.SECTION_GEOMETRY, *config_fields.COMMON_SECTION_ORDER)
 
-    def extra_field_keys(self, section: str) -> tuple[str, ...]:  # noqa: ARG002
+    def extra_field_keys(self, section: str) -> tuple[str, ...]:
         """Type-specific CONF_* keys this policy adds to *section*.
 
         Beyond the common fields — e.g. the glare-zones enable toggle that
-        ``BlindPolicy`` adds to sun tracking, or venetian's per-slot tilt
-        fields. Default: none.
+        ``BlindPolicy`` adds to sun tracking, or the tilt fields a dual-axis
+        type adds to custom position and weather override.
+
+        The two tilt branches live here rather than on each dual-axis subclass
+        so "which cover types carry a second axis in the UI" is stated exactly
+        once — as the ``*_includes_tilt`` ClassVars — instead of being
+        re-derived by every policy that happens to have one. Subclasses with
+        extras of their own (``BlindPolicy``) add their branch and then
+        ``super()`` through to these.
         """
+        from .. import config_fields as cf
+        from ..const import CONF_WEATHER_OVERRIDE_TILT
+
+        if section == cf.SECTION_CUSTOM_POSITION and self.custom_position_includes_tilt:
+            return cf.CUSTOM_POSITION_TILT_KEYS
+        if (
+            section == cf.SECTION_WEATHER_OVERRIDE
+            and self.weather_override_includes_tilt
+        ):
+            return (CONF_WEATHER_OVERRIDE_TILT,)
         return ()
 
     def build_section_schema(
@@ -1503,6 +1672,11 @@ class CoverTypePolicy(ABC):
                     hass, include_distance=self.includes_shaded_distance()
                 ).schema
             )
+            # Optional solar-transmittance description (#1236) — universal for
+            # the same reason as the window-facing fields above, and composed
+            # through the same single seam so it lands in ``live_option_keys``
+            # for every cover type without a per-policy schema edit.
+            base = base.extend(cd.solar_properties_schema(hass, opts).schema)
         elif name == cf.SECTION_SUN_TRACKING:
             base = cd.sun_tracking_schema(hass)
         elif name == cf.SECTION_BLIND_SPOT:
@@ -1605,6 +1779,29 @@ class CoverTypePolicy(ABC):
         (tilt-only). The Target Position sensor multiplies this by the
         published position percentage to expose a physical-distance attribute
         alongside the existing percentage value.
+        """
+        return None
+
+    def glass_area_m2(
+        self,
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,  # noqa: ARG002
+    ) -> float | None:
+        """Glazed area of this window in m², or ``None`` when unknowable.
+
+        The area term of the estimated-solar-gain figure (#1237), shaped
+        exactly like :meth:`lift_travel_metres` so the consumer pattern is the
+        same: ask the policy, and treat ``None`` as "do not report a number".
+
+        Default ``None`` — and deliberately so. Only five cover types collect
+        both a window height and a window width; an awning has no width, a
+        sliding curtain no height, and a louvered roof no glass at all. Inventing
+        a dimension for them would put a confidently wrong wattage on a sensor,
+        so they report ``unknown`` with a reason instead.
+
+        The user's ``CONF_GLASS_AREA`` override is applied ABOVE this hook, at
+        the diagnostics layer, so it works for every cover type — including the
+        ones this method cannot answer for.
         """
         return None
 

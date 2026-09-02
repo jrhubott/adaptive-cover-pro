@@ -393,6 +393,45 @@ def test_geometry_tilt_shows_tilt_fields():
     assert "mode1" in summary
 
 
+def test_geometry_tilt_shows_the_three_point_midpoint():
+    """The mid-point renders on specify_angles, and only when set (#1222).
+
+    Both tilt-only and venetian, because the geometry fragment is shared but the
+    two summary renderers are not.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_TILT_ANGLE_0,
+        CONF_TILT_ANGLE_100,
+        CONF_TILT_HORIZONTAL_PERCENT,
+    )
+
+    base = {
+        CONF_TILT_DEPTH: 8.5,
+        CONF_TILT_DISTANCE: 8.0,
+        CONF_TILT_MODE: "specify_angles",
+        CONF_TILT_ANGLE_0: 0,
+        CONF_TILT_ANGLE_100: 130,
+    }
+    for cover_type in (CoverType.TILT, CoverType.VENETIAN):
+        enabled = _build_config_summary(
+            {**base, CONF_TILT_HORIZONTAL_PERCENT: 50}, cover_type
+        )
+        assert "horizontal at 50%" in enabled
+
+        # The 0 sentinel is the disabled state — nothing to report.
+        disabled = _build_config_summary(
+            {**base, CONF_TILT_HORIZONTAL_PERCENT: 0}, cover_type
+        )
+        assert "horizontal at" not in disabled
+
+        # On a preset mode the whole calibration block is inert, mid-point too.
+        preset = _build_config_summary(
+            {**base, CONF_TILT_MODE: "mode2", CONF_TILT_HORIZONTAL_PERCENT: 50},
+            cover_type,
+        )
+        assert "horizontal at" not in preset
+
+
 def test_geometry_louvered_roof_shows_slat_and_pitch_fields():
     """Louvered roof renders the shared slat block plus the roof-plane pitch."""
     from custom_components.adaptive_cover_pro.const import CONF_ROOF_PITCH
@@ -552,6 +591,59 @@ def test_geometry_venetian_drift_reset_shows_close_direction():
     }
     summary = _build_config_summary(cfg, CoverType.VENETIAN)
     assert "(via close)" in summary
+
+
+def test_geometry_venetian_tilt_only_scope_line_hidden_by_default():
+    """Issue #1330: the default scope leaves the mode line exactly as it was.
+
+    An install that has not opted in must render a byte-identical summary,
+    so the option is invisible until it is set.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_MODE,
+        VENETIAN_MODE_TILT_ONLY,
+    )
+
+    cfg = {CONF_VENETIAN_MODE: VENETIAN_MODE_TILT_ONLY}
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "mode: tilt only" in summary
+    assert "sun-tracking wins only" not in summary
+
+
+def test_geometry_venetian_tilt_only_scope_line_shown_when_narrowed():
+    """Issue #1330: the narrowed scope is appended to the mode line."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_MODE,
+        CONF_VENETIAN_TILT_ONLY_SCOPE,
+        VENETIAN_MODE_TILT_ONLY,
+        VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+    )
+
+    cfg = {
+        CONF_VENETIAN_MODE: VENETIAN_MODE_TILT_ONLY,
+        CONF_VENETIAN_TILT_ONLY_SCOPE: VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "mode: tilt only — sun-tracking wins only" in summary
+
+
+def test_geometry_venetian_tilt_only_scope_line_hidden_in_position_and_tilt_mode():
+    """Issue #1330: the suffix is double-gated on the operating mode too.
+
+    The scope only governs the tilt-only carriage pin, so a
+    ``position_and_tilt`` install must never see a line about a pin it has
+    no use for — even with a stale narrowed value left in its options from
+    an earlier experiment.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_ONLY_SCOPE,
+        VENETIAN_TILT_ONLY_SCOPE_SOLAR,
+    )
+
+    cfg = {CONF_VENETIAN_TILT_ONLY_SCOPE: VENETIAN_TILT_ONLY_SCOPE_SOLAR}
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "mode: position and tilt" in summary
+    assert "sun-tracking wins only" not in summary
 
 
 def test_geometry_oscillating_awning_shows_housing_offset():
@@ -1681,6 +1773,56 @@ def test_weather_override_no_sensors_shows_neither_warning_nor_rule():
     summary = _build_config_summary({CONF_WEATHER_ENABLED: False}, CoverType.BLIND)
     assert _WX_DISABLED_PHRASE not in summary
     assert "Weather safety" not in summary
+
+
+# --- Window scoping warning (issue #1308) ---
+
+_WX_SCOPED_PHRASE = "only acts inside the time window"
+
+
+def test_weather_window_scoped_shows_the_overnight_warning():
+    """Opting out of the outside-window licence is a footgun and says so."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OUTSIDE_WINDOW
+
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_WEATHER_ENABLED: True,
+        CONF_WEATHER_OUTSIDE_WINDOW: False,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert _WX_SCOPED_PHRASE in summary
+    # The normal rule line still renders — this is a scope, not an off switch.
+    assert "retract to" in summary
+
+
+def test_weather_window_scoped_warning_absent_at_the_default():
+    """The default keeps weather acting at any hour, so no warning fires."""
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_WEATHER_ENABLED: True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert _WX_SCOPED_PHRASE not in summary
+
+
+def test_weather_window_scoped_warning_absent_when_feature_is_off():
+    """A disabled feature reports only that; the scope is moot."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OUTSIDE_WINDOW
+
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_WEATHER_ENABLED: False,
+        CONF_WEATHER_OUTSIDE_WINDOW: False,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert _WX_DISABLED_PHRASE in summary
+    assert _WX_SCOPED_PHRASE not in summary
 
 
 # ---------------------------------------------------------------------------
@@ -2888,6 +3030,164 @@ def test_custom_position_tilt_only_no_warning_when_alone():
     assert warning_lines == []
 
 
+def test_custom_position_tilt_only_without_fixed_tilt_renders_bound():
+    """Issue #1215: tilt_only + tilt_min with NO fixed slat angle must render
+    the actual configured bound, not the phantom 'slat fixed at 0%' claim —
+    nothing is fixed at 0% and the slot is not inert.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "at least 50%" in custom_line
+    assert "slat fixed at 0%" not in custom_line
+
+
+def test_custom_position_tilt_only_without_fixed_tilt_no_phantom_minimum():
+    """Issue #1215 residual risk: routing a tilt_only-without-fixed-tilt slot
+    into the bound-rendering branch must not expose it to a phantom
+    '(as minimum)' fragment, nor a phantom position target. The runtime
+    normalizes min_mode off for ANY tilt_only slot regardless of whether a
+    slat angle is configured (snapshot_builder.py's tilt_only mutual-
+    exclusion normalization, keyed on the bare flag), and
+    ``position_mode`` is NONE for every tilt_only slot too (types.py's
+    ``position_mode`` keys on the bare flag) — so a stored
+    ``custom_position_N`` must not render as a target the handler never
+    claims. The mutual-exclusion ⚠️ warning still fires, since reporting the
+    conflict is its job.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_1": 80,
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+        "custom_position_min_mode_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "(as minimum)" not in custom_line
+    assert "→ 80%" not in custom_line
+    assert "the calculated position" in custom_line
+    assert "⚠️" in summary
+
+
+def test_custom_position_tilt_only_without_fixed_tilt_no_phantom_ceiling():
+    """Issue #1215 finding 2: a tilt_only slot with no fixed slat angle must
+    not render a phantom position ceiling either. snapshot_builder.py wipes
+    ``position_max`` for EVERY tilt_only slot (bare flag, regardless of a
+    fixed tilt), so a stored ``custom_position_position_max_N`` must not
+    surface as '(at most N%)' — the handler makes no position claim to cap.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+        "custom_position_position_max_1": 60,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "(at most 60%)" not in custom_line
+    assert "at least 50%" in custom_line
+
+
+def test_custom_position_use_my_no_phantom_ceiling():
+    """Issue #1215 round-2 audit finding 1: a ``use_my`` slot (no
+    ``tilt_only``) with no stored position must not render a phantom
+    position ceiling either. ``snapshot_builder.py`` wipes ``position_max``
+    on the ``use_my`` path the same way it does for ``tilt_only`` (``if
+    tilt_only or use_my: position_max = None``), so a stored
+    ``custom_position_position_max_N`` must not surface as '(at most N%)'
+    when only ``use_my`` is set.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_use_my_1": True,
+        "custom_position_position_max_1": 60,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "(at most 60%)" not in custom_line
+
+
+def test_custom_position_tilt_only_with_fixed_tilt_warns_bounds_discarded():
+    """Issue #1215 round-2 audit finding 2: a REAL fixed tilt (``tilt_only``
+    + a configured slat angle) still deliberately outranks ``tilt_min`` /
+    ``tilt_max`` on the same slot — the #514 precedence this fix preserves —
+    but nothing told the user their configured bounds are being discarded.
+    Warn.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.glare",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_1": 30,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    warn_line = next(ln for ln in summary.splitlines() if "⚠️" in ln and "30%" in ln)
+    assert "ignored" in warn_line.lower()
+
+
+def test_custom_position_tilt_only_no_bounds_no_discard_warning():
+    """No ``tilt_min``/``tilt_max`` configured alongside a real fixed tilt ->
+    no 'bounds discarded' warning — there is nothing to discard.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.glare",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_1": 30,
+        "custom_position_tilt_only_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "ignored for this slot" not in summary.lower()
+
+
+def test_custom_position_tilt_only_fully_inert_warns_no_effect():
+    """Issue #1215 round-2 audit finding 6: a tilt_only slot with no slat
+    angle AND no tilt bounds has ``position_mode == NONE`` and
+    ``tilt_mode == NONE`` — it does nothing at all. Warn so the user isn't
+    left wondering why nothing moves.
+
+    ``custom_position_position_max_1`` is set purely so the slot passes
+    ``custom_position_slot_configured`` (a trigger alone needs at least one
+    claim key to participate at all) — ``tilt_only`` nulls it right back out
+    regardless, per its own unconditional position-axis disclaim, which is
+    exactly the inert combination this warning exists to catch.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_position_max_1": 60,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    warn_line = next(
+        ln for ln in summary.splitlines() if "⚠️" in ln and "no effect" in ln.lower()
+    )
+    assert "Custom #1" in warn_line or "#1" in warn_line
+
+
+def test_custom_position_tilt_only_with_bound_no_no_effect_warning():
+    """A tilt_only slot WITH a configured tilt bound is not inert — no
+    'no effect' warning fires for it.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "no effect" not in summary.lower()
+
+
 def test_weather_state_list_in_cloud_line():
     """CONF_WEATHER_STATE list renders as 'weather not in {state, state}' on the cloud line."""
     from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE
@@ -2899,6 +3199,86 @@ def test_weather_state_list_in_cloud_line():
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "weather not in {cloudy, rainy}" in summary
+
+
+def test_weather_state_renders_as_is_sunny_fallback_when_sensor_configured():
+    """With an is_sunny sensor AND a weather entity configured, the weather-state
+    list is not a peer OR trigger — it's the lowest rung _read_sunny falls
+    through to only when the sensor holds no opinion (issue #1302). The summary
+    must nest it as an in-place qualifier on the is_sunny fragment, not append it
+    as a fourth independent trigger.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IS_SUNNY_SENSOR: "binary_sensor.x",
+        CONF_WEATHER_ENTITY: "weather.home",
+        CONF_WEATHER_STATE: ["sunny", "clear"],
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert (
+        "is_sunny=binary_sensor.x (falls back to weather not in {sunny, clear})"
+        in summary
+    )
+    assert "is_sunny=binary_sensor.x, weather not in" not in summary
+
+
+def test_weather_state_stays_a_peer_trigger_without_is_sunny_source():
+    """With no is_sunny sensor/template configured, the weather-state list IS
+    the sole is_sunny source, so it renders as a plain peer fragment — no
+    'falls back to' qualifier should appear.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_WEATHER_ENTITY: "weather.home",
+        CONF_WEATHER_STATE: ["sunny", "clear"],
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "weather not in {sunny, clear}" in summary
+    assert "falls back to" not in summary
+
+
+def test_is_sunny_template_gets_weather_fallback_qualifier():
+    """A template-only is_sunny source also gets the weather fragment nested
+    as a fallback qualifier, not appended as a peer.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IS_SUNNY_TEMPLATE: "{{ is_state('sun.sun', 'above_horizon') }}",
+        CONF_WEATHER_ENTITY: "weather.home",
+        CONF_WEATHER_STATE: ["sunny", "clear"],
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert (
+        "is_sunny=[template] (falls back to weather not in {sunny, clear})" in summary
+    )
+
+
+def test_weather_fallback_qualifier_stays_adjacent_to_is_sunny():
+    """When a lux sensor is also configured, the weather fallback qualifier
+    must stay adjacent to the is_sunny fragment it qualifies rather than
+    drifting to the end of the trigger list behind lux (issue #1302, state D).
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IS_SUNNY_SENSOR: "binary_sensor.x",
+        CONF_WEATHER_ENTITY: "weather.home",
+        CONF_WEATHER_STATE: ["sunny", "clear"],
+        CONF_LUX_ENTITY: "sensor.lux",
+        CONF_LUX_THRESHOLD: 100,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert (
+        "is_sunny=binary_sensor.x (falls back to weather not in {sunny, clear}), "
+        "lux < 100 lx" in summary
+    )
 
 
 def test_outside_threshold_shown_on_climate_line():
@@ -4248,3 +4628,572 @@ def test_both_gates_render_through_the_one_shared_helper():
 
     src = inspect.getsource(cf._build_config_summary)
     assert src.count("_render_condition_gate_summary(") == 2
+
+
+# ---------------------------------------------------------------------------
+# Issue #1189 — named command queue
+# ---------------------------------------------------------------------------
+
+
+def test_summary_omits_the_queue_line_when_unassigned():
+    """The overwhelmingly common cover says nothing about queues."""
+    summary = _build_config_summary(_minimal_vertical(), CoverType.BLIND)
+    assert "queue" not in summary.lower()
+
+
+def test_summary_shows_the_queue_and_the_default_gap():
+    from custom_components.adaptive_cover_pro.const import CONF_COMMAND_QUEUE
+
+    cfg = _minimal_vertical()
+    cfg[CONF_COMMAND_QUEUE] = "Facade South"
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert 'Commands serialized on queue "Facade South" (5.0s gap)' in summary
+
+
+def test_summary_resolves_the_gap_from_the_owning_entry(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_COMMAND_QUEUE,
+        CONF_COMMAND_QUEUE_GAP,
+        CONF_SENSOR_TYPE,
+        DOMAIN,
+    )
+
+    queue_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Facade South", CONF_SENSOR_TYPE: CoverType.COMMAND_QUEUE},
+        options={CONF_COMMAND_QUEUE_GAP: 12.0},
+        entry_id="queue_1",
+        title="Command Queue Facade South",
+    )
+    queue_entry.add_to_hass(hass)
+
+    cfg = _minimal_vertical()
+    # Different casing on purpose: the summary must resolve the way the runtime
+    # does, by normalized name.
+    cfg[CONF_COMMAND_QUEUE] = "  facade   SOUTH "
+    summary = _build_config_summary(cfg, CoverType.BLIND, hass)
+    assert 'Commands serialized on queue "facade   SOUTH" (12.0s gap)' in summary
+
+
+# ---------------------------------------------------------------------------
+# Section 2: Custom slot names in the How It Decides rule line (issue #1190)
+#
+# #910 (PR #915) already made the Decision Priority chain and the priority
+# ladder preview name-aware. This is the separate "How It Decides" narrative
+# rule line (`rules.custom` / `rules.custom_tilt_only`) and its three inline
+# footgun warnings, which #910 never touched — the exact surface the
+# reporter's screenshot shows.
+# ---------------------------------------------------------------------------
+
+
+def test_custom_rule_line_uses_configured_name_instead_of_slot_number():
+    """A configured custom_position_name_N replaces the generic '#N' label in
+    the primary rule line — the name REPLACES the slot number outright,
+    matching the priority_chain.py precedent from #910.
+    """
+    cfg = {
+        "custom_position_sensors_4": ["binary_sensor.terrace"],
+        "custom_position_4": 82,
+        "custom_position_priority_4": 82,
+        "custom_position_name_4": "Terrace access",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Terrace access" in summary
+    assert "Custom #4" not in summary
+
+
+def test_custom_tilt_only_rule_line_uses_configured_name():
+    """The tilt-only variant of the rule line also substitutes the name."""
+    cfg = {
+        "custom_position_sensors_4": ["binary_sensor.terrace"],
+        "custom_position_4": 82,
+        "custom_position_priority_4": 82,
+        "custom_position_tilt_4": 30,
+        "custom_position_tilt_only_4": True,
+        "custom_position_name_4": "Terrace access",
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "Terrace access" in summary
+    assert "Custom #4" not in summary
+
+
+def test_custom_rule_line_falls_back_to_slot_number_when_no_name():
+    """No configured name -> the generic '#N' label, byte-identical to today.
+
+    Regression lock for the "unnamed" path — mirrors the existing no-name
+    fixtures (e.g. test_safety_priority_slot_shown_with_position).
+    """
+    cfg = {
+        "custom_position_sensors_4": ["binary_sensor.terrace"],
+        "custom_position_4": 82,
+        "custom_position_priority_4": 82,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Custom #4" in summary
+
+
+def test_custom_warning_bound_conflict_uses_configured_name():
+    """The min>max footgun warning substitutes the configured name too."""
+    cfg = {
+        "custom_position_sensors_4": ["binary_sensor.terrace"],
+        "custom_position_4": 70,
+        "custom_position_min_mode_4": True,
+        "custom_position_position_max_4": 40,
+        "custom_position_priority_4": 82,
+        "custom_position_name_4": "Terrace access",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln for ln in summary.splitlines() if "⚠️" in ln and "maximum" in ln
+    )
+    assert "Terrace access" in warn_line
+    assert "Custom #4" not in warn_line
+
+
+def test_custom_warning_tilt_only_conflict_uses_configured_name():
+    """The tilt_only mutual-exclusion warning substitutes the configured name."""
+    cfg = {
+        "custom_position_sensors_4": ["binary_sensor.terrace"],
+        "custom_position_4": 80,
+        "custom_position_priority_4": 82,
+        "custom_position_tilt_4": 30,
+        "custom_position_tilt_only_4": True,
+        "custom_position_min_mode_4": True,
+        "custom_position_name_4": "Terrace access",
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    warn_line = next(
+        ln for ln in summary.splitlines() if "⚠️" in ln and "tilt only" in ln.lower()
+    )
+    assert "Terrace access" in warn_line
+    assert "Custom #4" not in warn_line
+
+
+def test_custom_warning_and_no_sensors_uses_configured_name():
+    """The AND-combine-mode-with-no-sensors warning substitutes the name."""
+    cfg = {
+        "custom_position_template_4": "{{ true }}",
+        "custom_position_template_mode_4": "and",
+        "custom_position_4": 80,
+        "custom_position_priority_4": 82,
+        "custom_position_name_4": "Terrace access",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln for ln in summary.splitlines() if "⚠️" in ln and "combine mode" in ln.lower()
+    )
+    assert "Terrace access" in warn_line
+    assert "Custom #4" not in warn_line
+
+
+# ---------------------------------------------------------------------------
+# Outside-window constraints (issue #943 item B)
+# ---------------------------------------------------------------------------
+
+
+def test_custom_position_outside_window_renders_a_line():
+    """An opted-in slot says its constraints outlive the time window."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+        "custom_position_outside_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "constraints stay active outside the time window" in summary
+
+
+def test_custom_position_outside_window_absent_renders_nothing():
+    """The default (off) adds no line at all — no churn for existing entries."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "outside the time window" not in summary
+
+
+def test_custom_position_outside_window_without_bounds_warns():
+    """The flag governs min/max claims only — with none, it does nothing."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_1": 40,
+        "custom_position_priority_1": 77,
+        "custom_position_outside_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "outside the time window" in ln
+    )
+    assert "no minimum or maximum" in warn_line
+
+
+def test_custom_position_outside_window_at_safety_priority_warns_redundant():
+    """A priority-100 slot already acts outside the window — say so."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.storm",
+        "custom_position_1": 0,
+        "custom_position_min_mode_1": True,
+        "custom_position_priority_1": 100,
+        "custom_position_outside_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln for ln in summary.splitlines() if "⚠️" in ln and "priority 100" in ln
+    )
+    assert "already" in warn_line.lower()
+
+
+def test_custom_position_outside_window_use_my_floor_is_not_a_bound():
+    """The "does this slot bound anything?" question has ONE answer, not two.
+
+    ``use_my`` is hardware-pinned and never participates in constraint
+    semantics: ``axis_constraints._gather_all`` skips the whole position axis
+    for such a slot, so a ``min_mode`` floor beside it emits nothing and the
+    checkbox has nothing to keep alive. The summary re-derived that question
+    from the raw wire format instead of asking the same normalization the
+    snapshot builder does, and its copy did not know about ``use_my`` — so this
+    slot was told its constraints stay active overnight when no constraint
+    exists.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_1": 40,
+        "custom_position_min_mode_1": True,
+        "custom_position_use_my_1": True,
+        "custom_position_priority_1": 77,
+        "custom_position_outside_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "outside the time window" in ln
+    )
+    assert "no minimum or maximum" in warn_line
+
+
+def test_custom_position_outside_window_with_bounds_no_warning():
+    """A correctly-configured opt-in warns about nothing."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_1": 40,
+        "custom_position_min_mode_1": True,
+        "custom_position_priority_1": 77,
+        "custom_position_outside_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert not any(
+        "⚠️" in ln and "outside the time window" in ln for ln in summary.splitlines()
+    )
+    assert "constraints stay active outside the time window" in summary
+
+
+# ---------------------------------------------------------------------------
+# Scope the FIXED claim to the time window (issue #1318)
+# ---------------------------------------------------------------------------
+
+
+def test_custom_position_scope_to_window_renders_a_line():
+    """An opted-in FIXED slot says it stands down when the window closes."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 100,
+        "custom_position_priority_1": 70,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "only applies within the time window" in summary
+
+
+def test_custom_position_scope_to_window_absent_renders_nothing():
+    """The default (off) adds no line — #895's behaviour, and no churn."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 100,
+        "custom_position_priority_1": 70,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "within the time window" not in summary
+
+
+def test_custom_position_scope_to_window_without_a_fixed_claim_warns():
+    """The option governs the exact-position claim only — a floor has none.
+
+    A ``min_mode`` slot defers to the axis-constraint pass before the gate is
+    ever reached, and whether its bound survives the clock is decided by the
+    *other* key (``custom_position_outside_window_N``, #943 item B). Saying so
+    stops a user setting the wrong checkbox for the behaviour they want.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 40,
+        "custom_position_min_mode_1": True,
+        "custom_position_priority_1": 70,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "within the time window" in ln
+    )
+    assert "no exact position" in warn_line
+
+
+def test_custom_position_scope_to_window_tilt_only_slot_warns():
+    """A tilt-only slot disclaims the position axis, so there is nothing to scope."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_tilt_1": 30,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+        "custom_position_priority_1": 70,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "within the time window" in ln
+    )
+    assert "no exact position" in warn_line
+
+
+def test_custom_position_scope_to_window_at_safety_priority_warns_ignored():
+    """Priority 100 acts outside the window by definition — the option is inert.
+
+    The #563 exemption is unconditional in the handler; the summary has to say
+    so, or a user will believe they scheduled their storm protection off.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.storm",
+        "custom_position_1": 0,
+        "custom_position_priority_1": 100,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "within the time window" in ln
+    )
+    assert "safety" in warn_line.lower()
+
+
+def test_custom_position_scope_to_window_use_my_slot_is_a_fixed_claim():
+    """*Use My* claims the axis, so the scope applies and no warning fires.
+
+    The exact mirror of ``test_custom_position_outside_window_use_my_floor_is_not_a_bound``:
+    a ``min_mode`` + ``use_my`` slot has NO bound (My is hardware-pinned, so
+    the floor emits nothing) but it DOES drive the axis. One derivation has to
+    answer both questions, or the two summary blocks contradict each other
+    about the same slot.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 40,
+        "custom_position_min_mode_1": True,
+        "custom_position_use_my_1": True,
+        "custom_position_priority_1": 70,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "only applies within the time window" in summary
+    assert not any(
+        "⚠️" in ln and "within the time window" in ln for ln in summary.splitlines()
+    )
+
+
+def test_custom_position_both_window_options_render_independently():
+    """A slot may scope its exact position AND extend its bounds (#943 B + #1318).
+
+    The two keys are inverse-polarity and govern disjoint claim classes, so a
+    min+max range slot with an exact position configured can want both lines.
+    Neither may suppress the other.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 40,
+        "custom_position_min_mode_1": True,
+        "custom_position_position_max_1": 80,
+        "custom_position_priority_1": 70,
+        "custom_position_outside_window_1": True,
+        "custom_position_scope_to_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "constraints stay active outside the time window" in summary
+    # The slot's position claim is a floor, not an exact position, so the
+    # scope has nothing to act on and says so rather than going quiet.
+    assert any("⚠️" in ln and "no exact position" in ln for ln in summary.splitlines())
+
+
+_SCOPE_NEEDS_RETURN_PHRASE = "nothing repositions the cover"
+
+
+def _scoped_slot_cfg(**extra):
+    """Build an opted-in, non-safety slot with a FIXED position claim."""
+    return {
+        "custom_position_sensor_1": "binary_sensor.cloudy",
+        "custom_position_1": 100,
+        "custom_position_priority_1": 70,
+        "custom_position_scope_to_window_1": True,
+        **extra,
+    }
+
+
+def test_custom_position_scope_to_window_without_return_sunset_warns():
+    """Standing down is not the same as moving — the reposition needs its toggle.
+
+    The line above promises the end-of-window position takes over, but that
+    reposition IS the ``return_sunset`` force-send. With it off the slot stands
+    down, the outside-window dispatch guard blocks every other send, and the
+    cover simply stays where the slot left it — the exact non-outcome #1318 was
+    filed about. ``services.yaml`` and the option's ``data_description`` both
+    name the dependency; the summary has to as well.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_RETURN_SUNSET
+
+    summary = _build_config_summary(
+        _scoped_slot_cfg(**{CONF_RETURN_SUNSET: False}), CoverType.BLIND
+    )
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and _SCOPE_NEEDS_RETURN_PHRASE in ln
+    )
+    assert "end time is reached" in warn_line
+
+
+def test_custom_position_scope_to_window_absent_key_also_warns():
+    """``return_sunset`` defaults to off, so an unset key is the same footgun."""
+    summary = _build_config_summary(_scoped_slot_cfg(), CoverType.BLIND)
+    assert _SCOPE_NEEDS_RETURN_PHRASE in summary
+
+
+def test_custom_position_scope_to_window_with_return_sunset_is_quiet():
+    """With the reposition armed the option does exactly what its line says."""
+    from custom_components.adaptive_cover_pro.const import CONF_RETURN_SUNSET
+
+    summary = _build_config_summary(
+        _scoped_slot_cfg(**{CONF_RETURN_SUNSET: True}), CoverType.BLIND
+    )
+    assert "only applies within the time window" in summary
+    assert _SCOPE_NEEDS_RETURN_PHRASE not in summary
+
+
+def test_custom_position_scope_to_window_needs_return_silent_when_inert():
+    """The dependency only matters once the gate can actually bite.
+
+    A safety slot ignores the option outright and a bounded-claim slot never
+    reaches the gate; both already render a "this does nothing" warning. Adding
+    a second warning about a reposition that was never going to happen would
+    point those users at the wrong toggle.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_RETURN_SUNSET
+
+    safety = _build_config_summary(
+        _scoped_slot_cfg(
+            **{"custom_position_priority_1": 100, CONF_RETURN_SUNSET: False}
+        ),
+        CoverType.BLIND,
+    )
+    assert _SCOPE_NEEDS_RETURN_PHRASE not in safety
+
+    floor = _build_config_summary(
+        _scoped_slot_cfg(
+            **{"custom_position_min_mode_1": True, CONF_RETURN_SUNSET: False}
+        ),
+        CoverType.BLIND,
+    )
+    assert _SCOPE_NEEDS_RETURN_PHRASE not in floor
+
+
+# --- Weather-override slat angle (issue #1297) ---
+
+_WX_TILT_MIN_MODE_PHRASE = "minimum position mode is on"
+
+
+def _weather_tilt_cfg(**extra):
+    """Build an enabled weather override with a wind trigger and a tilt."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OVERRIDE_TILT
+
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_WEATHER_ENABLED: True,
+        CONF_WEATHER_OVERRIDE_TILT: 100,
+    }
+    cfg.update(extra)
+    return cfg
+
+
+def _weather_line(summary: str) -> str:
+    return next(ln for ln in summary.splitlines() if "Weather safety" in ln)
+
+
+def test_weather_tilt_shown_on_the_weather_line():
+    """A configured slat angle joins the position it accompanies."""
+    summary = _build_config_summary(_weather_tilt_cfg(), CoverType.VENETIAN)
+    assert ", tilt 100%" in _weather_line(summary)
+
+
+def test_weather_tilt_absent_when_not_configured():
+    """No tilt configured → the line reads exactly as it did before #1297."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_OVERRIDE_TILT
+
+    cfg = _weather_tilt_cfg()
+    del cfg[CONF_WEATHER_OVERRIDE_TILT]
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert ", tilt" not in _weather_line(summary)
+
+
+def test_weather_tilt_absent_for_a_cover_type_without_a_tilt_axis():
+    """Identical config, single-axis type → no tilt fragment.
+
+    Proves the fragment is gated on the policy ClassVar and not on the mere
+    presence of the stored key — a blind that carries a leftover value from a
+    cover-type switch must not be told its slats will move.
+    """
+    summary = _build_config_summary(_weather_tilt_cfg(), CoverType.BLIND)
+    assert ", tilt" not in _weather_line(summary)
+
+
+def test_weather_tilt_min_mode_warning_shown():
+    """Min mode silently ignores the tilt, so the summary has to say so."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_OVERRIDE_MIN_MODE,
+    )
+
+    summary = _build_config_summary(
+        _weather_tilt_cfg(**{CONF_WEATHER_OVERRIDE_MIN_MODE: True}),
+        CoverType.VENETIAN,
+    )
+    assert _WX_TILT_MIN_MODE_PHRASE in summary
+
+
+def test_weather_tilt_min_mode_warning_absent_without_min_mode():
+    """A tilt in the full-override seat works, so nothing to warn about."""
+    summary = _build_config_summary(_weather_tilt_cfg(), CoverType.VENETIAN)
+    assert _WX_TILT_MIN_MODE_PHRASE not in summary
+
+
+def test_weather_tilt_min_mode_warning_absent_without_a_tilt():
+    """Min mode alone is a normal setting — the warning is about the pairing."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_OVERRIDE_MIN_MODE,
+        CONF_WEATHER_OVERRIDE_TILT,
+    )
+
+    cfg = _weather_tilt_cfg(**{CONF_WEATHER_OVERRIDE_MIN_MODE: True})
+    del cfg[CONF_WEATHER_OVERRIDE_TILT]
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert _WX_TILT_MIN_MODE_PHRASE not in summary

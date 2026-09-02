@@ -351,9 +351,9 @@ async def _trigger_window_close_return_sunset(coord):
         hass=MagicMock(),
         logger=coord.logger,
         event_buffer=event_buffer,
-        effective_default_fn=lambda _opts: (0, False),
+        sunset_window_open_fn=lambda _opts: False,
     )
-    tracker._prev_sunset_active = True
+    tracker._prev_sunset_window_open = True
     coord._window_tracker = tracker
 
     async def _invoke(track_end_time, refresh_callback, on_window_open=None):
@@ -382,7 +382,6 @@ async def _trigger_sunset_window_opened(coord):
     coord.config_entry = MagicMock()
     coord.config_entry.options = {"sunset_position": 0}
     coord._inverse_state = False
-    coord._compute_current_effective_default = MagicMock(return_value=(0, True))
     coord.async_refresh = AsyncMock()
     event_buffer = getattr(coord, "_event_buffer", None) or EventBuffer(maxlen=10)
     coord._event_buffer = event_buffer
@@ -390,9 +389,9 @@ async def _trigger_sunset_window_opened(coord):
         hass=MagicMock(),
         logger=coord.logger,
         event_buffer=event_buffer,
-        effective_default_fn=coord._compute_current_effective_default,
+        sunset_window_open_fn=lambda _opts: True,
     )
-    tracker._prev_sunset_active = False
+    tracker._prev_sunset_window_open = False
     coord._window_tracker = tracker
     await coord._check_sunset_window_transition()
 
@@ -492,6 +491,11 @@ async def _trigger_async_apply_user_position(coord):
         _patch.object(
             AdaptiveDataUpdateCoordinator,
             "check_adaptive_time",
+            new_callable=lambda: True,
+        ),
+        _patch.object(
+            AdaptiveDataUpdateCoordinator,
+            "clock_window_open",
             new_callable=lambda: True,
         ),
         _patch.object(

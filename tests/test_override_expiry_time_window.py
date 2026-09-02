@@ -16,6 +16,7 @@ issue #132 for the detailed analysis.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -37,6 +38,7 @@ def _make_coordinator(
     check_adaptive_time: bool,
     automatic_control: bool = True,
     clock_window_open: bool | None = None,
+    acts_outside_clock_window: bool = False,
 ):
     """Build a minimal mock coordinator for testing _async_force_send_pipeline_position.
 
@@ -44,12 +46,23 @@ def _make_coordinator(
     scenario in this file models "outside the window" as a genuinely closed clock
     (after end_time / before start_time). The gate-dark case (clock open, gate
     dark) is exercised explicitly by passing ``clock_window_open=True`` (#656).
+
+    ``acts_outside_clock_window`` is the #943-item-B admission — "may this
+    result reach the hardware outside the clock?". It must be pinned explicitly
+    because a bare ``MagicMock`` attribute is truthy, which would silently open
+    every window guard in this file.
     """
     coordinator = MagicMock()
     coordinator.check_adaptive_time = check_adaptive_time
     coordinator.clock_window_open = (
         check_adaptive_time if clock_window_open is None else clock_window_open
     )
+    coordinator._pipeline_acts_outside_clock_window = acts_outside_clock_window
+    # No result computed yet — the default for every scenario in this file. It
+    # is pinned for the same reason as the flag above: the force-send path reads
+    # ``_pipeline_result.outside_window_constraint_active`` to decide whether to
+    # route per cover, and a bare ``MagicMock`` attribute is truthy.
+    coordinator._pipeline_result = None
     coordinator.automatic_control = automatic_control
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
@@ -387,17 +400,31 @@ def _make_state_change_coordinator(
     check_adaptive_time: bool,
     bypass_auto_control: bool = False,
     clock_window_open: bool | None = None,
+    acts_outside_clock_window: bool | None = None,
 ):
     """Build a minimal mock coordinator for testing async_handle_state_change.
 
     ``clock_window_open`` defaults to mirror ``check_adaptive_time`` (genuinely
     closed clock). Pass ``clock_window_open=True`` to model the gate-dark case
     where the clock is open but the daytime gate reads dark (#656).
+
+    ``acts_outside_clock_window`` is the #943-item-B admission. It defaults to
+    ``bypass_auto_control`` because that is what this fixture already uses as
+    its ``is_safety`` stand-in, and on the real coordinator the predicate is
+    ``is_safety OR constraint_admitted`` — a safety result always acts outside
+    the clock. It is pinned explicitly (never left as a bare ``MagicMock``
+    attribute, which is truthy) so it cannot silently open the window guard
+    these tests exist to hold shut.
     """
     coordinator = MagicMock()
     coordinator.check_adaptive_time = check_adaptive_time
     coordinator.clock_window_open = (
         check_adaptive_time if clock_window_open is None else clock_window_open
+    )
+    coordinator._pipeline_acts_outside_clock_window = (
+        bypass_auto_control
+        if acts_outside_clock_window is None
+        else acts_outside_clock_window
     )
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
@@ -541,6 +568,425 @@ async def test_state_change_clears_state_change_flag_outside_window():
     )
 
     assert coordinator.state_change is False
+
+
+# ---------------------------------------------------------------------------
+# Issue #943 item B — an opted-in constraint acts outside the CLOCK window
+#
+# The gap these pin is narrow on purpose: the admission is granted by the
+# registry only when an eligible bound actually clamped something, and the
+# value the guard then lets through is the pseudo-hold's — the cover's own
+# read on every axis the bound did not constrain. A plain DEFAULT winner is
+# still blocked (``test_state_change_skips_send_outside_time_window``).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_state_change_sends_admitted_constraint_outside_clock_window():
+    """The primary gap: an admitted constraint dispatches before start time."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=40, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_constraint_release_outside_window_stays_hands_off():
+    """When the trigger releases overnight ACP goes quiet — no return-to-default.
+
+    Returning the cover to a default at 03:00 is the #173 defect; the cover
+    stays where the clamp left it and the licence is revoked so reconciliation
+    cannot resurrect the target either.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=False,
+    )
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=100, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_not_called()
+    coordinator._cmd_svc.clear_outside_window_targets.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_closed_clock_cycle_with_nothing_admitted_revokes_stale_safety_verdicts():
+    """Issue #1311: a safety booking made before the clock closed must not
+    stay licensed once nothing is admitted out here.
+
+    This branch returns before apply_position, so neither is_safety writer
+    (_prepare_service_call, _record_safety_verdict) ever runs — the licence
+    would otherwise survive until an end-of-window send that CONF_RETURN_SUNSET
+    OFF never produces, and reconciliation step 4 resends it all night.
+
+    The revoke must run BEFORE clear_outside_window_targets: a row holding both
+    flags is spared by that sweeper while it still reads as safety, and its
+    outside-window licence is admitted by step 4 just as readily.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=False,
+    )
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=100, options={}
+    )
+
+    coordinator._cmd_svc.revoke_safety_verdicts.assert_called_once_with()
+    coordinator._cmd_svc.apply_position.assert_not_called()
+
+    names = [c[0] for c in coordinator._cmd_svc.mock_calls]
+    assert names.index("revoke_safety_verdicts") < names.index(
+        "clear_outside_window_targets"
+    )
+
+
+@pytest.mark.asyncio
+async def test_live_safety_result_outside_the_clock_window_keeps_its_verdict():
+    """The revoke is gated at the call site, not inside the method.
+
+    With weather_outside_window ON the handler still wins at 03:00, so
+    acts_outside_clock_window is True, this branch never runs, and the blanket
+    revoke cannot reach a licence that is still being earned. The gate is sound
+    because the pipeline result is per-instance: one live safety verdict
+    anywhere holds the branch shut for every entity.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=0, options={}
+    )
+
+    coordinator._cmd_svc.revoke_safety_verdicts.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_safety_release_edge_outside_the_clock_window_keeps_its_verdict():
+    """The safety-release edge is exempt too, for a different reason.
+
+    ``safety_release=True`` is the cycle a priority-100 slot stood down on. It
+    is deliberately let past the closed-clock guard so the release itself can
+    be dispatched, which means ``apply_position`` runs and writes this cycle's
+    verdict for every entity by the ordinary route. The blanket sweep has no
+    work to do here and must not pre-empt that per-entity write.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=False,
+    )
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=0, options={}, safety_release=True
+    )
+
+    coordinator._cmd_svc.revoke_safety_verdicts.assert_not_called()
+    # Both halves of the exemption, not just the visible one. The sweep is
+    # skipped BECAUSE dispatch happens and writes each entity's verdict by the
+    # ordinary route; a future change that returned before apply_position would
+    # otherwise leave this test green while the licence leaked.
+    coordinator._cmd_svc.apply_position.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_force_send_admits_constraint_outside_clock_window():
+    """The force-send / Apply-Calculated path honours the same admission."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=40, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_force_send_outside_time_window_revokes_stale_safety_verdicts():
+    """Issue #1313: force-send's closed-clock exit must revoke stale safety
+    verdicts too, not just async_handle_state_change's (#1311/#1312).
+
+    Reachable via _dispatch_for_cycle's auto_expired branch: a manual-override
+    auto-expiry cycle outside the clock window, with no tracked-entity
+    state-change edge this cycle, takes THIS exit instead of
+    async_handle_state_change's. A safety booking made by an earlier cycle
+    would otherwise ride forward unrevoked past this exit specifically —
+    reconciliation step 4 admits it because acts_outside_clock_window is the
+    OR of is_safety and outside_window_constraint.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(check_adaptive_time=False)
+
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=0, options={}
+    )
+
+    coordinator._cmd_svc.revoke_safety_verdicts.assert_called_once_with()
+    coordinator._cmd_svc.clear_outside_window_targets.assert_called_once_with()
+    coordinator._cmd_svc.apply_position.assert_not_called()
+
+    names = [c[0] for c in coordinator._cmd_svc.mock_calls]
+    assert names.index("revoke_safety_verdicts") < names.index(
+        "clear_outside_window_targets"
+    )
+
+
+@pytest.mark.asyncio
+async def test_force_send_admitted_outside_clock_window_keeps_its_verdict():
+    """The revoke is gated at the call site, not inside the method.
+
+    With acts_outside_clock_window True the guard's admission condition is
+    satisfied, so this closed-clock exit never runs and the blanket revoke
+    cannot reach a licence that is still being earned — parity with
+    test_live_safety_result_outside_the_clock_window_keeps_its_verdict.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=40, options={}
+    )
+
+    coordinator._cmd_svc.revoke_safety_verdicts.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_first_refresh_sends_admitted_constraint_outside_window():
+    """A restart at 03:00 re-establishes an admitted clamp instead of idling."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+    coordinator.manager.is_cover_manual = MagicMock(return_value=False)
+    coordinator._is_reload = False
+    coordinator.first_refresh = True
+
+    await AdaptiveDataUpdateCoordinator.async_handle_first_refresh(
+        coordinator, state=40, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_first_refresh_still_blocked_without_admission():
+    """Positive control: no admission at 03:00 still means no startup move."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=False,
+    )
+    coordinator.manager.is_cover_manual = MagicMock(return_value=False)
+    coordinator._is_reload = False
+    coordinator.first_refresh = True
+
+    await AdaptiveDataUpdateCoordinator.async_handle_first_refresh(
+        coordinator, state=100, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_not_called()
+
+
+def _make_pseudo_hold_coordinator(*, positions: dict[str, int], mean: int):
+    """Build a force-send coordinator carrying the outside-window pseudo-hold.
+
+    Outside the clock window the registry judges a computed winner as if it held
+    each cover's current read, so ``PipelineResult.position`` is the instance
+    MEAN and the per-cover answers live in ``hold_clamp_verdicts`` (#943 item B
+    borrowing #1174's machinery).
+    """
+    from custom_components.adaptive_cover_pro.const import ControlMethod
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.pipeline.types import (
+        HoldClampVerdict,
+        PipelineResult,
+    )
+
+    coordinator = _make_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+    coordinator.entities = list(positions)
+    coordinator._inverse_state = False
+    coordinator.position_axis_inverted = False
+    coordinator._to_cover_frame = lambda position: position
+    coordinator._pipeline_result = PipelineResult(
+        position=mean,
+        control_method=ControlMethod.DEFAULT,
+        outside_window_constraint_active=True,
+        hold_clamp_verdicts={
+            entity: HoldClampVerdict(held_position=pos, released=True, target=pos)
+            for entity, pos in positions.items()
+        },
+    )
+    coordinator._dispatch_to_cover = (
+        AdaptiveDataUpdateCoordinator._dispatch_to_cover.__get__(coordinator)
+    )
+    # The real frame split too — a verdict's target is a bound edge or a raw
+    # read, and only the first is calibrated. Uncalibrated here, so both
+    # branches agree; binding it keeps the seam under test rather than a mock.
+    coordinator._verdict_dispatch_target = (
+        AdaptiveDataUpdateCoordinator._verdict_dispatch_target.__get__(coordinator)
+    )
+    return coordinator
+
+
+@pytest.mark.asyncio
+async def test_force_send_outside_window_honors_per_cover_verdicts():
+    """An admitted force-send must not blast the instance mean at every cover.
+
+    #943 item B: outside the clock window the registry converts a computed
+    winner into a pseudo-hold, so ``PipelineResult.position`` — and therefore
+    ``coordinator.state`` — is the arithmetic MEAN of the instance, while each
+    cover's real answer sits in ``hold_clamp_verdicts``. Two covers at 80 and
+    10 with a tilt bound binding would both be driven ~35 points at 03:00.
+
+    ``honor_holds`` cannot rescue this: ``_INSTANCE_MEAN_POSITION_HOLDS`` is
+    keyed on ``ControlMethod`` and the pseudo-hold's winner is ``DEFAULT``, and
+    both callers that reach here outside the window (the manual-override
+    auto-expiry branch and ``async_reset_manual_overrides``) pass
+    ``honor_holds=False`` anyway.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_pseudo_hold_coordinator(
+        positions={"cover.high": 80, "cover.low": 10}, mean=45
+    )
+
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=45, options={}
+    )
+
+    # Each cover stays where it already is; only the constrained axis moves.
+    assert [
+        (call.args[0], call.args[1])
+        for call in coordinator._cmd_svc.apply_position.call_args_list
+    ] == [("cover.high", 80), ("cover.low", 10)]
+
+
+@pytest.mark.asyncio
+async def test_force_send_outside_window_skips_covers_the_bound_left_alone():
+    """A cover the bound never moved gets a hold-skip record, not a command.
+
+    The position-axis-only case: the pseudo-hold's verdicts say "released" for
+    the cover a ceiling lowered and "held" for the one already compliant. The
+    held cover must not receive the mean.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.pipeline.types import HoldClampVerdict
+
+    coordinator = _make_pseudo_hold_coordinator(
+        positions={"cover.high": 80, "cover.low": 10}, mean=45
+    )
+    coordinator._pipeline_result = dataclasses.replace(
+        coordinator._pipeline_result,
+        hold_clamp_verdicts={
+            # A ceiling of 30 lowered the high cover and left the low one alone.
+            "cover.high": HoldClampVerdict(held_position=80, released=True, target=30),
+            "cover.low": HoldClampVerdict(held_position=10, released=False, target=10),
+        },
+    )
+
+    sent = await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=45, options={}
+    )
+
+    assert [
+        (call.args[0], call.args[1])
+        for call in coordinator._cmd_svc.apply_position.call_args_list
+    ] == [("cover.high", 30)]
+    assert sent == {"cover.high"}
+    assert coordinator._cmd_svc.record_skipped_action.call_args.args[0] == "cover.low"
+
+
+@pytest.mark.asyncio
+async def test_force_send_in_window_still_sends_the_shared_state():
+    """Byte-identical in-window control: no verdict routing while the clock is open.
+
+    ``outside_window_constraint_active`` is only ever set on a closed-clock
+    cycle, so an in-window force-send keeps the direct ``apply_position`` path
+    and the shared ``state`` even with per-cover verdicts present.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_pseudo_hold_coordinator(
+        positions={"cover.high": 80, "cover.low": 10}, mean=45
+    )
+    coordinator.clock_window_open = True
+    coordinator.check_adaptive_time = True
+    coordinator._pipeline_acts_outside_clock_window = False
+    coordinator._pipeline_result = dataclasses.replace(
+        coordinator._pipeline_result, outside_window_constraint_active=False
+    )
+
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=45, options={}
+    )
+
+    assert [
+        (call.args[0], call.args[1])
+        for call in coordinator._cmd_svc.apply_position.call_args_list
+    ] == [("cover.high", 45), ("cover.low", 45)]
 
 
 # ---------------------------------------------------------------------------

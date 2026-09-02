@@ -28,10 +28,10 @@
     "template_value": "[template]"
   },
   "rules": {
-    "weather": "🌧️ Wetterschutz: wenn {wx_condition} → Beschattungen fahren auf {weather_pos}%{weather_min}{delay}{bypass}",
+    "weather": "🌧️ Wetterschutz: wenn {wx_condition} → Beschattungen fahren auf {weather_pos}%{weather_min}{weather_tilt}{delay}{bypass}",
     "manual": "✋ Manuelle Übersteuerung: pausiert automatische Steuerung, wenn du die Beschattung bewegst{detail}",
-    "custom_tilt_only": "🎯 Benutzerdefiniert #{slot}: wenn {trigger} aktiv ist → nur Neigung (Lamelle fest bei {slat}%; Position gesteuert durch Sonnenverfolgung)",
-    "custom": "🎯 Benutzerdefiniert #{slot}: wenn {trigger} aktiv ist → {target}{cp_min}{tilt_note} — umgeht Delta-Gatter und automatische Steuerung{safety}",
+    "custom_tilt_only": "🎯 {label}: wenn {trigger} aktiv ist → nur Neigung (Lamelle fest bei {slat}%; Position gesteuert durch Sonnenverfolgung)",
+    "custom": "🎯 {label}: wenn {trigger} aktiv ist → {target}{cp_min}{tilt_note} — umgeht Delta-Gatter und automatische Steuerung{safety}",
     "motion": "🚶 Belegung: Falls keine Belegung für {motion_timeout}s ({sources}) → {action}",
     "cloud": "☁️ Wolkenunterdrückung: überspringt Sonnenverfolgung{cloud} → {fallback}",
     "climate": "🌡️ Klimamodus: passt Strategie für Heizung/Kühlung an{detail}",
@@ -75,21 +75,33 @@
     "tilt_bound_min": ", Neigung mindestens {min}%",
     "tilt_bound_max": ", Neigung höchstens {max}%",
     "tilt_bound_range": ", Neigung {min}–{max}%",
-    "no_position_claim": "die berechnete Position"
+    "no_position_claim": "die berechnete Position",
+    "outside_window": "🕗 {label}: Min-/Max-Grenzen bleiben außerhalb des Zeitfensters aktiv (der Slot steuert dort trotzdem nie eine Position an).",
+    "scope_to_window": "🕗 {label}: wirkt nur innerhalb des Zeitfensters — sobald das Fenster schließt, deaktiviert sich der Slot und die Position am Fenster-Ende gilt.",
+    "slot_label_default": "Benutzerdefiniert #{slot}"
   },
   "warnings": {
-    "custom_position_bound_conflict": "⚠️ Benutzerdefiniert #{slot}: Das Maximum ({max}%) liegt unter dem Minimum ({min}%) — das Minimum gewinnt und das Maximum wird ignoriert.",
-    "custom_tilt_only_conflict": "⚠️ Benutzerdefiniert #{slot}: Nur Neigung ist aktiviert — Als Minimum verwenden / Meine Position verwenden werden für diesen Slot ignoriert.",
+    "custom_position_bound_conflict": "⚠️ {label}: Das Maximum ({max}%) liegt unter dem Minimum ({min}%) — das Minimum gewinnt und das Maximum wird ignoriert.",
+    "custom_tilt_only_conflict": "⚠️ {label}: Nur Neigung ist aktiviert — Als Minimum verwenden / Meine Position verwenden werden für diesen Slot ignoriert.",
     "motion_hold_no_sensors": "⚠️ Der Modus Position halten ist eingestellt, aber es sind keine Belegungsquellen konfiguriert – die Einstellung hat keine Auswirkungen, bis eine Belegungsquelle hinzugefügt wird",
     "cloudy_pos_ignored": "⚠️ Bewölkte Position ({pos}%) konfiguriert, aber Wolkenunterdrückung ist deaktiviert — Wert wird ignoriert.",
     "sun_track_min_below_floor": "⚠️ Sonnenverfolgung Min {sun_min}% < Min Position {min_pos}% — Immer-aktiver Boden dominiert; Sonnenverfolgungsboden wird auf {min_pos}% erhöht.",
     "mode2_min_position": "⚠️ Neigung MODE2 + Min Position {min_pos}% — im MODE2 ist der offene (horizontale) Lamellenwinkel 50%, also jede Min Position ≥ 50 kollabiert jede Klimamodus/Blendungszone-Entscheidung zum Boden und die Beschattung stoppt, Wärme zu blockieren.",
     "somfy_my_unset": "⚠️ Somfy My-Preset ist für ein oder mehrere Ziele aktiviert, aber My Preset Value ist nicht gesetzt — fällt auf konfiguriertes % zurück.",
     "proxy_no_min": "⚠️ Proxy-Beschattung ist aktiviert, aber kein benutzerdefinierter Positionsslot hat Als Minimum verwenden aktiviert — die verwaltete Beschattung wird nicht begrenzt.",
-    "custom_and_no_sensors": "⚠️ Benutzerdefiniert #{slot}: Kombinationsmodus UND ist gesetzt, aber keine Auslösesensoren konfiguriert — das Template allein aktiviert den Slot.",
+    "custom_and_no_sensors": "⚠️ {label}: Kombinationsmodus UND ist gesetzt, aber keine Auslösesensoren konfiguriert — das Template allein aktiviert den Slot.",
     "group_empty": "⚠️ Diese Gruppe hat keine Mitglieder – sie wird nichts steuern.",
     "forecast_source_no_weather_entity": "⚠️ Außentemperaturquelle basiert auf Vorhersage, aber es ist keine Wetter-Entität konfiguriert — die Vorhersage wird stillschweigend auf den Live-Messwert zurückfallen. Konfigurieren Sie eine Wetter-Entität unter Wetter, Licht & Wolken.",
-    "travel_time_unmeasurable": "⚠️ {entities} melden einen angenommenen Zustand, daher kann ihre Laufzeit nicht gemessen werden und keine wurde eingegeben — Dashboards zeigen keine Bewegung. Geben Sie eine Zeit unter Kalibrierung → Laufzeit ein."
+    "travel_time_unmeasurable": "⚠️ {entities} melden einen angenommenen Zustand, daher kann ihre Laufzeit nicht gemessen werden und keine wurde eingegeben — Dashboards zeigen keine Bewegung. Geben Sie eine Zeit unter Kalibrierung → Laufzeit ein.",
+    "custom_tilt_only_bounds_discarded": "⚠️ {label}: Lamelle auf {slat}% fixiert — die konfigurierten Neigungsgrenzen werden für diesen Slot ignoriert.",
+    "custom_tilt_only_no_effect": "⚠️ {label}: Nur Neigung ist aktiviert, ohne Lamellenwinkel und ohne Neigungsgrenzen — dieser Slot hat keine Auswirkung.",
+    "custom_outside_window_no_bounds": "⚠️ {label}: Grenzen außerhalb des Zeitfensters aktiv halten ist aktiviert, aber dieser Slot konfiguriert kein Minimum und kein Maximum — die Einstellung hat keine Auswirkung. Nur Min-/Max-Ansprüche bleiben dort aktiv; eine exakte Position nie.",
+    "custom_outside_window_redundant": "⚠️ {label}: Grenzen außerhalb des Zeitfensters aktiv halten ist aktiviert, aber Priorität 100 wirkt bereits außerhalb des Zeitfensters (und an der automatischen Steuerung sowie den Delta-Gattern vorbei) — die Einstellung ändert hier nichts.",
+    "custom_scope_to_window_no_fixed_claim": "⚠️ {label}: Nur innerhalb des Zeitfensters anwenden ist aktiviert, aber dieser Slot benennt keine exakte Position und verwendet nicht Meine Position — die Einstellung hat keine Auswirkung. Sie begrenzt nur den Anspruch auf die exakte Position; ob eine Min-/Max-Grenze das Zeitfenster übersteht, entscheidet stattdessen Grenzen außerhalb des Zeitfensters aktiv halten.",
+    "custom_scope_to_window_safety_ignored": "⚠️ {label}: Nur innerhalb des Zeitfensters anwenden ist aktiviert, aber Priorität 100 ist Sicherheit — außerhalb des Zeitfensters zu wirken ist das, was diese Priorität bedeutet, daher wird die Einstellung hier ignoriert.",
+    "custom_scope_to_window_needs_return": "⚠️ {label}: „Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird“ ist deaktiviert — der Slot tritt zur Endzeit zurück, aber nichts positioniert die Beschattung um, sodass sie dort bleibt, wo der Slot sie gelassen hat. Aktivieren Sie diesen Schalter.",
+    "weather_window_scoped": "⚠️ Die Wettersicherung wirkt nur innerhalb des Zeitfensters — außerhalb folgt die Beschattung stattdessen der Fensterende-/Sonnenuntergangs-Position, und das Wetter schützt sie nachts nicht.",
+    "weather_tilt_min_mode": "⚠️ Eine Wetter-Übersteuerungsneigung ist gesetzt, aber der Minimale-Positionsmodus ist aktiv — das Wetter setzt in diesem Modus nur eine Mindestposition und stellt die Lamellen nie ein, daher wird die Neigung ignoriert."
   },
   "motion": {
     "action_hold": "Behänge halten aktuelle Position (zurück zum Standard, wenn Sonne den Sonnen-Akzeptanzwinkel verlässt)",
@@ -105,6 +117,7 @@
     "coverage": "Bewölkung > {thresh}%",
     "coverage_no_thresh": "Bewölkung ({entity})",
     "weather_in": "Wetter nicht in {{{states}}}",
+    "weather_fallback": " (greift zurück auf {weather})",
     "when": " wenn {parts}",
     "fallback_cloudy": "bewölkte Position {pos}%",
     "fallback_default": "Standard ({default_pos}%)",
@@ -228,7 +241,7 @@
     "label_plain": "{pct}%"
   },
   "cover_types": {
-    "blind": "Vertikale Jalousie",
+    "blind": "Vertikales Rollo",
     "awning": "Horizontale Markise",
     "tilt": "Jalousie (nur Neigung)",
     "oscillating_awning": "Fallarmmarkise",
@@ -259,7 +272,8 @@
       "spacing": "Abstand {v}cm",
       "mode": "Modus: {v}",
       "angle_0": "0%-Winkel {v}°",
-      "angle_100": "100%-Winkel {v}°"
+      "angle_100": "100%-Winkel {v}°",
+      "horizontal_percent": "horizontal bei {v}%"
     },
     "oscillating": {
       "arm": "{v}m Arm",
@@ -278,6 +292,7 @@
       "backrotate_lag": "Rück-Rotationsverzögerung {lag}s",
       "drift_reset": "Drift-Reset alle {threshold}% akkumulierte Neigung (über {direction})",
       "drift_reset_scope_solar": "nur Sonnenstands-Befehle",
+      "tilt_only_scope_solar": "nur Sonnenverfolgung gewinnt",
       "skip_tilt_suppress": "Neigung ab {skip_above}% unterdrücken (kein neutrales Senden)",
       "tilt_safety_margin": "neigungssicherheitsmarge {pct}%",
       "tilt_transform": "proportionale Neigungsumsetzung in Min-Max-Band"
@@ -330,5 +345,8 @@
   "axes": {
     "position": "Position",
     "tilt": "Neigung"
+  },
+  "movement": {
+    "queue": "🚦 Befehle serialisiert auf Warteschlange \"{queue}\" ({gap}s Abstand)"
   }
 }

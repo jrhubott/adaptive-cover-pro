@@ -54,6 +54,11 @@ from ..const import (
     CONF_SUN_TRACKING_GATE_TEMPLATE,
     CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
     DEFAULT_CONDITION_GATE_GRACE_SECONDS,
+    CONF_INTERP,
+    CONF_INTERP_END,
+    CONF_INTERP_LIST,
+    CONF_INTERP_LIST_NEW,
+    CONF_INTERP_START,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
@@ -92,8 +97,10 @@ from ..const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
+    CONF_WEATHER_OUTSIDE_WINDOW,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_OVERRIDE_TILT,
     CONF_WEATHER_STATE,
     CONF_TRACKING_SEASONS,
     CONF_WINTER_CLOSE_INSULATION,
@@ -113,8 +120,10 @@ from ..const import (
     DEFAULT_MOTION_TIMEOUT_MODE,
     DEFAULT_OUTSIDE_TEMP_SOURCE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
+    DEFAULT_WEATHER_OUTSIDE_WINDOW,
 )
 from ..cover_types.base import axis_inverted
+from ..engine.climate_crossings import resolve_extreme_heat_active
 from ..helpers import (
     _read_current_effective_default,
     custom_position_slot_configured,
@@ -124,6 +133,7 @@ from ..helpers import (
 )
 from ..managers.common.graceful_source import GracefulSource, SourceResolution
 from ..managers.common.condition_gate import ConditionGate
+from ..position_utils import InterpolationCurve
 from ..templates import combine_with_mode, is_template_string, render_condition_or_none
 from .types import (
     ClimateOptions,
@@ -131,6 +141,7 @@ from .types import (
     CustomPositionSensorState,
     GroupIntent,
     PipelineSnapshot,
+    has_fixed_tilt,
 )
 
 if TYPE_CHECKING:
@@ -608,12 +619,26 @@ class PipelineSnapshotBuilder:
             tilt_only = bool(
                 options.get(slot_keys["tilt_only"], DEFAULT_CUSTOM_POSITION_TILT_ONLY)
             )
+            # Issue #943 item B. Read beside ``tilt_only`` because both are
+            # plain per-slot booleans off the same wire format, but NOT
+            # normalized with it: the flag says WHEN a surviving claim binds,
+            # never WHICH claims exist, so no mutual-exclusion pass touches it.
+            outside_window = bool(options.get(slot_keys["outside_window"], False))
+            # Issue #1318 — the inverse-polarity sibling of the key above, read
+            # the same way and normalized by nothing for the same reason: it
+            # says WHEN a FIXED claim stops binding, never WHICH claims exist.
+            # Deliberately independent of ``outside_window``: the two govern
+            # disjoint claim classes and a slot may legitimately set both.
+            scope_to_window = bool(options.get(slot_keys["scope_to_window"], False))
             # Mutual exclusion: tilt_only wins over min_mode / use_my
             # (decision Q3). A slot can fix only the slat angle OR claim
             # position as a floor / via My — not both. Normalize here, the
             # single read site, mirroring the existing use_my-over-min_mode
             # precedent. The config-summary surfaces a warning when a user
-            # configured a conflicting combination.
+            # configured a conflicting combination. Deliberately keyed on the
+            # bare flag, unlike the tilt-bound wipe below (issue #1215):
+            # tilt_only disclaims the position axis whether or not a slat
+            # angle is configured — do not gate this on ``has_fixed_tilt``.
             if tilt_only:
                 min_mode = False
                 use_my = False
@@ -625,18 +650,22 @@ class PipelineSnapshotBuilder:
             position_max = _opt_int(options, slot_keys["position_max"])
             tilt_min = _opt_int(options, slot_keys["tilt_min"])
             tilt_max = _opt_int(options, slot_keys["tilt_max"])
-            # Same mutual-exclusion pass as min_mode / use_my above: tilt_only
-            # fixes the slat angle and lets the position pipeline drive the
-            # carriage, so the slot carries no bounds on either axis. The My
-            # path is hardware-pinned — a position ceiling cannot apply to it.
-            # Normalizing the stored values here (rather than only deriving
-            # around them) keeps what diagnostics surface honest about what is
-            # actually in effect.
-            if tilt_only:
-                position_max = None
+            # Same mutual-exclusion pass as min_mode / use_my above: a REAL
+            # fixed tilt (tilt_only + a configured slat angle) wins over
+            # tilt_min/tilt_max on the same axis (issue #514), so the slot's
+            # tilt bounds are dropped only then — a tilt_only slot with no
+            # slat angle configured makes no FIXED claim, and its tilt_min /
+            # tilt_max are exactly what the slot exists to enforce (issue
+            # #1215). tilt_only, on the bare flag, always disclaims the
+            # position axis regardless of whether a slat angle is set — the
+            # My path is likewise hardware-pinned, so a position ceiling
+            # cannot apply to either. Normalizing the stored values here
+            # (rather than only deriving around them) keeps what diagnostics
+            # surface honest about what is actually in effect.
+            if has_fixed_tilt(tilt_only=tilt_only, tilt=tilt):
                 tilt_min = None
                 tilt_max = None
-            elif use_my:
+            if tilt_only or use_my:
                 position_max = None
 
             state = CustomPositionSensorState(
@@ -656,6 +685,8 @@ class PipelineSnapshotBuilder:
                 position_max=position_max,
                 tilt_min=tilt_min,
                 tilt_max=tilt_max,
+                outside_window=outside_window,
+                scope_to_window=scope_to_window,
                 is_valid=is_valid,
             )
             # Remember the last valid read so a later fully-invalid read can
@@ -724,6 +755,7 @@ class PipelineSnapshotBuilder:
         in_time_window: bool,
         current_cover_position: int | None,
         is_glare_zone_enabled: Callable[[int], bool],
+        clock_window_open: bool = True,
         cover_positions: Mapping[str, int | None] | None = None,
         cloud_suppression_active: bool = False,
         climate_temp_flags: ClimateTempFlags | None = None,
@@ -763,6 +795,14 @@ class PipelineSnapshotBuilder:
         per-entity source ``current_cover_position`` is the mean of. The
         registry judges each held cover's clamp verdict against its own entry
         (issue #1174); omitting it leaves the pre-#1174 judgment on the scalar.
+
+        ``clock_window_open`` is the user's start/end CLOCK alone —
+        ``TimeWindowManager.clock_window_open``, never the gate-folded
+        ``in_time_window`` this method also takes. The two disagree at night on
+        a gate-configured install (#656), and the axis-constraint gather filters
+        on the clock one: a slot's bounds may outlive the daytime gate freely,
+        but outliving the user's clock is an explicit per-slot opt-in. Defaults
+        True so any snapshot built without it composes exactly as before.
 
         ``cover_capabilities`` maps each bound entity_id to its
         ``CoverCapabilities``.  It drives the sun-tracking floor rollup
@@ -804,6 +844,25 @@ class PipelineSnapshotBuilder:
         )
         solar_floor_active = not all_positionable
 
+        # Already-gated, already-resolved extreme-heat condition (issue #1272):
+        # the same smoothed-or-raw fallback ClimateCoverData.is_extreme_heat
+        # uses, AND gated on climate_mode_enabled so a Climate-Mode-off install
+        # can never get a spurious cloud-suppression defer.
+        climate_options = self.build_climate_options(options)
+        climate_extreme_heat_active = bool(
+            self._toggles.switch_mode
+            and climate_readings is not None
+            and resolve_extreme_heat_active(
+                climate_readings.outside_temperature,
+                climate_options.temp_extreme_heat,
+                (
+                    climate_temp_flags.extreme_heat
+                    if climate_temp_flags is not None
+                    else None
+                ),
+            )
+        )
+
         return PipelineSnapshot(
             cover=cover_data,
             config=cover_data.config,
@@ -816,13 +875,37 @@ class PipelineSnapshotBuilder:
             # never accessible to pipeline handler logic.
             climate_readings=climate_readings,
             climate_mode_enabled=self._toggles.switch_mode,
-            climate_options=self.build_climate_options(options),
+            climate_options=climate_options,
+            climate_extreme_heat_active=climate_extreme_heat_active,
             manual_override_active=manual_override_active,
             motion_timeout_active=motion_timeout_active,
             weather_override_active=weather_override_active,
             weather_override_position=options.get(CONF_WEATHER_OVERRIDE_POSITION, 0),
+            # No fallback on purpose (#1297): an absent key must arrive as None
+            # so the handler claims no tilt. A default here would start moving
+            # the slats of every venetian that upgraded without opting in.
+            #
+            # Gated on the same policy ClassVar the config flow and the config
+            # summary already use, because a *stored* key outlives the UI that
+            # offered it: ``acp.set_weather_safety`` writes it with no
+            # cover-type gate, and a venetian → day/night switch deliberately
+            # deletes nothing (#1132). Read ungated, a day/night shade holding
+            # a stray value would be driven to that fabric blend on every
+            # weather retraction — the axis its policy says the weather
+            # override must never touch — with no field left to clear it.
+            # This is the single seam that builds every PipelineSnapshot, so
+            # gating here closes the service, type-switch, and hand-edited
+            # routes at once and leaves the handler unchanged.
+            weather_override_tilt=(
+                options.get(CONF_WEATHER_OVERRIDE_TILT)
+                if self._policy.weather_override_includes_tilt
+                else None
+            ),
             weather_override_min_mode=bool(
                 options.get(CONF_WEATHER_OVERRIDE_MIN_MODE, False)
+            ),
+            weather_outside_window=bool(
+                options.get(CONF_WEATHER_OUTSIDE_WINDOW, DEFAULT_WEATHER_OUTSIDE_WINDOW)
             ),
             weather_override_priority=resolve_handler_priority(
                 options, WeatherOverrideHandler.name
@@ -833,6 +916,7 @@ class PipelineSnapshotBuilder:
             glare_zones=glare_zones_cfg,
             active_zone_names=frozenset(active_zone_names),
             in_time_window=in_time_window,
+            clock_window_open=clock_window_open,
             motion_control_enabled=self._toggles.motion_control,
             custom_position_sensors=self.read_custom_position_sensors(options),
             my_position_value=options.get(CONF_MY_POSITION_VALUE),
@@ -845,6 +929,21 @@ class PipelineSnapshotBuilder:
             current_cover_position=current_cover_position,
             cover_positions=cover_positions,
             position_axis_inverted=axis_inverted(self._policy.axes[0], options),
+            # The calibration curve, carried as data so the pure registry can
+            # un-map a held cover's raw read before judging it against a
+            # logical bound (#1230). Gated on the master enable exactly as
+            # ``coordinator._to_cover_frame`` gates the forward map, so a stray
+            # start/end left behind by a disabled curve arrives as ``None``.
+            interp_curve=(
+                InterpolationCurve(
+                    start_value=options.get(CONF_INTERP_START),
+                    end_value=options.get(CONF_INTERP_END),
+                    normal_list=options.get(CONF_INTERP_LIST),
+                    new_list=options.get(CONF_INTERP_LIST_NEW),
+                )
+                if bool(options.get(CONF_INTERP))
+                else None
+            ),
             policy=self._policy,
             group_intent=group_intent,
             minimize_movements=bool(

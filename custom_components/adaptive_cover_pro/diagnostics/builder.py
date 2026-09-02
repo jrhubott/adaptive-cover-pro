@@ -15,6 +15,11 @@ from typing import Any
 
 from ..const import ControlStatus
 from ..const import (
+    CONF_IRRADIANCE_ENTITY,
+    CONF_IRRADIANCE_PLANE,
+    DEFAULT_IRRADIANCE_PLANE,
+    DEFAULT_SOLAR_G_GLAZING,
+    VERTICAL_GLASS_PITCH_DEG,
     ClimateStrategy,
     ControlMethod,
     FORECAST_STEP_MINUTES,
@@ -29,6 +34,27 @@ _SENSOR_STATE_UNAVAILABLE = "unavailable"
 _SENSOR_STATE_AVAILABLE = "available"
 # HA state strings that count as "no real value" for a configured entity.
 _UNAVAILABLE_HA_STATES = ("unavailable", "unknown")
+
+# Display precision for the solar-transmittance block's 0-1 ratios (#1236).
+# Matches ``_round_trace_value``'s default so the two solar surfaces agree.
+_SOLAR_G_DECIMALS = 3
+
+# Display precision per solar-gain field (#1237). Energy-flux quantities get
+# one decimal — the sensor shows whole watts, and a tenth is already below what
+# a ±30 % estimate can justify; everything else keeps the shared ratio
+# precision. Keys absent here fall through to ``_SOLAR_G_DECIMALS``.
+_GAIN_DECIMALS = {
+    "gain_w": 1,
+    "poa_w_m2": 1,
+    "dni_w_m2": 1,
+    "dhi_w_m2": 1,
+    "ghi_w_m2": 1,
+    "plane_tilt_deg": 1,
+}
+
+# ``position_source`` on the solar-gain block: the pipeline's TARGET position,
+# not a live cover read.
+_GAIN_POSITION_SOURCE_TARGET = "target"
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +108,16 @@ class DiagnosticContext:
     automatic_control: bool
     # True while a travel-time calibration run holds the covers.
     calibrating: bool = False
+    # Whether the user's start/end CLOCK window is open, ignoring the daytime
+    # gate — mirrors ``TimeWindowManager.clock_window_open`` /
+    # ``coordinator.clock_window_open``, NOT ``check_adaptive_time``
+    # (``is_active``, which also folds in the gate). The two deliberately
+    # diverge at night on a gate-configured install (#656): a dark gate makes
+    # ``check_adaptive_time`` False even while the clock window is still open,
+    # and the real dispatch guard reads this field, not that one (issue
+    # #1310). Defaults True so contexts built without it (tests, older
+    # callers) are unaffected.
+    clock_window_open: bool = True
     last_cover_action: dict = field(default_factory=dict)
     last_skipped_action: dict = field(default_factory=dict)
     min_change: int = 1
@@ -101,6 +137,36 @@ class DiagnosticContext:
     # Solar-tracking-only forecast for the rest of today (issue #437 cache).
     # Optional — None when the background recompute hasn't produced one yet.
     position_forecast: Any = None  # Forecast | None
+
+    # Estimated solar transmittance of the glazing + cover assembly at this
+    # cycle's LOGICAL target position (issue #1236). Computed once by
+    # ``coordinator.solar_transmittance`` at the single construction site;
+    # ``None`` when the feature is not configured, which is what keeps the
+    # payload byte-identical for every existing install. Defaulted so contexts
+    # built without it (tests, older callers) are unaffected.
+    solar_transmittance: Any = None  # SolarTransmittance | None
+
+    # Estimated-solar-gain inputs (issue #1237). All four are gathered once per
+    # cycle by the coordinator — the raw irradiance reading in W/m², the HA-frame
+    # day of year for the orbital eccentricity term, and the glazed area with
+    # its provenance ("configured" | "derived" | "unknown"). Defaulted so
+    # contexts built without them (tests, older callers) stay unaffected, and so
+    # the block is simply absent for the installs that cannot produce it.
+    irradiance_w_m2: float | None = None
+    day_of_year: int = 1
+    glass_area_m2: float | None = None
+    glass_area_source: str = "unknown"
+
+    # Whether the irradiance entity's unit supports the gain estimate (issue
+    # #1280), and the raw unit observed. HA's ``irradiance`` device class also
+    # permits BTU/(h·ft²) — the unit HA presents on the imperial unit system —
+    # and admitting that number as W/m² would silently under-report gain by
+    # roughly a factor of 3. Defaults to ``True`` / ``None`` so every context
+    # built without these (tests, older callers) computes gain exactly as
+    # before; the coordinator is the only production caller that ever sets
+    # ``irradiance_unit_ok=False``.
+    irradiance_unit_ok: bool = True
+    irradiance_unit: str | None = None
 
     # Configuration snapshot
     config_options: dict = field(default_factory=dict)
@@ -129,6 +195,10 @@ class DiagnosticContext:
         None  # deprecated alias; use event_timeline
     )
     cover_command_state: dict[str, dict] | None = None
+    # The shared dispatch queue this entry belongs to, or None when unqueued
+    # (issue #1189). The live object, not a snapshot: its depth and gap are read
+    # at build time so a downloaded snapshot shows the queue as it actually was.
+    command_queue: Any = None
     debug_config: dict | None = None
 
     # Meta — integration identity and coordinator health
@@ -239,6 +309,8 @@ class DiagnosticsBuilder:
         diagnostics: dict = {}
         diagnostics.update(self._build_meta(ctx))
         diagnostics.update(self._build_solar(ctx))
+        diagnostics.update(self._build_solar_transmittance(ctx))
+        diagnostics.update(self._build_solar_gain(ctx))
         diagnostics.update(self._build_position(ctx))
         diagnostics.update(self._build_decision_trace(ctx))
         diagnostics.update(self._build_handler_priorities(ctx))
@@ -279,6 +351,148 @@ class DiagnosticsBuilder:
             diagnostics["gamma"] = round(ctx.cover.gamma, 1)
 
         return diagnostics
+
+    @staticmethod
+    def _build_solar_transmittance(ctx: DiagnosticContext) -> dict:
+        """Estimated solar transmittance of the window assembly (issue #1236).
+
+        A TOP-LEVEL block rather than six keys inside ``calculation_details``:
+        that dict is #682's geometric trace and doubles as the
+        ``solar_calculation`` sensor's attribute payload, so leaving it
+        untouched whether this feature is on or off is a stronger guarantee
+        than adding conditional keys to it. A stable dotted path also gives the
+        triage rule something to read.
+
+        Returns ``{}`` — no key at all — when the feature is unconfigured, so
+        an existing install's diagnostics are byte-identical to before.
+
+        This is the presentation boundary: the three-decimal rounding happens
+        HERE and nowhere upstream. ``position_pct`` is the LOGICAL pipeline
+        target the fraction was derived from, so the block is self-describing.
+        """
+        result = ctx.solar_transmittance
+        if result is None:
+            return {}
+
+        from ..config_types import SolarPropertiesConfig
+
+        # Read the selects through the same single reader the engine input came
+        # from rather than re-spelling the option keys and their defaults here.
+        cfg = SolarPropertiesConfig.from_options(ctx.config_options or {})
+        return {
+            "solar_transmittance": {
+                "effective_g": round(result.effective_g, _SOLAR_G_DECIMALS),
+                "g_unshaded": round(result.g_unshaded, _SOLAR_G_DECIMALS),
+                "g_shaded": round(result.g_shaded, _SOLAR_G_DECIMALS),
+                "shaded_fraction": (
+                    round(result.shaded_fraction, _SOLAR_G_DECIMALS)
+                    if result.shaded_fraction is not None
+                    else None
+                ),
+                "position_pct": (
+                    ctx.pipeline_result.position
+                    if ctx.pipeline_result is not None
+                    else None
+                ),
+                "cover_side": cfg.cover_side,
+                "cover_shade": cfg.cover_shade,
+                "source": result.source,
+                "is_estimate": result.is_estimate,
+            }
+        }
+
+    @staticmethod
+    def _build_solar_gain(ctx: DiagnosticContext) -> dict:
+        """Estimated instantaneous solar gain through the window (issue #1237).
+
+        Present only when an irradiance entity is configured — there is no
+        credible watt figure without a measured reading, and #1237 deliberately
+        does not ship a clear-sky fallback. Absent means absent: an install
+        without the sensor sees no new key at all.
+
+        ``effective_g`` is read from the SAME per-cycle ``ctx.solar_transmittance``
+        the #1236 block presents, never re-derived: one computation, two
+        presentations, no chance of the two blocks disagreeing. When that
+        feature is off, the bare-glazing default stands in under the explicit
+        ``default`` provenance label so the number is never silently
+        position-independent.
+
+        This is the presentation boundary — the ONLY place these figures are
+        rounded (#140). Watt / W-m⁻² quantities to 0.1, dimensionless ratios to
+        0.001, matching what the sensor's display precision can actually show.
+        """
+        options = ctx.config_options or {}
+        if not options.get(CONF_IRRADIANCE_ENTITY):
+            return {}
+
+        from ..engine.solar_gain import (
+            EFFECTIVE_G_SOURCE_DEFAULT,
+            estimate_solar_gain,
+        )
+
+        transmittance = ctx.solar_transmittance
+        effective_g = (
+            transmittance.effective_g
+            if transmittance is not None
+            else DEFAULT_SOLAR_G_GLAZING
+        )
+        effective_g_source = (
+            transmittance.source
+            if transmittance is not None
+            else EFFECTIVE_G_SOURCE_DEFAULT
+        )
+
+        # ``cos_aoi`` is the cover engine's own polymorphic answer for its own
+        # plane; before the first calculation cycle there is no engine, so the
+        # beam term drops out and only the sky/ground terms remain.
+        cos_aoi = getattr(ctx.cover, "cos_aoi", None)
+        plane_tilt_deg = getattr(ctx.cover, "plane_tilt_deg", VERTICAL_GLASS_PITCH_DEG)
+        _, sun_elevation = ctx.pos_sun
+
+        estimate = estimate_solar_gain(
+            ghi_w_m2=ctx.irradiance_w_m2,
+            irradiance_unit_ok=ctx.irradiance_unit_ok,
+            irradiance_plane=options.get(
+                CONF_IRRADIANCE_PLANE, DEFAULT_IRRADIANCE_PLANE
+            ),
+            sol_elev_deg=sun_elevation,
+            cos_aoi=cos_aoi if cos_aoi is not None else 0.0,
+            plane_tilt_deg=plane_tilt_deg,
+            day_of_year=ctx.day_of_year,
+            area_m2=ctx.glass_area_m2,
+            area_source=ctx.glass_area_source,
+            effective_g=effective_g,
+            effective_g_source=effective_g_source,
+        )
+
+        block = {
+            key: DiagnosticsBuilder._round_gain_value(key, value)
+            for key, value in asdict(estimate).items()
+        }
+        block["position_pct"] = (
+            ctx.pipeline_result.position if ctx.pipeline_result is not None else None
+        )
+        # The figure describes where ACP WANTS the cover, not where it is: the
+        # two diverge mid-travel and while automatic control is off. Labelled so
+        # the choice can change later without breaking a consumer.
+        block["position_source"] = _GAIN_POSITION_SOURCE_TARGET
+        block["shaded_fraction"] = (
+            round(transmittance.shaded_fraction, _SOLAR_G_DECIMALS)
+            if transmittance is not None and transmittance.shaded_fraction is not None
+            else None
+        )
+        # The raw unit the irradiance entity reports (issue #1280) — surfaced
+        # even when it IS W/m² so a user auditing the block sees the full
+        # picture, not just the rejection case.
+        block["irradiance_unit"] = ctx.irradiance_unit
+        return {"solar_gain": block}
+
+    @staticmethod
+    def _round_gain_value(key: str, value: Any) -> Any:
+        """Round one solar-gain field for display, leaving labels untouched."""
+        if not isinstance(value, float):
+            return value
+        return round(value, _GAIN_DECIMALS.get(key, _SOLAR_G_DECIMALS))
 
     @staticmethod
     def _get_control_state_reason(ctx: DiagnosticContext) -> str:
@@ -344,21 +558,60 @@ class DiagnosticsBuilder:
         if result is None:
             return render(Reason(ReasonCode.BUILDER_UNKNOWN), labels)
 
-        # Outside time window — pipeline ran but commands are gated
-        if not ctx.check_adaptive_time:
-            pos = result.default_position
+        # Outside time window — pipeline ran but commands are gated.
+        #
+        # Reads ``clock_window_open`` (start/end clock only), NOT
+        # ``check_adaptive_time`` (which also folds in the daytime gate) — a
+        # gate-configured install can read dark while the user's clock window
+        # is still open (#656), and the real dispatch guard
+        # (``coordinator.clock_window_open``) is not blocking anything on that
+        # cycle either. Keying this off the gate-inclusive flag mis-reported
+        # the winner's own reason as a paused default/sunset position (issue
+        # #1310).
+        #
+        # Only when the winner has NO licence to move a cover out here. A
+        # safety result (weather, a priority-100 slot) or an admitted #943-B
+        # constraint IS commanding, and reporting the default/sunset position
+        # plus "commands paused" over a dispatched command is simply false
+        # (issue #1308). Those fall through to the normal render below, which
+        # names the real winner and its real position.
+        #
+        # The note is composed once and then either stands alone or trails the
+        # winner's chain — see the DEFAULT carve-out below.
+        window_note: str | None = None
+        if not ctx.clock_window_open and not result.acts_outside_clock_window:
             pos_label = Reason(
                 ReasonCode.FRAGMENT_SUNSET_POSITION
                 if result.is_sunset_active
                 else ReasonCode.FRAGMENT_DEFAULT_POSITION
             )
-            return render(
+            window_note = render(
                 Reason(
                     ReasonCode.BUILDER_OUTSIDE_WINDOW,
-                    {"pos_label": pos_label, "pos": pos},
+                    {"pos_label": pos_label, "pos": result.default_position},
                 ),
                 labels,
             )
+            # The note IS the DEFAULT winner's account — "the default/sunset
+            # position, and nothing was sent" is the whole of what
+            # ``DefaultHandler`` resolved — so out here it renders alone, as it
+            # always has (the EN/DE byte-identical locks in
+            # ``tests/test_diagnostics/test_reason_localization.py`` pin that).
+            #
+            # No other winner is redundant with it. MANUAL, MOTION,
+            # CUSTOM_POSITION (a slot below safety priority), GROUP_LOCK and
+            # GROUP_SCENE are the ones that can still win on a closed clock,
+            # and each carries a reason the note cannot express — a held
+            # position, an occupancy timeout, a slot number. Returning the note
+            # in their place discarded it, which put the explanation at odds
+            # with ``control_status``: ``_METHOD_TO_STATUS`` answers
+            # MANUAL_OVERRIDE / MOTION_TIMEOUT for the same cycle (deliberately
+            # — ``sensor._control_status_attrs`` and triage rule 23 key on that
+            # answer), so the two fields told different stories. They now
+            # compose: the winner leads, the note trails, and both truths — who
+            # decided, and that nothing reached the cover — survive.
+            if result.control_method is ControlMethod.DEFAULT:
+                return window_note
 
         # Base explanation is the pipeline reason (already human-readable). Prefer
         # the structured payload so the base localizes; fall back to the legacy
@@ -417,6 +670,11 @@ class DiagnosticsBuilder:
                 render(Reason(ReasonCode.BUILDER_INVERSED, {"final": final}), labels)
             )
 
+        # Last word, after the value transforms: the winner and its post-processing
+        # describe the number, this describes what happened to it — nothing.
+        if window_note is not None:
+            parts.append(window_note)
+
         return " → ".join(parts)
 
     @staticmethod
@@ -436,7 +694,15 @@ class DiagnosticsBuilder:
             if status != ControlStatus.ACTIVE:
                 return status
 
-        if not ctx.check_adaptive_time:
+        # Reads ``clock_window_open`` (start/end clock only), NOT
+        # ``check_adaptive_time`` (which also folds in the daytime gate) —
+        # same rationale as ``_build_position_explanation`` above (#1310). A
+        # winner licensed to act outside the clock (``acts_outside_clock_window``
+        # — a safety result or an admitted #943-B constraint) is also excused
+        # here, mirroring the explanation's early-return guard exactly, so the
+        # two fields cannot disagree on the licensed-winner-outside-clock case.
+        licensed_outside_clock = result is not None and result.acts_outside_clock_window
+        if not ctx.clock_window_open and not licensed_outside_clock:
             return ControlStatus.OUTSIDE_TIME_WINDOW
 
         if ctx.cover and not ctx.cover.valid:
@@ -617,6 +883,23 @@ class DiagnosticsBuilder:
                 "before_end_time": ctx.before_end_time,
                 "start_time": ctx.start_time,
                 "end_time": ctx.end_time,
+                # Whether the user's start/end CLOCK window is open, ignoring
+                # the daytime gate — the field the explanation and (#1310
+                # audit finding #1) control_status both key on. Published
+                # alongside ``check_adaptive_time`` so a triager can see why
+                # the two disagree on a gate-dark cycle (#1310 finding #2).
+                "clock_window_open": ctx.clock_window_open,
+                # Issue #943 item B — whether an opted-in slot's min/max
+                # constraint was ADMITTED to act outside the clock window this
+                # cycle. The single most useful field for triaging "my
+                # ventilation clamp did / did not hold at 3 a.m.": False with a
+                # closed clock means the pipeline saw nothing to clamp (or the
+                # slot never opted in), not that dispatch was lost downstream.
+                "outside_window_constraint_active": (
+                    result.outside_window_constraint_active
+                    if result is not None
+                    else False
+                ),
             },
             "default_position": {
                 # The effective default used this cycle by all pipeline handlers.
@@ -733,10 +1016,37 @@ class DiagnosticsBuilder:
                 "lux_below_threshold": climate_data.lux_below_threshold,
                 "irradiance_below_threshold": climate_data.irradiance_below_threshold,
                 "cloud_coverage_above_threshold": climate_data.cloud_coverage_above_threshold,
+                # The RESOLVED low-light answer plus its provenance (issue
+                # #1238). The three raw inputs above no longer determine it on
+                # their own — with cloud suppression on, the smoothed
+                # cloud-suppression bool (hysteresis + hold-time) wins — so
+                # without these two keys a support trace cannot tell a held
+                # low-light from a raw one.
+                "is_low_light": climate_data.is_low_light,
+                "low_light_smoothed": climate_data.low_light_active is not None,
                 "tracking_seasons": sorted(climate_data.tracking_seasons),
             }
 
         return diagnostics
+
+    @staticmethod
+    def build_command_queue_block(queue) -> dict | None:
+        """Describe the dispatch queue this entry belongs to, or ``None``.
+
+        ``gap_source`` is the field that actually answers support questions: a
+        queue named by covers but owned by no Command Queue entry reports
+        ``default``, which is the difference between "your 12-second gap is not
+        being applied" and "you never created the entry that holds it".
+        """
+        if queue is None:
+            return None
+        return {
+            "name": queue.name,
+            "gap_seconds": queue.gap_seconds,
+            "gap_source": queue.gap_source,
+            "attached_members": queue.attached,
+            "current_depth": queue.depth,
+        }
 
     @staticmethod
     def _build_last_action(ctx: DiagnosticContext) -> dict:
@@ -788,6 +1098,13 @@ class DiagnosticsBuilder:
 
         # Always emit cover_commands (empty dict when nothing active)
         diagnostics["cover_commands"] = ctx.cover_command_state or {}
+
+        # Named dispatch queue (issue #1189). Omitted entirely for the
+        # overwhelmingly common unqueued cover, so an existing snapshot's shape
+        # is unchanged.
+        queue_block = DiagnosticsBuilder.build_command_queue_block(ctx.command_queue)
+        if queue_block is not None:
+            diagnostics["command_queue"] = queue_block
 
         # Issue #33 Phase 5 cross-axis publish-lag suppression counts.
         # Surfaced only when non-empty so the field stays out of the way

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
-from collections.abc import Callable
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -87,14 +86,30 @@ def _make_sequencer_suppression(
     stamp_age_seconds: float = 0.0,
     settled_now: bool = False,
     settled_age_seconds: float = 0.0,
-) -> Callable[[str, float], bool]:
-    """Build a real ``DualAxisSequencer`` and return its bound delta-cap gate.
+) -> DualAxisSequencer:
+    """Build a real ``DualAxisSequencer`` wired for the tilt-suppression gate.
 
     Closes the integration gap the lambda-stub helpers leave open (issue #33
     follow-on): wires ``stamp_position_command`` and the ``_get_state``
-    callback together so the cap behaves exactly as ``VenetianPolicy.is_in_tilt_suppression``
-    does in production. ``state`` should be ``"opening"``/``"closing"`` to
-    model an in-transit cycle, or ``"stopped"`` to model a settled cycle.
+    callback together so ``seq.is_in_suppression_with_cap`` behaves exactly as
+    ``VenetianPolicy.is_in_tilt_suppression``'s position-anchored term does in
+    production. ``state`` should be ``"opening"``/``"closing"`` to model an
+    in-transit cycle, or ``"stopped"`` to model a settled cycle.
+
+    Returns the sequencer itself (not a bound method) so callers can wire
+    BOTH halves of production's OR onto ``SecondaryAxisCheck`` — the shared
+    ``suppression=seq.is_in_suppression_with_cap`` term AND the tilt-only
+    ``single_axis_suppression=seq.is_in_tilt_publish_lag`` term (issue #1329)
+    — the same effective terms ``VenetianPolicy.secondary_axis_check`` wires
+    in production (``suppression=self.primary_axis_suppression``,
+    ``single_axis_suppression=self.is_in_tilt_suppression``), not the
+    identical callables: by the point ``evaluate`` reaches
+    ``single_axis_suppression``, ``primary_axis_suppression`` has already run
+    once via ``suppression=`` and returned False, so ``is_in_tilt_suppression``'s
+    only live disjunct there is ``is_in_tilt_publish_lag`` — the callable this
+    helper wires directly. Without the second half these tests exercise only
+    the position-anchored term and silently stop reaching
+    ``is_in_tilt_publish_lag`` at all.
 
     ``stamp_age_seconds`` backdates the suppression stamp so callers can land
     outside the post-settle cap-grace tail while still inside the overall
@@ -125,7 +140,7 @@ def _make_sequencer_suppression(
         seq._stamp_settled(entity_id)
         if settled_age_seconds > 0:
             seq._settled_at[entity_id] -= dt.timedelta(seconds=settled_age_seconds)
-    return seq.is_in_suppression_with_cap
+    return seq
 
 
 def test_tilt_drift_inside_suppression_window_is_ignored() -> None:
@@ -293,7 +308,7 @@ def test_tilt_drift_during_in_transit_close_is_ignored_regardless_of_delta() -> 
     entity_id = "cover.venetian_kitchen_close"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(entity_id=entity_id, state="closing")
+    seq = _make_sequencer_suppression(entity_id=entity_id, state="closing")
 
     mgr.handle_state_change(
         states_data=_make_event(entity_id, position=86, tilt=0),
@@ -306,7 +321,12 @@ def test_tilt_drift_during_in_transit_close_is_ignored_regardless_of_delta() -> 
             expected=100,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            suppression=seq.is_in_suppression_with_cap,
+            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+            # this term is always False — it does not exercise the #1329
+            # tilt-only window; that bound coverage lives in
+            # tests/test_issue_1329_tilt_only_publish_lag.py.
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
@@ -325,7 +345,7 @@ def test_tilt_drift_during_in_transit_open_is_ignored_regardless_of_delta() -> N
     entity_id = "cover.venetian_office_open"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(entity_id=entity_id, state="opening")
+    seq = _make_sequencer_suppression(entity_id=entity_id, state="opening")
 
     mgr.handle_state_change(
         states_data=_make_event(entity_id, position=17, tilt=100),
@@ -338,7 +358,12 @@ def test_tilt_drift_during_in_transit_open_is_ignored_regardless_of_delta() -> N
             expected=60,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            suppression=seq.is_in_suppression_with_cap,
+            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+            # this term is always False — it does not exercise the #1329
+            # tilt-only window; that bound coverage lives in
+            # tests/test_issue_1329_tilt_only_publish_lag.py.
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
@@ -356,7 +381,7 @@ def test_tilt_drift_inside_post_settle_grace_is_ignored() -> None:
     entity_id = "cover.venetian_post_settle_grace"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(entity_id=entity_id, state="stopped")
+    seq = _make_sequencer_suppression(entity_id=entity_id, state="stopped")
 
     mgr.handle_state_change(
         states_data=_make_event(entity_id, position=50, tilt=0),
@@ -369,7 +394,12 @@ def test_tilt_drift_inside_post_settle_grace_is_ignored() -> None:
             expected=80,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            suppression=seq.is_in_suppression_with_cap,
+            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+            # this term is always False — it does not exercise the #1329
+            # tilt-only window; that bound coverage lives in
+            # tests/test_issue_1329_tilt_only_publish_lag.py.
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
@@ -396,7 +426,7 @@ def test_tilt_drift_after_settle_grace_with_large_delta_trips_override() -> None
     entity_id = "cover.venetian_post_settle_user_move"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(
+    seq = _make_sequencer_suppression(
         entity_id=entity_id,
         state="stopped",
         stamp_age_seconds=VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS + 5.0,
@@ -415,7 +445,14 @@ def test_tilt_drift_after_settle_grace_with_large_delta_trips_override() -> None
             expected=80,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            # Issue #1329 (MUST-FIX 2): wired so this guard genuinely reaches
+            # ``is_in_tilt_publish_lag`` — see the module docstring's note on
+            # ``_make_sequencer_suppression``. ``_tilt_sent_at`` is never
+            # populated here (no ``update_tilt_only`` call), so this term is
+            # always False and the assertion below is unchanged: the delta=95
+            # user-twist must still trip on the position-anchored cap alone.
+            suppression=seq.is_in_suppression_with_cap,
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
@@ -462,7 +499,7 @@ def test_late_publish_burst_after_real_settle_does_not_trip_override() -> None:
     entity_id = "cover.venetian_publish_lag"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(
+    seq = _make_sequencer_suppression(
         entity_id=entity_id,
         state="stopped",
         stamp_age_seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0,
@@ -480,7 +517,12 @@ def test_late_publish_burst_after_real_settle_does_not_trip_override() -> None:
             expected=100,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            suppression=seq.is_in_suppression_with_cap,
+            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+            # this term is always False — it does not exercise the #1329
+            # tilt-only window; that bound coverage lives in
+            # tests/test_issue_1329_tilt_only_publish_lag.py.
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
@@ -508,7 +550,7 @@ def test_real_user_twist_after_publish_lag_still_trips_override() -> None:
     entity_id = "cover.venetian_real_user_twist"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(
+    seq = _make_sequencer_suppression(
         entity_id=entity_id,
         state="stopped",
         stamp_age_seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0,
@@ -527,7 +569,14 @@ def test_real_user_twist_after_publish_lag_still_trips_override() -> None:
             expected=100,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=suppression,
+            # Issue #1329 (MUST-FIX 2): wired so this guard genuinely reaches
+            # ``is_in_tilt_publish_lag`` (see ``_make_sequencer_suppression``'s
+            # docstring). ``_tilt_sent_at`` is never populated here (no
+            # ``update_tilt_only`` call), so this term is always False — the
+            # delta=95 user-twist trips solely on the position-anchored cap
+            # having expired, unchanged from before this wiring.
+            suppression=seq.is_in_suppression_with_cap,
+            single_axis_suppression=seq.is_in_tilt_publish_lag,
         ),
     )
 
@@ -1523,4 +1572,278 @@ async def test_near_target_tilt_publish_position_axis_still_evaluated() -> None:
     assert mgr.is_cover_manual(entity_id), (
         "a near-target tilt publish must fall through so a genuine position "
         "move still trips (finding #2)"
+    )
+
+
+def _make_inverse_policy() -> VenetianPolicy:
+    """Build a VenetianPolicy over an ``inverse_tilt=True`` sequencer, grace expired.
+
+    Models a KNX/HomeKit venetian: ACP dispatches the LOGICAL tilt but the
+    actuator publishes the WIRE value (``100 - logical``). No suppression window
+    or excursion is armed, so ``evaluate`` takes the delta path — which must
+    normalise the wire publish back to logical before comparing.
+    """
+    seq = DualAxisSequencer(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=lambda _eid: None,
+        set_commanded_position=lambda *_: None,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        invert_tilt=lambda: True,
+    )
+    grace_mgr = MagicMock()
+    grace_mgr.is_in_command_grace_period = lambda _eid: False
+    policy = VenetianPolicy()
+    policy._sequencer = seq
+    policy._grace_mgr = grace_mgr
+    return policy
+
+
+def test_inverse_tilt_wire_publish_of_verified_target_is_not_manual_override() -> None:
+    """An inverse_tilt actuator publishing the WIRE tilt of the verified
+    target must NOT trip. ACP dispatched logical 96 (wire 4); the actuator
+    publishes ``current_tilt_position=4``. Pre-fix ``evaluate`` compared logical
+    96 against raw 4 → delta 92 → false ``manual_override_set``. Post-fix the
+    reported wire value is normalised back to logical (96) → delta 0.
+    """
+    entity_id = "cover.raffstore_kuche_rechts"
+    policy = _make_inverse_policy()
+    check = _secondary_check(policy, 96)  # expected = logical 96
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
+        our_state=2,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=10,
+        secondary_axis_check=check,
+    )
+
+    assert not mgr.is_cover_manual(
+        entity_id
+    ), "wire publish of the verified logical target must NOT trip manual override"
+
+
+def test_inverse_tilt_genuine_off_target_move_still_trips() -> None:
+    """The inversion fix must not mask a real move: ACP dispatched logical 96
+    (wire 4); the user twists the slats to logical 30 → the actuator publishes
+    wire 70. Normalised back to logical 30, delta |96-30|=66 ≥ threshold → trips.
+
+    This is an over-suppression guard, not a repro of the #1227 bug: the delta
+    here is large enough that it trips whether or not the wire→logical
+    normalisation runs at all (with the fix removed, delta |96-70|=26 also
+    clears the threshold). It proves the fix doesn't introduce a false
+    negative on a genuine move — it does NOT by itself prove the normalisation
+    is correct; see ``test_inverse_tilt_wire_publish_of_verified_target_is_not_manual_override``
+    for that.
+    """
+    entity_id = "cover.raffstore_kuche_rechts_user"
+    policy = _make_inverse_policy()
+    check = _secondary_check(policy, 96)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(
+            entity_id, position=2, tilt=70
+        ),  # wire 70 -> logical 30
+        our_state=2,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=10,
+        secondary_axis_check=check,
+    )
+
+    assert mgr.is_cover_manual(
+        entity_id
+    ), "a genuine off-target tilt move must still trip even with inversion normalised"
+
+
+def test_inverse_tilt_mirror_value_move_still_trips() -> None:
+    """The mirror-value false negative (TEST_GAP finding #2): a genuine user
+    move that happens to land the actuator on the WIRE value numerically equal
+    to ``expected`` must still trip — not be swallowed by a raw
+    ``new_value == self.expected`` on-target short-circuit. ACP dispatched
+    logical 96 (wire 4); the user twists the slats until the actuator publishes
+    wire 96 (logical 4) — a 92-point real move that lands exactly on the
+    un-normalised ``expected`` number by coincidence.
+    """
+    entity_id = "cover.raffstore_mirror"
+    policy = _make_inverse_policy()
+    check = _secondary_check(policy, 96)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=2, tilt=96),  # wire 96 -> logical 4
+        our_state=2,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=10,
+        secondary_axis_check=check,
+    )
+
+    assert mgr.is_cover_manual(entity_id), (
+        "a genuine move to the mirror value must trip, not be swallowed by an "
+        "un-normalised on-target short-circuit"
+    )
+
+
+def _make_identity_policy() -> VenetianPolicy:
+    """Build a VenetianPolicy over a non-inverting sequencer (``invert_tilt=False``).
+
+    Pins that the normalisation is a no-op for the identity path — the PR's
+    central safety claim (TEST_GAP finding #3).
+    """
+    seq = DualAxisSequencer(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=lambda _eid: None,
+        set_commanded_position=lambda *_: None,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        invert_tilt=lambda: False,
+    )
+    grace_mgr = MagicMock()
+    grace_mgr.is_in_command_grace_period = lambda _eid: False
+    policy = VenetianPolicy()
+    policy._sequencer = seq
+    policy._grace_mgr = grace_mgr
+    return policy
+
+
+def test_non_inverting_tilt_delta_is_unchanged() -> None:
+    """A non-inverting install's delta must stay the identity, never forced.
+
+    ACP dispatched logical 70; the actuator publishes 65 directly (no wire
+    inversion configured — ``invert_tilt=False``). This is a genuine
+    discrimination, not the coincidence the previous ``tilt=40`` fixture gave:
+    the identity path (correct — ``self.inverted`` is False) gives
+    delta |70-65|=5, under the effective threshold of 10, so it must NOT trip.
+    A ``flip_if`` regression that ignored ``self.inverted`` and always flipped
+    would instead report 35 (``100-65``), giving delta |70-35|=35 — well past
+    the threshold — and WOULD trip. Only one of those two outcomes matches
+    this assertion, so this test actually catches that regression class; the
+    old ``tilt=40`` fixture gave delta 30 under identity and delta 10 under
+    forced-flip, both ``>=`` threshold, so it passed either way and proved
+    nothing (issue #1227 review finding #2).
+    """
+    entity_id = "cover.raffstore_identity"
+    policy = _make_identity_policy()
+    check = _secondary_check(policy, 70)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=2, tilt=65),
+        our_state=2,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=10,
+        secondary_axis_check=check,
+    )
+
+    assert not mgr.is_cover_manual(entity_id), (
+        "a small tilt delta on a non-inverting install must NOT trip — it "
+        "would only trip if the identity path were incorrectly force-flipped"
+    )
+
+
+def test_inverse_tilt_normalises_the_dispatched_anchor() -> None:
+    """The PRODUCTION anchor path (real ``entity_id``, ``last_tilt_target``
+    populated) must normalise identically to the ``entity_id=None`` fallback
+    the other inverse-tilt tests exercise (TEST_GAP finding #5). Seeds
+    ``_tilt_targets`` directly — the same seeding pattern ``_drive_drift_reset``
+    uses elsewhere in this file — so ``resolve_dispatched_secondary_expected``
+    takes the ``sequencer.last_tilt_target(entity_id)`` branch real installs
+    use, rather than the ``result.tilt`` fallback. ACP dispatched logical 96
+    (wire 4); the actuator publishes the verified wire value, which must NOT
+    trip.
+    """
+    entity_id = "cover.raffstore_anchor"
+    policy = _make_inverse_policy()
+    policy.sequencer._tilt_targets[entity_id] = 96  # seed the dispatched anchor
+    # A stale/different reevaluated result.tilt proves the anchor — not the
+    # fallback — is what the check actually uses.
+    check = policy.secondary_axis_check(SimpleNamespace(tilt=20), None, entity_id)
+    assert check is not None
+    assert check.expected == 96, (
+        "expected must come from the dispatched anchor (96), not the "
+        f"reevaluated result.tilt fallback (20); got {check.expected}"
+    )
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
+        our_state=2,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=10,
+        secondary_axis_check=check,
+    )
+
+    assert not mgr.is_cover_manual(entity_id), (
+        "wire publish of the verified logical target via the production anchor "
+        "path must NOT trip manual override"
+    )
+
+
+def test_rejected_suppression_event_reports_logical_in_both_branches() -> None:
+    """PR-3: ``manual_override_rejected_tilt_suppression`` must report LOGICAL
+    ``new_position`` from BOTH branches — the value-based excursion path
+    (:meth:`SecondaryAxisCheck.evaluate`'s issue #927 predicate) and the
+    delta-based suppression path — matching every other tilt diagnostic
+    (``tilt_command_sent``/``tilt_command_verified``/``tilt_command_drift`` all
+    report the logical target/actual). Exercises ``SecondaryAxisCheck.evaluate``
+    directly with a stub predicate forced True for each branch in isolation,
+    under ``inverted=True``.
+
+    ACP dispatched logical 96 (wire 4); the actuator publishes wire 4.
+    Normalised, ``new_position`` must read 96 from EITHER branch — before this
+    fix the excursion branch reported the raw wire value (4) while the
+    suppression branch already reported logical (96).
+    """
+    new_state = SimpleNamespace(attributes={"current_tilt_position": 4})
+
+    excursion_check = SecondaryAxisCheck(
+        expected=96,
+        attribute="current_tilt_position",
+        label="tilt",
+        excursion_match=lambda _eid, _value: True,
+        inverted=True,
+    )
+    excursion_result = excursion_check.evaluate(
+        "cover.test", new_state, manual_threshold=10
+    )
+    assert excursion_result.event_name == "manual_override_rejected_tilt_suppression"
+    assert excursion_result.event_kwargs["new_position"] == 96, (
+        "excursion branch must report LOGICAL new_position, matching every "
+        f"other tilt diagnostic; got {excursion_result.event_kwargs['new_position']}"
+    )
+
+    suppression_check = SecondaryAxisCheck(
+        expected=96,
+        attribute="current_tilt_position",
+        label="tilt",
+        suppression=lambda _eid, _delta: True,
+        inverted=True,
+    )
+    suppression_result = suppression_check.evaluate(
+        "cover.test", new_state, manual_threshold=10
+    )
+    assert suppression_result.event_name == "manual_override_rejected_tilt_suppression"
+    assert suppression_result.event_kwargs["new_position"] == 96, (
+        "suppression branch must report LOGICAL new_position; got "
+        f"{suppression_result.event_kwargs['new_position']}"
     )

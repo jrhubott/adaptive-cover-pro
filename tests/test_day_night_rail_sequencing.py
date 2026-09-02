@@ -70,6 +70,7 @@ from custom_components.adaptive_cover_pro.cover_types.day_night_shade import (
     DayNightShadePolicy,
 )
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+from tests.ha_helpers import wire_entry_task_factory
 
 _BOTTOM = "cover.bottom_rail"
 _MIDDLE = "cover.middle_rail"
@@ -1389,6 +1390,8 @@ def _user_seam_coordinator(cmd_svc, policy, *, entities, monkeypatch, floors=())
     coord._build_position_context = lambda _entity, _options, **_kw: _rail_context(
         policy
     )  # noqa: ARG005
+    coord._external_interlock_tasks = {}
+    wire_entry_task_factory(coord)
     for name in (
         "_entity_target",
         "_to_cover_frame",
@@ -1402,12 +1405,18 @@ def _user_seam_coordinator(cmd_svc, policy, *, entities, monkeypatch, floors=())
         # REAL Model C policy, so the correction it plans is the production one.
         "_interlock_user_command",
         "_execute_external_interlock",
+        "_start_interlock_task",
     ):
         setattr(
             coord,
             name,
             types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
         )
+    # ``_interlock_pair_key`` is a ``staticmethod``: binding it like the
+    # instance methods above would pass ``coord`` as an implicit first
+    # argument, shadowing the real ``plan`` argument. A direct attribute
+    # assignment keeps it a plain one-argument callable.
+    coord._interlock_pair_key = AdaptiveDataUpdateCoordinator._interlock_pair_key
     monkeypatch.setattr(
         coordinator_module, "gather_active_floors", lambda _s: list(floors)
     )
@@ -2692,10 +2701,20 @@ _SEAM_MODULES = frozenset(
 _ORDERING_EXEMPT = {
     ("state/window_transition_tracker.py", "check_sunset_window"): (
         "test_sunset_window_transition_hands_the_tracker_an_ordered_list",
-        "Receives an already-ordered entity list. The tracker is HA-boundary "
-        "code with no policy handle, so the coordinator applies "
-        "order_for_dispatch at the call site "
-        "(_check_sunset_window_transition, entities=...).",
+        "Orders through an injected callback, not at the call site. The tracker "
+        "is HA-boundary code with no policy handle, so it hands its own entity "
+        "list to the coordinator's resolve_dispatch and fans out over what "
+        "comes back — coordinator._resolve_broadcast_dispatch applies "
+        "order_for_dispatch there, on the CLAMPED number (#943 item B). The "
+        "entities= argument is the input to that call, not a pre-ordered list.",
+    ),
+    ("coordinator.py", "_on_window_closed"): (
+        "test_end_of_window_default_fans_out_in_policy_order",
+        "Shares coordinator._resolve_broadcast_dispatch with the sunset "
+        "broadcast, which clamps, re-frames and orders in one call. The two "
+        "seams follow ONE rule — order on the CLAMPED number, in the "
+        "configured-inverse frame — and writing it at both loops is the "
+        "two-site mirror that lets them drift.",
     ),
 }
 
@@ -3004,13 +3023,76 @@ def test_user_command_seams_name_the_number_they_will_actually_dispatch() -> Non
 
 
 @pytest.mark.asyncio
+async def test_end_of_window_default_fans_out_in_policy_order() -> None:
+    """The compensating control behind the ``_on_window_closed`` exemption.
+
+    That seam no longer calls ``order_for_dispatch`` in its own body — it shares
+    ``_resolve_broadcast_dispatch`` with the sunset broadcast, because "clamp,
+    re-frame, then order on the clamped number" is ONE rule and two copies of it
+    are two chances to drift. The structural scan cannot see through the helper,
+    so the guarantee has to be asserted behaviourally here: the rails come out
+    bottom-first on a lowering, and the number the ordering view was asked about
+    is the CLAMPED one, not the configured default.
+    """
+    import datetime as dt
+
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    coord = MagicMock()
+    coord.entities = [_MIDDLE, _BOTTOM]
+    coord._policy = _dual_policy(position=40, blend=50)
+    coord.config_entry.options = {}
+    coord._inverse_state = False
+    coord._track_end_time = True
+    coord.automatic_control = True
+    coord._pipeline_has_active_override = MagicMock(return_value=False)
+    coord._event_buffer = EventBuffer(maxlen=10)
+    coord._compute_current_effective_default = MagicMock(return_value=(100, False))
+    # A live ceiling turns the configured full-open default into a lowering.
+    coord._clamp_to_outside_window_bounds = lambda _position, _options: 0
+    coord._cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    coord.async_refresh = AsyncMock()
+    coord._entity_target = lambda entity, position, **_kw: position
+    for name in ("_resolve_broadcast_dispatch", "_check_time_window_transition"):
+        setattr(
+            coord,
+            name,
+            types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
+        )
+
+    async def _invoke_close(track_end_time, refresh_callback, on_window_open=None):
+        await refresh_callback()
+
+    coord._time_mgr.check_transition = _invoke_close
+    coord._check_sunset_window_transition = AsyncMock()
+
+    with patch.object(
+        coord._policy, "order_for_dispatch", wraps=coord._policy.order_for_dispatch
+    ) as order:
+        await coord._check_time_window_transition(dt.datetime.now(dt.UTC))
+
+    # Lowering to the clamped 0: the bottom rail is downstream, so it leads.
+    assert [c.args[0] for c in coord._cmd_svc.apply_position.await_args_list] == [
+        _BOTTOM,
+        _MIDDLE,
+    ]
+    assert order.call_args.kwargs["position"] == 0
+    assert order.call_args.kwargs["inverted"] is False
+
+
+@pytest.mark.asyncio
 async def test_sunset_window_transition_hands_the_tracker_an_ordered_list() -> None:
     """The compensating control behind the one ordering exemption (issue #1115).
 
     ``WindowTransitionTracker.check_sunset_window`` fans the sunset position out
-    in the order it is handed, and has no policy handle of its own — so the
-    coordinator has to order the list at the call site. This is the only thing
-    that notices when that wrap goes away.
+    in the order it is handed and has no policy handle of its own, so the
+    coordinator owns the ordering. Since #943 item B it owns it inside
+    ``resolve_dispatch`` — deferred until the sunset edge actually fires, and
+    applied to the CLAMPED number rather than the configured one, because a live
+    bound that crosses the rails turns a lowering into a raise and ordering must
+    not disagree with what is dispatched (#1118).
     """
     coord = MagicMock()
     coord.entities = [_MIDDLE, _BOTTOM]
@@ -3018,11 +3100,39 @@ async def test_sunset_window_transition_hands_the_tracker_an_ordered_list() -> N
     coord.config_entry.options = {}
     coord._inverse_state = False
     coord._window_tracker.check_sunset_window = AsyncMock()
+    # The bound composition has its own tests; a scripted clamp keeps this one
+    # on the ordering it exists to guard.
+    clamp = {"to": 0}
+    coord._clamp_to_outside_window_bounds = lambda _position, _options: clamp["to"]
+    for name in ("_resolve_sunset_dispatch", "_resolve_broadcast_dispatch"):
+        setattr(
+            coord,
+            name,
+            types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
+        )
 
     await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
 
     kwargs = coord._window_tracker.check_sunset_window.await_args.kwargs
-    assert kwargs["entities"] == [_BOTTOM, _MIDDLE]
+    resolve = kwargs["resolve_dispatch"]
+    # Lowering to 0: the bottom rail is downstream, so it leads (#1115).
+    assert resolve(0, kwargs["entities"]) == (0, [_BOTTOM, _MIDDLE])
+
+    # The list the TRACKER holds is what gets ordered — not whatever
+    # ``coord.entities`` happens to say (#943 item B audit).
+    coord.entities = ["cover.not_this_one"]
+    assert resolve(0, [_MIDDLE, _BOTTOM]) == (0, [_BOTTOM, _MIDDLE])
+    coord.entities = [_MIDDLE, _BOTTOM]
+
+    # Same configured 0, but a live floor raises it to 100 — the ordering view
+    # must be asked about the CLAMPED number, since that is what gets dispatched.
+    clamp["to"] = 100
+    with patch.object(
+        coord._policy, "order_for_dispatch", wraps=coord._policy.order_for_dispatch
+    ) as order:
+        position, _entities = resolve(0, coord.entities)
+    assert position == 100
+    assert order.call_args.kwargs["position"] == 100
 
 
 # ---------------------------------------------------------------------------
@@ -3779,12 +3889,21 @@ def _interlock_coordinator(cmd_svc, policy):
             policy=policy,
         )
     )
-    for name in ("_plan_external_interlock", "_execute_external_interlock"):
+    for name in (
+        "_plan_external_interlock",
+        "_execute_external_interlock",
+        "_start_interlock_task",
+    ):
         setattr(
             coord,
             name,
             types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
         )
+    # ``_interlock_pair_key`` is a ``staticmethod``: binding it like the
+    # instance methods above would pass ``coord`` as an implicit first
+    # argument, shadowing the real ``plan`` argument. A direct attribute
+    # assignment keeps it a plain one-argument callable.
+    coord._interlock_pair_key = AdaptiveDataUpdateCoordinator._interlock_pair_key
     return coord, spawned
 
 

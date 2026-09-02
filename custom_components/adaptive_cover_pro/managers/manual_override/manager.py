@@ -59,6 +59,23 @@ def _never(_entity_id: str) -> bool:
     return False
 
 
+def _prune_suppressions(
+    events: collections.deque[dt.datetime], now: dt.datetime
+) -> collections.deque[dt.datetime]:
+    """Drop suppression events older than the 24 h reporting window.
+
+    Called from BOTH the recorder and the reader (issue #1273). Pruning only on
+    write froze the published count at the last suppression instead of letting
+    it decay, so ``primary_axis_suppression_last_24h`` kept reporting a burst
+    that had stopped days earlier — and kept telling the user to raise
+    ``venetian_backrotate_publish_lag`` for an actuator that had settled.
+    """
+    cutoff = now - _PRIMARY_AXIS_SUPPRESSION_WINDOW
+    while events and events[0] < cutoff:
+        events.popleft()
+    return events
+
+
 class AdaptiveCoverManager:
     """Track position changes and manage manual override detection.
 
@@ -233,9 +250,7 @@ class AdaptiveCoverManager:
             entity_id, collections.deque()
         )
         deque.append(now)
-        cutoff = now - _PRIMARY_AXIS_SUPPRESSION_WINDOW
-        while deque and deque[0] < cutoff:
-            deque.popleft()
+        _prune_suppressions(deque, now)
 
         last_warn = self._last_suppression_warn_at.get(entity_id)
         if (
@@ -258,14 +273,18 @@ class AdaptiveCoverManager:
         """Return per-entity counts of primary-axis suppressions in the last 24 h.
 
         Used by ``DiagnosticsBuilder._build_debug_info`` to surface the
-        cross-axis publish-lag guard's activity. Empty entries are pruned
-        so the returned dict only carries entities with at least one
-        suppression in the window.
+        cross-axis publish-lag guard's activity. The window is re-pruned HERE,
+        not just on write (issue #1273): an entity whose last suppression has
+        aged out reports nothing rather than a frozen count, so the figure
+        decays to zero on its own once the actuator settles. Entities left with
+        an empty deque are omitted, so the returned dict only carries entities
+        with at least one suppression still inside the window.
         """
+        now = dt.datetime.now(dt.UTC)
         return {
-            eid: len(deque)
+            eid: len(pruned)
             for eid, deque in self._primary_axis_suppression_counts.items()
-            if deque
+            if (pruned := _prune_suppressions(deque, now))
         }
 
     def _record_event(
@@ -470,12 +489,26 @@ class AdaptiveCoverManager:
         if secondary_axis_check is not None:
             res = secondary_axis_check.evaluate(entity_id, new_state, manual_threshold)
             if res.is_manual:
+                # Issue #1227: ``secondary_axis_check.expected`` is LOGICAL and
+                # the raw attribute read is WIRE — on an inverse install those
+                # differ by ``100 - x``, so pairing them unlabelled reads as a
+                # huge false delta. ``res.event_kwargs["new_position"]`` is the
+                # SAME normalised value ``evaluate`` already computed for the
+                # ``manual_override_set`` event (guaranteed present whenever
+                # ``is_manual`` is True), so this reuses it rather than
+                # re-deriving the flip. Name both frames explicitly, matching
+                # the excursion reason string's ``value X% (wire Y%)`` shape.
+                reported = (
+                    res.event_kwargs.get("new_position") if res.event_kwargs else None
+                )
+                raw_value = new_state.attributes.get(secondary_axis_check.attribute)
                 self.logger.debug(
-                    "Manual %s change for %s: ours=%s, new=%s",
+                    "Manual %s change for %s: ours=%s, new=%s (wire %s)",
                     secondary_axis_check.label,
                     entity_id,
                     secondary_axis_check.expected,
-                    new_state.attributes.get(secondary_axis_check.attribute),
+                    reported,
+                    raw_value,
                 )
             self._apply_decision(
                 entity_id,
@@ -717,10 +750,20 @@ class AdaptiveCoverManager:
     ) -> None:
         """Write one cover's override start (and optional pinned end).
 
-        The single seam every arming path goes through, so ``manual_control_time``,
-        ``manual_control_expiry`` and ``manual_control_start_source`` can never
-        disagree about which cover is armed (CODING_GUIDELINES.md §
-        no-duplication).
+        The single seam every arming path goes through, so ``manual_control``,
+        ``manual_control_time``, ``manual_control_expiry`` and
+        ``manual_control_start_source`` can never disagree about which cover is
+        armed (CODING_GUIDELINES.md § no-duplication).
+
+        ``manual_control`` is written HERE as of issue #1273. It used to be set
+        by each caller separately, which left ``set_last_updated`` able to record
+        a start time on a cover the flag said was not overridden — harmless in
+        production only because every real arming path happened to call
+        ``mark_manual_control`` first. Both stores now move together, so
+        :meth:`expiry_for` and :meth:`active_entities` cannot disagree. The write
+        is unconditional in both branches because there is no arming path that
+        wants a start time without a live flag; setting True when it is already
+        True is a no-op.
 
         Args:
             entity_id: Cover entity ID.
@@ -737,6 +780,7 @@ class AdaptiveCoverManager:
                 knows the real moment. Display-only.
 
         """
+        self.manual_control[entity_id] = True
         if not overwrite:
             self.manual_control_time.setdefault(entity_id, timestamp)
             self.manual_control_start_source.setdefault(entity_id, start_source)
@@ -766,8 +810,18 @@ class AdaptiveCoverManager:
         4. Fallback: ``start + reset_duration`` — i.e. ``fixed`` behaviour,
            which is also what every unresolvable mode degrades to.
 
+        Step 1 tests BOTH stores (issue #1273). It used to gate on
+        ``manual_control_time`` alone, which left the docstring's promise resting
+        on ``reset`` popping the two together rather than on this method
+        checking what it documents — and let the end-time sensor (which keyed
+        off the start time) and the diagnostics block (which keys off the flag)
+        disagree about which covers are held. :meth:`active_entities` is the
+        accessor both should use.
+
         The result is always tz-aware UTC.
         """
+        if not self.is_cover_manual(entity_id):
+            return None
         started_at = self.manual_control_time.get(entity_id)
         if started_at is None:
             return None
@@ -783,6 +837,17 @@ class AdaptiveCoverManager:
         if resolved is not None:
             return resolved
         return expiry_for_started_at(anchor, self.reset_duration)
+
+    def active_entities(self) -> list[str]:
+        """Return the covers holding a live manual override, in insertion order.
+
+        The single liveness accessor (issue #1273): a cover is here exactly when
+        :meth:`expiry_for` returns a deadline for it. Both the
+        ``manual_override_end_time`` sensor and the ``manual_override_state``
+        diagnostics block read through this instead of picking one of the
+        underlying stores and implying the other agrees.
+        """
+        return [eid for eid in self.manual_control_time if self.is_cover_manual(eid)]
 
     def restore_override(self, entity_id: str, expiry: dt.datetime) -> None:
         """Rehydrate one cover's override from a persisted absolute expiry (#1019).
@@ -800,13 +865,25 @@ class AdaptiveCoverManager:
         very same override before the restart. It is therefore tagged
         ``derived_from_expiry`` so diagnostics can say so rather than silently
         change meaning; the exact end remains available as ``expires_at``.
+
+        The ``restored`` diagnostic event is recorded HERE (issue #1273). The
+        sensor used to write it by reaching through ``_record_event``, which made
+        the restore the one lifecycle transition whose diagnostics lived outside
+        the manager that owns them.
         """
-        self.manual_control[entity_id] = True
+        # ``_arm`` sets ``manual_control`` (issue #1273) — do not re-set it here.
         self._arm(
             entity_id,
             timestamp=started_at_for_expiry(expiry, self.reset_duration),
             expiry=expiry,
             start_source=STARTED_AT_SOURCE_DERIVED,
+        )
+        self._record_event(
+            entity_id,
+            "restored",
+            our_state=None,
+            new_position=None,
+            reason="restored from RestoreEntity after reboot",
         )
 
     def mark_manual_control(self, cover: str) -> None:
@@ -970,7 +1047,7 @@ class AdaptiveCoverManager:
                 (e.g. ``"proxy_managed"``, ``"set_position"``).
 
         """
-        self.manual_control[entity_id] = True
+        # ``_arm`` sets ``manual_control`` (issue #1273) — do not re-set it here.
         self._arm(entity_id, timestamp=dt.datetime.now(dt.UTC), overwrite=False)
         self._record_event(
             entity_id,
