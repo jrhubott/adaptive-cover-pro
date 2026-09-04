@@ -486,6 +486,134 @@ async def test_coordinator_sunrise_provider_fails_open_on_error(
 
 
 # ---------------------------------------------------------------------------
+# sunrise_gates_start wiring (issue #1340)
+# ---------------------------------------------------------------------------
+
+
+def _coordinator_for(hass: HomeAssistant, options: dict, entry_id: str):
+    """Build a coordinator bound to a MockConfigEntry, as :401-449 does."""
+    from homeassistant import config_entries as ha_config_entries
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": entry_id, CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=options,
+        entry_id=entry_id,
+        title=entry_id,
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        return AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+
+async def test_coordinator_wires_sunrise_gates_start_into_time_window_manager(
+    hass: HomeAssistant,
+) -> None:
+    """The opt-in reaches the manager through ``_update_options`` (issue #1340).
+
+    ``RuntimeConfig`` is the single runtime read; a value that never reaches
+    ``TimeWindowManager.update_config`` leaves the option inert in the UI.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_SUNRISE_GATES_START
+
+    coordinator = _coordinator_for(
+        hass,
+        {**VERTICAL_OPTIONS, CONF_SUNRISE_GATES_START: True},
+        "sunrise_gates_on_01",
+    )
+    coordinator._update_options(dict(coordinator.config_entry.options))
+    assert coordinator._time_mgr._sunrise_gates_start is True
+
+    coordinator = _coordinator_for(hass, dict(VERTICAL_OPTIONS), "sunrise_gates_off_01")
+    coordinator._update_options(dict(coordinator.config_entry.options))
+    assert coordinator._time_mgr._sunrise_gates_start is False
+
+
+async def test_coordinator_sunrise_provider_honors_sunrise_entity_and_offset(
+    hass: HomeAssistant,
+) -> None:
+    """The window's sunrise must mean what ``resolve_sun_boundaries`` says it means.
+
+    ``_resolve_blank_start_sunrise`` read pure astral and ignored
+    ``sunrise_time_entity`` / ``sunrise_offset`` — the same class of bug as
+    #1048. #1340's reporter configures a sunrise ENTITY, so a floor built on
+    astral would ignore the very option they set (and the #1256 blank-start
+    anchor has been ignoring it all along).
+    """
+    import datetime as dt
+    import zoneinfo
+    from unittest.mock import patch
+
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUNRISE_OFFSET,
+        CONF_SUNRISE_TIME_ENTITY,
+    )
+
+    hass.states.async_set("input_datetime.dawn", "2026-09-03T04:00:00")
+    options = {
+        **VERTICAL_OPTIONS,
+        CONF_SUNRISE_TIME_ENTITY: "input_datetime.dawn",
+        CONF_SUNRISE_OFFSET: 30,
+    }
+
+    coordinator = _coordinator_for(hass, options, "sunrise_entity_01")
+    sunrise = coordinator._time_mgr._sunrise_provider()
+
+    assert sunrise is not None
+    assert sunrise.tzinfo is None  # naive-local, matching local_now_naive()
+    assert sunrise.time() == dt.time(4, 30)
+    assert sunrise.date() == dt_util.now().date()
+
+    # Same answer in a UTC+12 zone: the entity is naive-LOCAL wall clock, so a
+    # round trip through UTC must land back on 04:30 local, not 16:30.
+    auckland = zoneinfo.ZoneInfo("Pacific/Auckland")
+    hass.config.time_zone = "Pacific/Auckland"
+    with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", auckland):
+        coordinator = _coordinator_for(hass, options, "sunrise_entity_akl_01")
+        sunrise = coordinator._time_mgr._sunrise_provider()
+
+    assert sunrise is not None
+    assert sunrise.tzinfo is None
+    assert sunrise.time() == dt.time(4, 30)
+
+
+async def test_coordinator_sunrise_provider_unavailable_entity_falls_back_to_astral(
+    hass: HomeAssistant,
+) -> None:
+    """An unavailable sunrise entity degrades to astral, as ``resolve_sun_boundaries`` does."""
+    import datetime as dt
+    import zoneinfo
+    from unittest.mock import patch
+
+    from custom_components.adaptive_cover_pro.const import CONF_SUNRISE_TIME_ENTITY
+
+    auckland = zoneinfo.ZoneInfo("Pacific/Auckland")
+    hass.config.time_zone = "Pacific/Auckland"
+    hass.config.latitude = -36.8485
+    hass.config.longitude = 174.7633
+    hass.config.elevation = 20
+    hass.states.async_set("input_datetime.dawn", "unavailable")
+
+    with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", auckland):
+        coordinator = _coordinator_for(
+            hass,
+            {**VERTICAL_OPTIONS, CONF_SUNRISE_TIME_ENTITY: "input_datetime.dawn"},
+            "sunrise_entity_unavail_01",
+        )
+        sunrise = coordinator._time_mgr._sunrise_provider()
+
+    assert sunrise is not None
+    assert sunrise.tzinfo is None
+    assert dt.time(4, 0) <= sunrise.time() <= dt.time(10, 0)
+
+
+# ---------------------------------------------------------------------------
 # Venetian mode wiring
 # ---------------------------------------------------------------------------
 

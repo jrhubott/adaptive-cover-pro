@@ -811,6 +811,18 @@ def _local_naive_to_utc_naive(local_naive: dt.datetime) -> dt.datetime:
     return dt_util.as_utc(aware_local).replace(tzinfo=None)
 
 
+def _utc_naive_to_local_naive(utc_naive: dt.datetime) -> dt.datetime:
+    """Convert a naive-UTC datetime to a naive-local wall-clock datetime.
+
+    The exact inverse of :func:`_local_naive_to_utc_naive`, and the bridge
+    between the two conventions this module keeps deliberately separate: the
+    naive-UTC space :func:`resolve_sun_boundaries` computes in, and the
+    naive-local space ``local_now_naive`` — and therefore the whole time
+    window — compares against (issue #1340).
+    """
+    return dt_util.as_local(utc_naive.replace(tzinfo=UTC)).replace(tzinfo=None)
+
+
 def _resolve_boundary(
     local_naive: dt.datetime | None,
     astral: Callable[[], dt.datetime],
@@ -1023,6 +1035,29 @@ def resolve_sun_boundaries(
         _next_sunrise=_next_boundary_resolver(
             sunrise_time, sun_data.next_sunrise, sunrise_off
         ),
+    )
+
+
+def read_sun_boundaries(
+    hass: HomeAssistant, options: Mapping, sun_data: "SunData"
+) -> SunBoundaries:
+    """Resolve this instance's sunset/sunrise boundaries straight from HA state.
+
+    The hass-side one-liner over :func:`_read_sun_boundary_options` +
+    :func:`resolve_sun_boundaries` — the pairing every consumer needs and that
+    three call sites were otherwise re-spelling. The coordinator's window
+    sunrise provider is the reason it exists: it used to read PURE astral and
+    silently ignore ``sunrise_time_entity`` / ``sunrise_offset``, so the window
+    gate and the day/night position disagreed about what sunrise meant for the
+    same morning (issues #1256 / #1340, same family as #1048).
+    """
+    bounds = _read_sun_boundary_options(hass, options)
+    return resolve_sun_boundaries(
+        sun_data,
+        sunset_time=bounds.sunset_time,
+        sunrise_time=bounds.sunrise_time,
+        sunset_off=bounds.sunset_off,
+        sunrise_off=bounds.sunrise_off,
     )
 
 
