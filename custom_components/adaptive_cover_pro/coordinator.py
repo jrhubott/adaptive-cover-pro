@@ -56,7 +56,6 @@ from .engine.solar_transmittance import (
 )
 from .helpers import (
     _read_current_effective_default,
-    _read_sun_boundary_options,
     _utc_naive_to_local_naive,
     check_cover_features,
     custom_position_slot_delivers_fixed_position,
@@ -66,7 +65,6 @@ from .helpers import (
     read_sun_boundaries,
     read_sunset_window_open,
     resolve_override_deadline,
-    resolve_sun_boundaries,
     state_attr,
 )
 from .config_context_adapter import ConfigContextAdapter
@@ -6036,9 +6034,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         The HA-side half of the rule, injected into ``AdaptiveCoverManager`` via
         ``set_deadline_resolver`` so the manager itself stays HA-free: it takes
-        the duration mode from the per-cycle ``RuntimeConfig`` mirror, reads the
-        sunset/sunrise override entities and offsets and the operating window's
-        resolved end, then hands the arithmetic to the pure
+        the duration mode from the per-cycle ``RuntimeConfig`` mirror, resolves
+        the sunset/sunrise boundaries through :func:`.helpers.read_sun_boundaries`
+        — the same definition the day/night position and the time window's
+        sunrise provider use — reads the operating window's resolved end, then
+        hands the arithmetic to the pure
         :func:`.helpers.resolve_override_deadline`.
 
         ``fixed`` — the default, and what an install that never touched the
@@ -6064,14 +6064,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         boundaries = None
         cover_data = self._cover_data
         if cover_data is not None:
-            bounds = _read_sun_boundary_options(self.hass, options)
-            boundaries = resolve_sun_boundaries(
-                cover_data.sun_data,
-                sunset_time=bounds.sunset_time,
-                sunrise_time=bounds.sunrise_time,
-                sunset_off=bounds.sunset_off,
-                sunrise_off=bounds.sunrise_off,
-            )
+            boundaries = read_sun_boundaries(self.hass, options, cover_data.sun_data)
 
         # An unset window end is NO anchor. ``TimeWindowManager.end_time``
         # normalises the ``BLANK_TIME`` sentinel onto tomorrow's midnight by

@@ -645,15 +645,14 @@ class TestCoordinatorResolver:
 # ---------------------------------------------------------------------------
 
 _CED = "custom_components.adaptive_cover_pro.helpers.compute_effective_default"
-# One function object, two live bindings. The deadline path calls it through
-# ``coordinator``'s from-import; the effective-default path reaches it as a
-# module global inside ``helpers._read_current_effective_default`` (issue
-# #1055). Still one source of truth — ``helpers._read_sun_boundary_options`` —
-# but no single patch target intercepts both namespaces, so a test proving both
-# consumers move together has to enter both.
-_READ_BOUNDS = (
-    "custom_components.adaptive_cover_pro.coordinator._read_sun_boundary_options"
-)
+# ONE live binding, and one patch target that reaches both consumers. The
+# deadline path used to spread the four inputs itself through a
+# ``coordinator``-side from-import, so proving both consumers moved together
+# meant patching two namespaces. It now calls ``helpers.read_sun_boundaries``,
+# which does that read as a module global (issue #1340), exactly as the
+# effective-default path already did inside
+# ``helpers._read_current_effective_default`` (issue #1055). A single patch here
+# is therefore the whole proof.
 _READ_BOUNDS_HELPERS = (
     "custom_components.adaptive_cover_pro.helpers._read_sun_boundary_options"
 )
@@ -704,7 +703,6 @@ class TestSunBoundarySource:
 
         with (
             patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
-            patch(_READ_BOUNDS, return_value=patched),
             patch(_READ_BOUNDS_HELPERS, return_value=patched),
             patch(_CED, return_value=(0, False)) as ced,
         ):

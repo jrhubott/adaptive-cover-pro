@@ -416,6 +416,13 @@ class TimeWindowManager:
         has genuinely opened — not when the start time is merely blank
         (issue #492). Returns False when no real start is configured.
 
+        "Has passed" is measured against the EFFECTIVE start
+        (:meth:`_resolve_start_datetime`), not the raw configured one. So with
+        ``sunrise_gates_start`` on this cannot be True before the resolved
+        sunrise, and the night position survives until then (issue #1340); with
+        it off — every pre-#1340 install — the configured start alone decides,
+        which is #438's behaviour unchanged.
+
         """
         passed = self._start_has_passed()
         return False if passed is None else passed

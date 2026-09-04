@@ -241,7 +241,17 @@ def _build_samples(
     For the same reason the operational *start*-time window is not modeled,
     so ``compute_effective_default`` is called without ``window_explicitly_started``
     (defaults False) — the night position is governed purely by the
-    astronomical sunset/sunrise window at each sample time. The operational
+    astronomical sunset/sunrise window at each sample time.
+
+    That makes the morning boundary agree with the live pipeline exactly when
+    ``sunrise_gates_start`` is on: the window cannot open before sunrise there
+    either, so both hold the night position until the sunrise boundary
+    (issue #1340). With the flag off — the default — the live path releases the
+    night position at the configured start time, which on an install whose start
+    is earlier than sunrise is EARLIER than this projection shows (#438). That
+    gap is a modelling limitation of the forecast, not a live-path defect.
+
+    The operational
     *end* time IS modeled when ``end_of_window_time`` is supplied (issue #625):
     samples at/after it apply the end-of-window position via the same
     two-phase astral handoff the live path uses.

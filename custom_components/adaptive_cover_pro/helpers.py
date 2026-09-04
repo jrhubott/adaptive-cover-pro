@@ -980,14 +980,20 @@ def _read_sun_boundary_options(
     """Read the four HA-side inputs that define sunset/sunrise for this instance.
 
     The single source of truth for the *reads* feeding :func:`resolve_sun_boundaries`'
-    arithmetic. Two direct callers: the day/night position boundary
-    (:func:`_read_current_effective_default`) and the manual-override sun deadline
-    (``_resolve_override_deadline``). Both consumers of the day/night boundary —
-    the coordinator's ``_compute_current_effective_default`` and
-    ``PipelineSnapshotBuilder.build``'s fallback branch — reach here indirectly
-    through that first caller (issue #1055). So a later fifth input lands in one
-    place and no call site can disagree about what "sunset" means
-    (CODING_GUIDELINES.md § no-duplication).
+    arithmetic. Two direct callers, both in this module: the day/night position
+    inputs (:func:`_effective_default_inputs`, shared by
+    :func:`_read_current_effective_default` and :func:`read_sunset_window_open`)
+    and :func:`read_sun_boundaries`, which pairs this read with the arithmetic
+    for the hass-side consumers.
+
+    Every other consumer arrives through one of those two. The day/night
+    boundary's two callers — the coordinator's
+    ``_compute_current_effective_default`` and ``PipelineSnapshotBuilder.build``'s
+    fallback branch — reach here via the first (issue #1055); the manual-override
+    sun deadline (``_resolve_override_deadline``) and the time window's sunrise
+    provider (``_resolve_window_sunrise``, issues #1256/#1340) reach here via the
+    second. So a later fifth input lands in one place and no call site can
+    disagree about what "sunset" means (CODING_GUIDELINES.md § no-duplication).
 
     The offset arithmetic itself lives in :func:`resolve_sunset_offset` /
     :func:`resolve_sunrise_offset`, which the hass-less consumers
@@ -1298,6 +1304,17 @@ def compute_effective_default(
             maps to ``False`` here even though the active-window check treats blank
             as "no start restriction". Defaults to ``False`` for call sites without
             start_time context.
+
+            The caller decides what "the start" means, and this function never
+            second-guesses it. ``TimeWindowManager.window_explicitly_started``
+            measures against the EFFECTIVE start, so on an instance with
+            ``sunrise_gates_start`` on the manager has already floored that start
+            at the resolved sunrise and this argument can never be ``True``
+            before the sunrise boundary — the night position holds until then,
+            and the window itself stays shut so the climate handler cannot
+            outrank it (issue #1340). Off (the default) the configured start
+            alone decides, which is #438 unchanged. Nothing here needs to know
+            which of the two it is: one branch, two callers' meanings of "start".
         eval_time: Optional time at which to evaluate the sunset/sunrise window.
             When provided (tz-aware or naive-local), it replaces wall-clock now —
             this lets the forecast project the effective default at each future
