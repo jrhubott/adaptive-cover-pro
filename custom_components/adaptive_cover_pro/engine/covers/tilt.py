@@ -169,8 +169,8 @@ def reflected_beam_elevation(beta_deg: float, slat_angle_deg: float) -> float:
     measured up from the inward horizontal, so ``theta_r > 90`` points back
     outdoors, ``0 < theta_r < 90`` points up into the room, and
     ``theta_r <= 0`` is a beam fired at or below slat height across the room —
-    the reporter's WAREMA geometry (``r = 0.9375``, ``beta = 58.7``) lands at
-    ``-0.3``, i.e. horizontally into the room at slat height.
+    the reporter's WAREMA geometry (``r = 0.9375``, ``beta = 58.67``) lands at
+    ``-0.32``, i.e. horizontally into the room at slat height.
 
     FRAME (issues #1030 / #1290) — this is deliberately a PROFILE-PLANE angle,
     not a true 3-D elevation, because ``beta`` is (it comes from
@@ -204,8 +204,13 @@ def constrain_reflected_beam(
     direct-sun cut-off stays an invariant rather than a trade: the blocking
     condition ``sin(phi + beta) >= r*cos(beta)`` is a BAND
     ``[phi_c, 180 - arcsin(r*cos beta) - beta]``, so turning the slat back
-    toward (and past) horizontal stays inside it. With ``N <= 90`` the cap never
-    falls below 45°, comfortably inside that band at every profile angle.
+    toward (and past) horizontal stays inside it. With ``N <= 90`` AND
+    ``beta >= 0`` the cap never falls below 45°, comfortably inside that band.
+    ``beta`` is ``arctan(foreshortened_slope(...))`` and so goes negative below
+    the horizon, where the cap does fall further (at ``beta = -60``, ``N = 90``
+    it is 15°) — harmless today because the solar handler only reaches this
+    code on a lit face, but the 45° figure is a bound on ``beta >= 0``, not a
+    universal one.
 
     All three arguments are DEGREES. The engine's ``beta`` is radians, so the
     caller converts once; a mixed-unit signature here is how a radian gets
@@ -217,6 +222,19 @@ def constrain_reflected_beam(
         slat_angle_deg,
         TILT_HORIZONTAL_DEG + (beta_deg - min_elevation_deg) / 2,
     )
+
+
+def _clamp_to_travel(slat_angle_deg: float, max_degrees: float) -> float:
+    """Pin a slat angle into the drive's physical ``[0, max_degrees]`` travel.
+
+    Named rather than inlined because ``calculate_position`` needs it twice —
+    once on the commanded angle and once on the same angle computed WITHOUT the
+    reflected-beam floor, so ``reflected_beam_constrained`` compares two values
+    at the same stage of the pipeline (#1282). Two copies of the expression
+    could drift apart, and a drifted copy would report exactly the false
+    positive the comparison exists to rule out.
+    """
+    return max(0.0, min(float(max_degrees), float(slat_angle_deg)))
 
 
 @dataclass
@@ -679,7 +697,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         # directions. The margin's ``result > 90`` branch scales the slat
         # FURTHER past horizontal, which is exactly the outer-edge-up pose that
         # mirrors the beam into the room; a floor applied before it would simply
-        # be undone (a 30° floor lands 104.35°, the margin reopens it to ~107°,
+        # be undone (a 30° floor lands 104.33°, the margin reopens it to ~107°,
         # and the reflection drops back to ~24°). A ``min()`` cap placed after
         # it is idempotent, so the floor becomes a true invariant. It has to
         # stay before the travel clamp for the same reason the margin does: the
@@ -689,9 +707,8 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         # it — see ``constrain_reflected_beam`` for why the blocking condition
         # is a band rather than a half-line.
         beta_deg = float(np.rad2deg(beta))
-        constrained = constrain_reflected_beam(result, beta_deg, min_reflected)
-        reflected_beam_constrained = constrained < result
-        result = constrained
+        unfloored = result
+        result = constrain_reflected_beam(result, beta_deg, min_reflected)
 
         # Clamp to the drive's physical travel. On MODE1 (90°) this fires
         # whenever the cut-off runs past horizontal, and reads at first glance
@@ -710,7 +727,17 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         # away. Pinned by
         # ``tests/test_adaptive_tilt_cover.py::TestMode1ClampCrossover`` so the
         # identity is checked rather than asserted here (#1222 audit).
-        result = max(0.0, min(float(max_degrees), float(result)))
+        result = _clamp_to_travel(result, max_degrees)
+
+        # ``constrained`` means the floor CHANGED THE COMMANDED ANGLE — not
+        # merely that it moved an intermediate value the travel clamp then
+        # discarded. On MODE1 the reporter's 119.49° solve caps to 104.33°, and
+        # both sides of that cap clamp to the same 90°: the slats do not move,
+        # so diagnostics and the companion card must not show the floor
+        # engaging. Evaluated post-clamp against the same input run WITHOUT the
+        # floor, which puts it at the identical pipeline stage as
+        # ``reflected_beam_elevation_deg`` below (#1282 audit).
+        reflected_beam_constrained = result < _clamp_to_travel(unfloored, max_degrees)
 
         self.logger.debug(
             "Tilt calc: elev=%.1f°, gamma=%.1f°, beta=%.4f rad, slat_angle=%.1f°",
