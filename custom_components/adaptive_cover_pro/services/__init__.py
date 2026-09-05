@@ -208,8 +208,9 @@ def _resolve_targets(
     if area_ids:
         dev_reg = dr.async_get(hass)
         for area_id in area_ids:
-            for device in dr.async_entries_for_area(dev_reg, area_id):
-                device_ids.append(device.id)
+            device_ids.extend(
+                device.id for device in dr.async_entries_for_area(dev_reg, area_id)
+            )
 
     # No target at all → all coordinators, no filter
     if not entity_ids and not device_ids and not area_ids:

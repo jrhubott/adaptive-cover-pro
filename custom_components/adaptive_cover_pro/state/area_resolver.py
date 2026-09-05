@@ -3,8 +3,11 @@
 Part of the ``state/`` boundary: this module owns the device<->area registry
 hop in both directions — :func:`device_area_id` for the temperature resolver
 below (issue #786), :func:`area_device_ids` for the cover-group coordinator's
-area rosters (issue #1339) — so no caller outside ``state/`` needs a device
-registry import of its own. Home Assistant's area registry stores a per-area
+area rosters (issue #1339) — so no caller outside ``state/`` *reads* the
+device registry itself. (``group_coordinator.py`` does import
+``device_registry`` for its ``EVENT_DEVICE_REGISTRY_UPDATED`` name; an event
+constant is not a registry read, and it still resolves every area through the
+two functions here.) Home Assistant's area registry stores a per-area
 ``temperature_entity_id`` (added HA 2024.11); when a cover has no explicit
 temp sensor configured, we fall back to its area's configured one.
 
@@ -73,7 +76,7 @@ def area_device_ids(hass: HomeAssistant, area_id: str | None) -> list[str]:
 
     The inverse of :func:`device_area_id`, kept beside it so the whole
     device<->area registry hop lives in exactly one place (issue #786) and the
-    cover-group coordinator needs no device registry import of its own.
+    cover-group coordinator never reads the device registry itself.
     Reads the registry's own area index rather than scanning
     ``registry.devices`` as a mapping - that scan is deprecated and stops
     working in HA 2027.9.0 (issue #1339). Fail-open: no area yields ``[]``.

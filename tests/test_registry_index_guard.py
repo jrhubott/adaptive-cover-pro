@@ -42,12 +42,39 @@ flagged by this scan.  This repo still avoids it: ``UserDict.__iter__`` yields
 scan plus O(n) redundant lookups, strictly worse than the O(1)-per-hit indexed
 accessors above.
 
-Why the container must itself be an attribute
------------------------------------------------
-The scan only flags a mapping access whose container is an ``ast.Attribute``
-named ``devices``/``entities`` (``some_reg.devices.values()``), never a bare
-name (``devices[key] = ...``).  A bare name is a local dict — ``config_flow.py``
-builds two of those and they are correctly excluded.
+Why the container must sit on something registry-shaped
+---------------------------------------------------------
+The scan flags ``<receiver>.devices`` / ``<receiver>.entities`` only when the
+receiver itself looks like a registry: a name or attribute ending in ``reg`` /
+``registry`` (``dev_reg``, ``ent_reg``, ``self._registry``), or a call to
+``async_get`` (``er.async_get(hass).entities``).  Both narrowings matter.
+Dropping the receiver test entirely would flag a bare ``devices[key] = ...``
+local dict — ``config_flow.py`` builds two of those.  Accepting *any*
+attribute would flag this integration's own ``coordinator.entities``, a plain
+``list[str]`` read in a dozen places (``sensor.py``, ``binary_sensor.py``,
+``services/``, ``building_overview.py``'s ``record.entities``): none of them
+subscript or ``.get()`` it today, but the first one that does would fail this
+test for no reason and push the author into a bogus exemption.
+
+What this guard does NOT catch
+--------------------------------
+It is a cheap syntactic backstop, not a type checker.  Deliberately outside
+its reach, in rough order of likelihood:
+
+- ``device_id in dev_reg.devices`` — ``__contains__`` is a mapping read too.
+- ``len(reg.devices)`` and ``dict(reg.devices)`` — any coercion or builtin
+  that consumes the mapping without naming one of its methods.
+- ``reg.entities.data.values()`` — the receiver attribute is ``data``, so the
+  ``devices``/``entities`` test never sees it.
+- Aliasing: ``items = reg.entities`` followed by ``items.values()`` — the
+  scan has no dataflow, only shapes.
+- A registry reached through a subscript or an unconventionally named local
+  (``hass.data[SOMETHING].devices.values()``, ``r.devices.values()``).
+
+Closing these needs type inference and is not worth it: the realistic
+regression is someone copy-pasting the old ``dev_reg.devices.values()`` line,
+which the scan does catch.  HA's own runtime deprecation warning stays the
+backstop for the rest.
 
 How to respond when this test fails
 -------------------------------------
@@ -96,6 +123,14 @@ _MAPPING_METHODS = frozenset({"values", "items", "keys", "get"})
 # The registry container attributes themselves.
 _REGISTRY_ITEMS_ATTRS = frozenset({"devices", "entities"})
 
+# What a registry is called when it is a local, an argument or an attribute:
+# ``dev_reg``, ``ent_reg``, ``device_reg``, ``registry``, ``self._registry``.
+_REGISTRY_NAME_SUFFIXES = ("reg", "registry")
+
+# ...and how one is produced inline, where there is no name to match on:
+# ``dr.async_get(hass).devices`` / ``er.async_get(hass).entities``.
+_REGISTRY_GETTER = "async_get"
+
 
 def _enclosing_function(node: ast.AST, tree: ast.Module) -> str | None:
     """Return the name of the innermost function/async-function containing node.
@@ -117,13 +152,37 @@ def _enclosing_function(node: ast.AST, tree: ast.Module) -> str | None:
     return None
 
 
+def _is_registry_receiver(node: ast.AST) -> bool:
+    """Report whether node evaluates to something shaped like a registry.
+
+    Name/attribute suffix, or an inline ``async_get(hass)`` call.  A positive
+    test rather than a denylist of known-innocent receivers: it cannot go
+    stale as this integration grows new ``*.entities`` attributes of its own,
+    and every realistic way a registry is written here matches it.
+    """
+    if isinstance(node, ast.Name):
+        return node.id.lower().endswith(_REGISTRY_NAME_SUFFIXES)
+    if isinstance(node, ast.Attribute):
+        return node.attr.lower().endswith(_REGISTRY_NAME_SUFFIXES)
+    if isinstance(node, ast.Call):
+        func = node.func
+        return isinstance(func, ast.Attribute) and func.attr == _REGISTRY_GETTER
+    return False
+
+
 def _is_registry_items(node: ast.AST) -> bool:
     """Report whether node is ``<registry>.devices`` / ``<registry>.entities``.
 
-    Requiring an attribute access — rather than accepting a bare name — is what
-    keeps a plain local dict called ``devices`` or ``entities`` out of the scan.
+    Requiring an attribute access on a registry-shaped receiver — rather than
+    accepting any ``devices``/``entities`` — is what keeps both a plain local
+    dict and this integration's own ``coordinator.entities`` list out of the
+    scan.  See the module docstring.
     """
-    return isinstance(node, ast.Attribute) and node.attr in _REGISTRY_ITEMS_ATTRS
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr in _REGISTRY_ITEMS_ATTRS
+        and _is_registry_receiver(node.value)
+    )
 
 
 def _is_mapping_access(node: ast.AST) -> bool:
@@ -156,8 +215,82 @@ def _find_mapping_scan_sites() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# The test
+# The tests
 # ---------------------------------------------------------------------------
+
+
+def _matches(source: str) -> bool:
+    """Whether the matcher flags ``source``, parsed as a single expression."""
+    return _is_mapping_access(ast.parse(source, mode="eval").body)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "source",
+    [
+        "dev_reg.devices.values()",
+        "ent_reg.entities.values()",
+        "device_reg.devices.items()",
+        "registry.entities.keys()",
+        "self._registry.devices.get(device_id)",
+        "DEVICE_REG.devices[device_id]",
+        "er.async_get(hass).entities.values()",
+        "dr.async_get(self.hass).devices[device_id]",
+    ],
+)
+def test_matcher_flags_every_way_a_registry_scan_is_written(source):
+    """Every shape a real registry mapping scan takes here must be flagged.
+
+    The receiver narrowing this matcher does is only as good as the names it
+    recognises — pin them, so a future tightening cannot quietly turn the
+    whole guard into a no-op that passes forever.
+    """
+    assert _matches(source)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "source",
+    [
+        "self.coordinator.entities[0]",
+        "coord.entities[0]",
+        "record.entities[0]",
+        "self.entities[0]",
+        "devices[device_id]",
+    ],
+)
+def test_matcher_ignores_containers_that_are_not_registries(source):
+    """ACP's own ``entities`` lists and local dicts must never be flagged.
+
+    ``coordinator.entities`` is a ``list[str]`` read across a dozen modules; a
+    false positive here would fail this guard for no reason and pressure the
+    next author into a bogus exemption.
+    """
+    assert not _matches(source)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "source",
+    [
+        "hass.data[DOMAIN].devices.values()",
+        "r.devices.values()",
+        "items.values()",
+        "device_id in dev_reg.devices",
+        "len(dev_reg.devices)",
+        "dict(dev_reg.devices)",
+        "ent_reg.entities.data.values()",
+    ],
+)
+def test_matcher_misses_these_and_the_docstring_says_so(source):
+    """Pin the accepted blind spots so the module docstring stays honest.
+
+    Each of these is a real registry mapping read the scan cannot see — an
+    unrecognised receiver, an alias, ``__contains__``, a builtin, or the
+    underlying ``.data`` dict.  Listed in the docstring's "What this guard
+    does NOT catch"; if you ever close one, delete its line from both.
+    """
+    assert not _matches(source)
 
 
 @pytest.mark.unit

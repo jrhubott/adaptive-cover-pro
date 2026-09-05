@@ -1267,6 +1267,39 @@ async def test_area_roster_mixes_own_area_and_device_area_covers(hass) -> None:
     assert len(roster) == 2
 
 
+async def test_area_roster_includes_cover_whose_own_area_is_blank(hass) -> None:
+    """A blank own ``area_id`` still inherits the device's area.
+
+    HA indexes an entity's own area on ``is not None``, so an ``area_id`` of
+    ``""`` is filed under ``""`` and never appears in a real area's bucket —
+    the own-area pass cannot see it. :meth:`_entity_area_id` treats ``""`` as
+    falsy and falls through to the device, so the device pass has to agree:
+    it rejects on ``not reg_entry.area_id``, not on ``is None``.
+    """
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+
+    area = ar.async_get(hass).async_get_or_create("Blank Area")
+    device_id = _device_in_area(hass, area.id, unique="blank_dev")
+
+    reg = er.async_get(hass)
+    reg_entry = reg.async_get_or_create(
+        "cover",
+        "test",
+        "blank_area_cover",
+        suggested_object_id="blank_area_cover",
+        device_id=device_id,
+    )
+    reg.async_update_entity(reg_entry.entity_id, area_id="")
+
+    coordinator = _area_group(hass, area.id, "group_blank_area")
+
+    # The precondition the two filters disagree about.
+    assert reg.async_get(reg_entry.entity_id).area_id == ""
+    assert coordinator._entity_area_id(reg_entry.entity_id) == area.id
+    assert coordinator.generic_cover_ids() == [reg_entry.entity_id]
+
+
 async def test_no_area_behaves_statically(group_setup) -> None:
     """Without an area, the effective rosters equal the stored rosters."""
     coordinator, _, _ = group_setup
@@ -1301,6 +1334,104 @@ async def test_registry_change_reloads_when_roster_changes(hass, area_setup) -> 
     await coordinator.async_shutdown()
 
 
+async def test_registry_change_ignores_a_pure_roster_reorder(hass) -> None:
+    """Reordering the roster without changing it must not reload the entry.
+
+    Clearing a cover's own area while its device already sits in the same
+    area leaves membership identical — the cover just moves from the own-area
+    pass to the device pass, which reorders the list. The snapshot compares
+    membership, not order, so that shuffle is free.
+    """
+    from unittest.mock import patch
+
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+
+    area = ar.async_get(hass).async_get_or_create("Reorder Area")
+    # Registered first, so the device pass reaches this one first.
+    device_b = _device_in_area(hass, area.id, unique="reorder_dev_b")
+    device_a = _device_in_area(hass, area.id, unique="reorder_dev_a")
+
+    reg = er.async_get(hass)
+    cover_b = reg.async_get_or_create(
+        "cover",
+        "test",
+        "reorder_cover_b",
+        suggested_object_id="reorder_cover_b",
+        device_id=device_b,
+    )
+    cover_a = reg.async_get_or_create(
+        "cover",
+        "test",
+        "reorder_cover_a",
+        suggested_object_id="reorder_cover_a",
+        device_id=device_a,
+    )
+    reg.async_update_entity(cover_a.entity_id, area_id=area.id)
+
+    coordinator = _area_group(hass, area.id, "group_reorder")
+    await coordinator._async_setup()
+    before = coordinator.generic_cover_ids()
+
+    with patch.object(hass.config_entries, "async_reload", AsyncMock()) as reload_mock:
+        reg.async_update_entity(cover_a.entity_id, area_id=None)
+        await hass.async_block_till_done()
+        reload_mock.assert_not_awaited()
+
+    after = coordinator.generic_cover_ids()
+    # The shuffle really happened — without this the test would pass vacuously.
+    assert before != after
+    assert set(before) == set(after) == {cover_a.entity_id, cover_b.entity_id}
+
+    await coordinator.async_shutdown()
+
+
+async def test_device_registry_change_reloads_when_roster_changes(hass) -> None:
+    """Moving a *device* between areas re-resolves an area-scoped roster.
+
+    Covers inherit their device's area, so a device move changes membership
+    without touching the entity or area registries — it needs its own
+    subscription. Device events fire on every device attribute change, so the
+    first half pins that the roster-snapshot guard still absorbs the noise.
+    """
+    from unittest.mock import patch
+
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+
+    area = ar.async_get(hass).async_get_or_create("Device Move Area")
+    elsewhere = ar.async_get(hass).async_get_or_create("Device Move Elsewhere")
+    device_id = _device_in_area(hass, elsewhere.id, unique="moving_dev")
+
+    reg_entry = er.async_get(hass).async_get_or_create(
+        "cover",
+        "test",
+        "moving_cover",
+        suggested_object_id="moving_cover",
+        device_id=device_id,
+    )
+
+    coordinator = _area_group(hass, area.id, "group_device_move")
+    await coordinator._async_setup()
+    assert coordinator.generic_cover_ids() == []
+
+    with patch.object(hass.config_entries, "async_reload", AsyncMock()) as reload_mock:
+        # A device change with no roster impact must not reload.
+        dr.async_get(hass).async_update_device(device_id, name_by_user="Renamed")
+        await hass.async_block_till_done()
+        reload_mock.assert_not_awaited()
+
+        # The device moves into the area → its cover joins → reload once.
+        dr.async_get(hass).async_update_device(device_id, area_id=area.id)
+        await hass.async_block_till_done()
+        reload_mock.assert_awaited_once_with("group_device_move")
+
+    assert coordinator.generic_cover_ids() == [reg_entry.entity_id]
+
+    await coordinator.async_shutdown()
+
+
 async def test_registry_listener_absent_without_area(hass, group_setup) -> None:
     """Static-only groups subscribe to no registry events."""
     from unittest.mock import patch
@@ -1312,6 +1443,10 @@ async def test_registry_listener_absent_without_area(hass, group_setup) -> None:
         hass.bus.async_fire(
             "entity_registry_updated", {"action": "create", "entity_id": "cover.x"}
         )
+        hass.bus.async_fire(
+            "device_registry_updated", {"action": "update", "device_id": "dev_x"}
+        )
+        hass.bus.async_fire("area_registry_updated", {"action": "update"})
         await hass.async_block_till_done()
         reload_mock.assert_not_awaited()
 
