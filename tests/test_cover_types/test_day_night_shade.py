@@ -1453,7 +1453,7 @@ class TestDualEntityMapping:
     def test_inverse_state_round_trip(self) -> None:
         # With inverse state on, the wire value must un-invert to the same
         # open-percent middle-rail position the non-inverse mapping produces.
-        from custom_components.adaptive_cover_pro.managers.manual_override import (
+        from custom_components.adaptive_cover_pro.position_utils import (
             inverse_state,
         )
 

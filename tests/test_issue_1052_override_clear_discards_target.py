@@ -134,7 +134,7 @@ async def test_reconcile_does_not_resend_after_override_cleared(
 
     # User stops the cover at 99, then cancels the override.
     cmd_svc._get_current_position = MagicMock(return_value=99)
-    cmd_svc._is_cover_in_transit = MagicMock(return_value=False)
+    cmd_svc.is_cover_in_transit = MagicMock(return_value=False)
     manager.reset(ENTITY_ID)
     cmd_svc.manual_override_entities = set(manager.manual_controlled)
 

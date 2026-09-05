@@ -110,16 +110,14 @@ class StopToMy:
 class DetectorConfig:
     """Config bundle handed to a detector at construction and on option changes.
 
-    ``command_window_seconds`` comes from ``CONF_TRANSIT_TIMEOUT``. The
-    manual-override slice fields (``reset``/``duration``/``ignore_external``)
-    are engine-level but exposed so a detector MAY use them.
+    ``command_window_seconds`` comes from ``CONF_TRANSIT_TIMEOUT`` (read by
+    ``TimeWindowDetector``); ``duration`` is the manual-override hold the engine
+    applies in ``AdaptiveCoverManager.update_config``. Add a field only when a
+    reader exists — three unread slice fields were pruned in #1274.
     """
 
-    manual_threshold: int | None
     command_window_seconds: float
-    reset: bool
     duration: dict
-    ignore_external: bool
 
 
 def _format_context_suffix(
@@ -182,6 +180,23 @@ def default_stop_to_my_decision(stop: StopToMy) -> OverrideDecision | None:
     )
 
 
+def position_unavailable_decision(context: DetectionContext) -> OverrideDecision:
+    """Return the verdict every detector gives for an unreadable position.
+
+    Transient states ("opening"/"closing"/unavailable) give nothing to compare
+    against, so detection is skipped and the rejection recorded. Shared so a
+    third detector cannot drift from the two shipped ones.
+    """
+    return OverrideDecision(
+        event_name="manual_override_rejected_position_unavailable",
+        event_kwargs={
+            "our_state": context.our_state,
+            "new_position": None,
+            "reason": "position unavailable (transient state)",
+        },
+    )
+
+
 class OverrideDetector(ABC):
     """Pluggable manual-override detection strategy.
 
@@ -227,13 +242,6 @@ class OverrideDetector(ABC):
     def on_covers_added(self, entities) -> None:
         """Covers were registered for tracking."""
 
-    # --- runtime config + persistence (defaults: no-op / stateless) ---
+    # --- runtime config (default: no-op) ---
     def update_config(self, config: DetectorConfig) -> None:
         """Apply an options change without a reload."""
-
-    def serialize_state(self) -> dict:
-        """Return detector-specific state to persist across restart (default: none)."""
-        return {}
-
-    def restore_state(self, data: dict) -> None:
-        """Rehydrate detector-specific state from :meth:`serialize_state`."""

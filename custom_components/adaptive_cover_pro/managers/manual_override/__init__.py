@@ -7,7 +7,6 @@ unchanged, and so new detection patterns are reachable from one place.
 
 from __future__ import annotations
 
-from ...position_utils import inverse_state
 from .detector import (
     DetectionContext,
     DetectorConfig,
@@ -17,6 +16,7 @@ from .detector import (
     UserContextChange,
     default_stop_to_my_decision,
     default_user_context_decision,
+    position_unavailable_decision,
 )
 from .expiry import STARTED_AT_SOURCE_DERIVED, STARTED_AT_SOURCE_ENGAGED
 from .manager import AdaptiveCoverManager
@@ -51,7 +51,7 @@ __all__ = [
     "default_user_context_decision",
     "effective_manual_threshold",
     "get_detector",
-    "inverse_state",
+    "position_unavailable_decision",
     "resolve_dispatched_secondary_expected",
     "resolve_single_axis_suppression",
 ]

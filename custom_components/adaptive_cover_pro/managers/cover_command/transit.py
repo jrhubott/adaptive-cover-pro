@@ -3,7 +3,7 @@
 Single source of truth for "is this HA cover state value one of the motor-
 running states?". Before this module the literal
 ``state in ("opening", "closing")`` was duplicated across
-``CoverCommandService._is_cover_in_transit``, every inline check inside
+``CoverCommandService.is_cover_in_transit``, every inline check inside
 ``StateClassifier``, and ``DualAxisSequencer._COVER_MOVING_STATES``. Issue
 #33 forced both axes to share the same publish-lag policy, which is the
 trigger for collapsing those copies into one helper.
@@ -36,7 +36,7 @@ def is_state_in_transit(state: str | None) -> bool:
     ``"stopped"``, ``"unknown"``, ``"unavailable"``, or anything else
     outside :data:`_MOVING_STATES`. Used by:
 
-    * ``CoverCommandService._is_cover_in_transit`` — gate for skipping
+    * ``CoverCommandService.is_cover_in_transit`` — gate for skipping
       reconciliation while the motor is running.
     * ``StateClassifier.classify`` — five inline checks collapsed onto
       this helper (issue #33 progress-aware backstop guard).

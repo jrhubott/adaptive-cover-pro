@@ -26,6 +26,7 @@ from custom_components.adaptive_cover_pro.managers.manual_override import (
     default_stop_to_my_decision,
     default_user_context_decision,
     get_detector,
+    position_unavailable_decision,
 )
 
 from .stub_detector import StubDetector
@@ -74,11 +75,7 @@ def _ctx(
 
 def _config(*, command_window_seconds: float = 45.0) -> DetectorConfig:
     return DetectorConfig(
-        manual_threshold=5,
-        command_window_seconds=command_window_seconds,
-        reset=False,
-        duration={"hours": 2},
-        ignore_external=False,
+        command_window_seconds=command_window_seconds, duration={"hours": 2}
     )
 
 
@@ -102,6 +99,15 @@ def test_detect_returns_decision_and_never_raises_on_none_position(cls):
     detector = cls()
     decision = detector.detect(_ctx(new_position=None))
     assert isinstance(decision, OverrideDecision)
+
+
+def test_registered_detectors_share_the_position_unavailable_decision():
+    """B4 (#1274): the 'position unavailable' verdict has one constructor."""
+    ctx = _ctx(new_position=None)
+    expected = position_unavailable_decision(ctx)
+    assert expected.event_name == "manual_override_rejected_position_unavailable"
+    for cls in DETECTOR_REGISTRY.values():
+        assert cls().detect(ctx) == expected
 
 
 def test_get_detector_selects_by_id():
@@ -442,15 +448,34 @@ def test_update_config_reapplies_reset_duration():
     mgr = _engine(detector=StubDetector())
     assert mgr.reset_duration == dt.timedelta(hours=2)
     mgr.update_config(
-        DetectorConfig(
-            manual_threshold=5,
-            command_window_seconds=45.0,
-            reset=False,
-            duration={"seconds": 1},
-            ignore_external=False,
-        )
+        DetectorConfig(command_window_seconds=45.0, duration={"seconds": 1})
     )
     assert mgr.reset_duration == dt.timedelta(seconds=1)
+
+
+def test_make_detector_config_reads_the_runtime_config_slice():
+    """B5.6 (#1274): detector config derives from RuntimeConfig, never a restated default."""
+    from custom_components.adaptive_cover_pro.config_types import RuntimeConfig
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_DURATION,
+        CONF_TRANSIT_TIMEOUT,
+        DEFAULT_TRANSIT_TIMEOUT_SECONDS,
+    )
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    options = {CONF_MANUAL_OVERRIDE_DURATION: {"minutes": 5}, CONF_TRANSIT_TIMEOUT: 90}
+    rc = RuntimeConfig.from_options(options)
+    cfg = AdaptiveDataUpdateCoordinator._make_detector_config(MagicMock(), options, rc)
+    assert cfg == DetectorConfig(command_window_seconds=90.0, duration={"minutes": 5})
+
+    rc_default = RuntimeConfig.from_options({})
+    cfg_default = AdaptiveDataUpdateCoordinator._make_detector_config(
+        MagicMock(), {}, rc_default
+    )
+    assert cfg_default.duration == rc_default.manual_override.duration
+    assert cfg_default.command_window_seconds == float(DEFAULT_TRANSIT_TIMEOUT_SECONDS)
 
 
 def test_add_covers_notifies_detector():

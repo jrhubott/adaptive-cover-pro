@@ -998,8 +998,8 @@ class TestSliceIsTheSingleModeSource:
         """The end-time sensor can reach ``expiry_for`` before cycle 1.
 
         Same reason the venetian drift-reset mirrors are seeded in ``__init__``
-        from ``_rc_attach``: an unseeded attribute is an ``AttributeError``, not
-        a stale value.
+        from the ``rc`` RuntimeConfig snapshot: an unseeded attribute is an
+        ``AttributeError``, not a stale value.
         """
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
@@ -1007,7 +1007,7 @@ class TestSliceIsTheSingleModeSource:
 
         source = inspect.getsource(AdaptiveDataUpdateCoordinator.__init__)
         assert "self.manual_override_duration_mode" in source
-        assert "_rc_attach.manual_override.duration_mode" in source
+        assert "rc.manual_override.duration_mode" in source
 
     def test_resolver_reads_the_mirror_not_the_options_dict(self):
         """``_resolve_override_deadline`` resolves off the slice mirror."""

@@ -39,7 +39,7 @@ from custom_components.adaptive_cover_pro.coordinator import (
 from custom_components.adaptive_cover_pro.cover_types.day_night_shade import (
     DayNightShadePolicy,
 )
-from custom_components.adaptive_cover_pro.managers.manual_override import inverse_state
+from custom_components.adaptive_cover_pro.position_utils import inverse_state
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 _BOTTOM = "cover.bottom_rail"
