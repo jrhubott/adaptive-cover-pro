@@ -137,8 +137,6 @@ def make_diagnostic_coordinator(
     coord._event_buffer = EventBuffer(maxlen=50)
     coord.manager = MagicMock()
     coord.manager.covers = set()
-    coord.manager.manual_control = {}
-    coord.manager.manual_control_time = {}
     coord.manager.reset_duration = timedelta(hours=2)
     coord._cmd_svc = MagicMock()
     coord._cmd_svc.get_all_entity_state_snapshots.return_value = {}

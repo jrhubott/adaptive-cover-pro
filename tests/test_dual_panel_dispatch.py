@@ -41,7 +41,7 @@ from custom_components.adaptive_cover_pro.coordinator import (
 from custom_components.adaptive_cover_pro.cover_types.dual_panel import (
     DualPanelPolicy,
 )
-from custom_components.adaptive_cover_pro.managers.manual_override import inverse_state
+from custom_components.adaptive_cover_pro.position_utils import inverse_state
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.position_utils import interpolate_position
 

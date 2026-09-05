@@ -36,6 +36,7 @@ from custom_components.adaptive_cover_pro.managers.grace_period import (
 from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
     SecondaryAxisCheck,
+    StateChangeInputs,
 )
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
@@ -154,13 +155,15 @@ def test_tilt_drift_inside_suppression_window_is_ignored() -> None:
     mgr = _make_manager(entity_id)
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=20),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=_tilt_check(suppressed=True),
+        _make_event(entity_id, position=50, tilt=20),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=_tilt_check(suppressed=True),
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id)
@@ -172,13 +175,15 @@ def test_tilt_drift_outside_suppression_trips_override() -> None:
     mgr = _make_manager(entity_id)
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=20),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=_tilt_check(suppressed=False),
+        _make_event(entity_id, position=50, tilt=20),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=_tilt_check(suppressed=False),
+        ),
     )
 
     assert mgr.is_cover_manual(entity_id)
@@ -190,13 +195,15 @@ def test_tilt_drift_within_threshold_is_ignored_even_outside_window() -> None:
     mgr = _make_manager(entity_id)
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=72),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=_tilt_check(suppressed=False),
+        _make_event(entity_id, position=50, tilt=72),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=_tilt_check(suppressed=False),
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id)
@@ -213,13 +220,15 @@ def test_position_drift_inside_tilt_suppression_window_is_ignored() -> None:
     mgr = _make_manager(entity_id)
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=58, tilt=20),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=_tilt_check(suppressed=True),
+        _make_event(entity_id, position=58, tilt=20),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=_tilt_check(suppressed=True),
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id)
@@ -238,13 +247,15 @@ def test_position_drift_inside_window_with_tilt_on_target_is_ignored() -> None:
     mgr.hass.states.get = MagicMock(return_value=None)
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=37, tilt=70),
-        our_state=34,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=3,
-        secondary_axis_check=_tilt_check(expected=70, suppressed=True),
+        _make_event(entity_id, position=37, tilt=70),
+        StateChangeInputs(
+            our_state=34,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=3,
+            secondary_axis_check=_tilt_check(expected=70, suppressed=True),
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id)
@@ -264,13 +275,15 @@ def test_position_drift_outside_window_with_tilt_on_target_is_ignored() -> None:
     mgr.hass.states.get = MagicMock(return_value=None)
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=37, tilt=70),
-        our_state=34,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=3,
-        secondary_axis_check=_tilt_check(expected=70, suppressed=False),
+        _make_event(entity_id, position=37, tilt=70),
+        StateChangeInputs(
+            our_state=34,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=3,
+            secondary_axis_check=_tilt_check(expected=70, suppressed=False),
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id)
@@ -283,13 +296,15 @@ def test_position_drift_outside_tilt_suppression_trips_override() -> None:
     mgr.hass.states.get = MagicMock(return_value=None)
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=80, tilt=70),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=_tilt_check(suppressed=False),
+        _make_event(entity_id, position=80, tilt=70),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=_tilt_check(suppressed=False),
+        ),
     )
 
     assert mgr.is_cover_manual(entity_id)
@@ -311,22 +326,24 @@ def test_tilt_drift_during_in_transit_close_is_ignored_regardless_of_delta() -> 
     seq = _make_sequencer_suppression(entity_id=entity_id, state="closing")
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=86, tilt=0),
-        our_state=100,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=SecondaryAxisCheck(
-            expected=100,
-            attribute="current_tilt_position",
-            label="tilt",
-            suppression=seq.is_in_suppression_with_cap,
-            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
-            # this term is always False — it does not exercise the #1329
-            # tilt-only window; that bound coverage lives in
-            # tests/test_issue_1329_tilt_only_publish_lag.py.
-            single_axis_suppression=seq.is_in_tilt_publish_lag,
+        _make_event(entity_id, position=86, tilt=0),
+        StateChangeInputs(
+            our_state=100,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=SecondaryAxisCheck(
+                expected=100,
+                attribute="current_tilt_position",
+                label="tilt",
+                suppression=seq.is_in_suppression_with_cap,
+                # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+                # this term is always False — it does not exercise the #1329
+                # tilt-only window; that bound coverage lives in
+                # tests/test_issue_1329_tilt_only_publish_lag.py.
+                single_axis_suppression=seq.is_in_tilt_publish_lag,
+            ),
         ),
     )
 
@@ -348,22 +365,24 @@ def test_tilt_drift_during_in_transit_open_is_ignored_regardless_of_delta() -> N
     seq = _make_sequencer_suppression(entity_id=entity_id, state="opening")
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=17, tilt=100),
-        our_state=60,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=SecondaryAxisCheck(
-            expected=60,
-            attribute="current_tilt_position",
-            label="tilt",
-            suppression=seq.is_in_suppression_with_cap,
-            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
-            # this term is always False — it does not exercise the #1329
-            # tilt-only window; that bound coverage lives in
-            # tests/test_issue_1329_tilt_only_publish_lag.py.
-            single_axis_suppression=seq.is_in_tilt_publish_lag,
+        _make_event(entity_id, position=17, tilt=100),
+        StateChangeInputs(
+            our_state=60,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=SecondaryAxisCheck(
+                expected=60,
+                attribute="current_tilt_position",
+                label="tilt",
+                suppression=seq.is_in_suppression_with_cap,
+                # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+                # this term is always False — it does not exercise the #1329
+                # tilt-only window; that bound coverage lives in
+                # tests/test_issue_1329_tilt_only_publish_lag.py.
+                single_axis_suppression=seq.is_in_tilt_publish_lag,
+            ),
         ),
     )
 
@@ -384,22 +403,24 @@ def test_tilt_drift_inside_post_settle_grace_is_ignored() -> None:
     seq = _make_sequencer_suppression(entity_id=entity_id, state="stopped")
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=0),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=SecondaryAxisCheck(
-            expected=80,
-            attribute="current_tilt_position",
-            label="tilt",
-            suppression=seq.is_in_suppression_with_cap,
-            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
-            # this term is always False — it does not exercise the #1329
-            # tilt-only window; that bound coverage lives in
-            # tests/test_issue_1329_tilt_only_publish_lag.py.
-            single_axis_suppression=seq.is_in_tilt_publish_lag,
+        _make_event(entity_id, position=50, tilt=0),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=SecondaryAxisCheck(
+                expected=80,
+                attribute="current_tilt_position",
+                label="tilt",
+                suppression=seq.is_in_suppression_with_cap,
+                # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+                # this term is always False — it does not exercise the #1329
+                # tilt-only window; that bound coverage lives in
+                # tests/test_issue_1329_tilt_only_publish_lag.py.
+                single_axis_suppression=seq.is_in_tilt_publish_lag,
+            ),
         ),
     )
 
@@ -435,24 +456,26 @@ def test_tilt_drift_after_settle_grace_with_large_delta_trips_override() -> None
     )
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=0),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=SecondaryAxisCheck(
-            expected=80,
-            attribute="current_tilt_position",
-            label="tilt",
-            # Issue #1329 (MUST-FIX 2): wired so this guard genuinely reaches
-            # ``is_in_tilt_publish_lag`` — see the module docstring's note on
-            # ``_make_sequencer_suppression``. ``_tilt_sent_at`` is never
-            # populated here (no ``update_tilt_only`` call), so this term is
-            # always False and the assertion below is unchanged: the delta=95
-            # user-twist must still trip on the position-anchored cap alone.
-            suppression=seq.is_in_suppression_with_cap,
-            single_axis_suppression=seq.is_in_tilt_publish_lag,
+        _make_event(entity_id, position=50, tilt=0),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=SecondaryAxisCheck(
+                expected=80,
+                attribute="current_tilt_position",
+                label="tilt",
+                # Issue #1329 (MUST-FIX 2): wired so this guard genuinely reaches
+                # ``is_in_tilt_publish_lag`` — see the module docstring's note on
+                # ``_make_sequencer_suppression``. ``_tilt_sent_at`` is never
+                # populated here (no ``update_tilt_only`` call), so this term is
+                # always False and the assertion below is unchanged: the delta=95
+                # user-twist must still trip on the position-anchored cap alone.
+                suppression=seq.is_in_suppression_with_cap,
+                single_axis_suppression=seq.is_in_tilt_publish_lag,
+            ),
         ),
     )
 
@@ -466,13 +489,15 @@ def test_non_venetian_cover_with_no_check_runs_position_axis_only() -> None:
     mgr.hass.states.get = MagicMock(return_value=None)
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=10),
-        our_state=50,
-        policy=get_policy("cover_blind"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=None,
+        _make_event(entity_id, position=50, tilt=10),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_blind"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=None,
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id)
@@ -507,22 +532,24 @@ def test_late_publish_burst_after_real_settle_does_not_trip_override() -> None:
     )
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=100, tilt=5),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=SecondaryAxisCheck(
-            expected=100,
-            attribute="current_tilt_position",
-            label="tilt",
-            suppression=seq.is_in_suppression_with_cap,
-            # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
-            # this term is always False — it does not exercise the #1329
-            # tilt-only window; that bound coverage lives in
-            # tests/test_issue_1329_tilt_only_publish_lag.py.
-            single_axis_suppression=seq.is_in_tilt_publish_lag,
+        _make_event(entity_id, position=100, tilt=5),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=SecondaryAxisCheck(
+                expected=100,
+                attribute="current_tilt_position",
+                label="tilt",
+                suppression=seq.is_in_suppression_with_cap,
+                # No `update_tilt_only` call here, so `_tilt_sent_at` is unset and
+                # this term is always False — it does not exercise the #1329
+                # tilt-only window; that bound coverage lives in
+                # tests/test_issue_1329_tilt_only_publish_lag.py.
+                single_axis_suppression=seq.is_in_tilt_publish_lag,
+            ),
         ),
     )
 
@@ -559,24 +586,26 @@ def test_real_user_twist_after_publish_lag_still_trips_override() -> None:
     )
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=100, tilt=5),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=SecondaryAxisCheck(
-            expected=100,
-            attribute="current_tilt_position",
-            label="tilt",
-            # Issue #1329 (MUST-FIX 2): wired so this guard genuinely reaches
-            # ``is_in_tilt_publish_lag`` (see ``_make_sequencer_suppression``'s
-            # docstring). ``_tilt_sent_at`` is never populated here (no
-            # ``update_tilt_only`` call), so this term is always False — the
-            # delta=95 user-twist trips solely on the position-anchored cap
-            # having expired, unchanged from before this wiring.
-            suppression=seq.is_in_suppression_with_cap,
-            single_axis_suppression=seq.is_in_tilt_publish_lag,
+        _make_event(entity_id, position=100, tilt=5),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=SecondaryAxisCheck(
+                expected=100,
+                attribute="current_tilt_position",
+                label="tilt",
+                # Issue #1329 (MUST-FIX 2): wired so this guard genuinely reaches
+                # ``is_in_tilt_publish_lag`` (see ``_make_sequencer_suppression``'s
+                # docstring). ``_tilt_sent_at`` is never populated here (no
+                # ``update_tilt_only`` call), so this term is always False — the
+                # delta=95 user-twist trips solely on the position-anchored cap
+                # having expired, unchanged from before this wiring.
+                suppression=seq.is_in_suppression_with_cap,
+                single_axis_suppression=seq.is_in_tilt_publish_lag,
+            ),
         ),
     )
 
@@ -716,13 +745,15 @@ def test_tilt_axis_change_inside_command_grace_is_not_override() -> None:
     assert check is not None
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=None, tilt=43),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=3,
-        secondary_axis_check=check,
+        _make_event(entity_id, position=None, tilt=43),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=3,
+            secondary_axis_check=check,
+        ),
     )
 
     assert not mgr.is_cover_manual(
@@ -749,13 +780,15 @@ def test_tilt_only_update_inside_grace_position_and_tilt_mode_not_override() -> 
     assert check is not None
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=None, tilt=43),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=3,
-        secondary_axis_check=check,
+        _make_event(entity_id, position=None, tilt=43),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=3,
+            secondary_axis_check=check,
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id), (
@@ -854,14 +887,16 @@ def test_position_drift_inside_publish_lag_after_settle_is_ignored() -> None:
     )
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=0, tilt=100),
-        our_state=100,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=None,
-        is_in_command_grace=lambda _eid: False,
-        is_in_transit=lambda _eid: False,
+        _make_event(entity_id, position=0, tilt=100),
+        StateChangeInputs(
+            our_state=100,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=None,
+            is_in_command_grace=lambda _eid: False,
+            is_in_transit=lambda _eid: False,
+        ),
     )
 
     assert not mgr.is_cover_manual(
@@ -907,14 +942,16 @@ def test_position_drift_after_publish_lag_still_trips_override() -> None:
     )
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=0, tilt=100),
-        our_state=100,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=None,
-        is_in_command_grace=lambda _eid: False,
-        is_in_transit=lambda _eid: False,
+        _make_event(entity_id, position=0, tilt=100),
+        StateChangeInputs(
+            our_state=100,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=None,
+            is_in_command_grace=lambda _eid: False,
+            is_in_transit=lambda _eid: False,
+        ),
     )
 
     assert mgr.is_cover_manual(
@@ -949,14 +986,16 @@ def test_configurable_publish_lag_extends_suppression_window() -> None:
     )
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=0, tilt=100),
-        our_state=100,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=None,
-        is_in_command_grace=lambda _eid: False,
-        is_in_transit=lambda _eid: False,
+        _make_event(entity_id, position=0, tilt=100),
+        StateChangeInputs(
+            our_state=100,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=None,
+            is_in_command_grace=lambda _eid: False,
+            is_in_transit=lambda _eid: False,
+        ),
     )
 
     assert not mgr.is_cover_manual(
@@ -982,14 +1021,16 @@ def test_configurable_publish_lag_shrinks_suppression_window() -> None:
     )
 
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=0, tilt=100),
-        our_state=100,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=None,
-        is_in_command_grace=lambda _eid: False,
-        is_in_transit=lambda _eid: False,
+        _make_event(entity_id, position=0, tilt=100),
+        StateChangeInputs(
+            our_state=100,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=None,
+            is_in_command_grace=lambda _eid: False,
+            is_in_transit=lambda _eid: False,
+        ),
     )
 
     assert mgr.is_cover_manual(
@@ -1016,14 +1057,16 @@ def test_warn_log_fires_on_first_suppression_per_entity(caplog) -> None:
 
     def _drive_one_suppression() -> None:
         mgr.handle_state_change(
-            states_data=_make_event(entity_id, position=0, tilt=100),
-            our_state=100,
-            policy=policy,
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=None,
-            is_in_command_grace=lambda _eid: False,
-            is_in_transit=lambda _eid: False,
+            _make_event(entity_id, position=0, tilt=100),
+            StateChangeInputs(
+                our_state=100,
+                policy=policy,
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=None,
+                is_in_command_grace=lambda _eid: False,
+                is_in_transit=lambda _eid: False,
+            ),
         )
 
     with caplog.at_level(
@@ -1161,13 +1204,15 @@ async def test_drift_reset_endpoint_publish_after_grace_is_suppressed() -> None:
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=0),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 79),
+        _make_event(entity_id, position=50, tilt=0),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 79),
+        ),
     )
 
     assert not mgr.is_cover_manual(
@@ -1190,13 +1235,15 @@ async def test_user_tilt_move_to_endpoint_without_reset_trips_override() -> None
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=0),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 79),
+        _make_event(entity_id, position=50, tilt=0),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 79),
+        ),
     )
 
     assert mgr.is_cover_manual(
@@ -1220,13 +1267,15 @@ async def test_user_tilt_move_to_mirror_value_during_window_trips_override() -> 
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=70),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 35),
+        _make_event(entity_id, position=50, tilt=70),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 35),
+        ),
     )
 
     assert mgr.is_cover_manual(
@@ -1253,13 +1302,15 @@ async def test_position_axis_move_during_window_trips_override() -> None:
     # ``primary_axis_suppression`` the sequencer backs — this is the path
     # finding #2 lives on (the old design folded the excursion into it).
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=15, tilt=35),
-        our_state=50,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 35),
+        _make_event(entity_id, position=15, tilt=35),
+        StateChangeInputs(
+            our_state=50,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 35),
+        ),
     )
 
     assert mgr.is_cover_manual(entity_id), (
@@ -1294,14 +1345,16 @@ async def test_endpoint_publish_inside_grace_marks_record_then_target_return_con
     # off the same GracePeriodManager), so the grace-reject branch fires first
     # and marks (not consumes) the excursion record.
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=0),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 79),
-        is_in_command_grace=lambda _eid: True,
+        _make_event(entity_id, position=50, tilt=0),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 79),
+            is_in_command_grace=lambda _eid: True,
+        ),
     )
     assert not mgr.is_cover_manual(entity_id)
     assert entity_id in seq._reset_excursion
@@ -1309,14 +1362,16 @@ async def test_endpoint_publish_inside_grace_marks_record_then_target_return_con
 
     # In-grace target-return publish (tilt back to 79) consumes the record.
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=79),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 79),
-        is_in_command_grace=lambda _eid: True,
+        _make_event(entity_id, position=50, tilt=79),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 79),
+            is_in_command_grace=lambda _eid: True,
+        ),
     )
     assert not mgr.is_cover_manual(entity_id)
     assert entity_id not in seq._reset_excursion
@@ -1327,14 +1382,16 @@ async def test_endpoint_publish_inside_grace_marks_record_then_target_return_con
     # callback consults it), mirroring the window having closed.
     policy._grace_mgr.is_in_command_grace_period = lambda _eid: False
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=0),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 79),
-        is_in_command_grace=lambda _eid: False,
+        _make_event(entity_id, position=50, tilt=0),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 79),
+            is_in_command_grace=lambda _eid: False,
+        ),
     )
     assert mgr.is_cover_manual(
         entity_id
@@ -1363,13 +1420,15 @@ async def test_endpoint_publish_during_wait_for_target_marks_record_then_target_
     # In-flight position command: wait_for_target active — the is_waiting branch
     # fires first and marks (not consumes) the excursion record.
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=0),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: True,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 79),
+        _make_event(entity_id, position=50, tilt=0),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: True,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 79),
+        ),
     )
     assert not mgr.is_cover_manual(entity_id)
     assert entity_id in seq._reset_excursion
@@ -1377,13 +1436,15 @@ async def test_endpoint_publish_during_wait_for_target_marks_record_then_target_
 
     # Target-return publish while still waiting consumes the record.
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=79),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: True,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 79),
+        _make_event(entity_id, position=50, tilt=79),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: True,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 79),
+        ),
     )
     assert not mgr.is_cover_manual(entity_id)
     assert entity_id not in seq._reset_excursion
@@ -1391,13 +1452,15 @@ async def test_endpoint_publish_during_wait_for_target_marks_record_then_target_
     # Once the command settles (is_waiting False, no stamp left), a genuine user
     # tilt-to-endpoint move must still trip override.
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=0),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 79),
+        _make_event(entity_id, position=50, tilt=0),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 79),
+        ),
     )
     assert mgr.is_cover_manual(
         entity_id
@@ -1426,13 +1489,15 @@ async def test_endpoint_publish_after_excursion_window_trips_override() -> None:
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=0),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 79),
+        _make_event(entity_id, position=50, tilt=0),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 79),
+        ),
     )
 
     assert mgr.is_cover_manual(
@@ -1456,13 +1521,15 @@ async def test_drift_reset_intermediate_publish_does_not_trip_override() -> None
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=9),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 41),
+        _make_event(entity_id, position=50, tilt=9),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 41),
+        ),
     )
     assert not mgr.is_cover_manual(
         entity_id
@@ -1471,26 +1538,30 @@ async def test_drift_reset_intermediate_publish_does_not_trip_override() -> None
     # The endpoint publish marks the record; it is RETAINED, not consumed, so it
     # still protects the return leg (#930).
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=0),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 41),
+        _make_event(entity_id, position=50, tilt=0),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 41),
+        ),
     )
     assert not mgr.is_cover_manual(entity_id)
     assert entity_id in seq._reset_excursion
 
     # The target-return publish (tilt back to 41) consumes the record.
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=41),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 41),
+        _make_event(entity_id, position=50, tilt=41),
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 41),
+        ),
     )
     assert not mgr.is_cover_manual(entity_id)
     assert entity_id not in seq._reset_excursion
@@ -1517,13 +1588,15 @@ async def test_return_leg_intermediate_after_endpoint_publish_does_not_trip_over
 
     def _drive(tilt: int) -> None:
         mgr.handle_state_change(
-            states_data=_make_event(entity_id, position=50, tilt=tilt),
-            our_state=50,
-            policy=get_policy("cover_venetian"),
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=2,
-            secondary_axis_check=_secondary_check(policy, 35),
+            _make_event(entity_id, position=50, tilt=tilt),
+            StateChangeInputs(
+                our_state=50,
+                policy=get_policy("cover_venetian"),
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=2,
+                secondary_axis_check=_secondary_check(policy, 35),
+            ),
         )
 
     # Endpoint publish marks the record.
@@ -1560,13 +1633,15 @@ async def test_near_target_tilt_publish_position_axis_still_evaluated() -> None:
     # Pass the WIRED policy so the position axis consults the sequencer-backed
     # ``primary_axis_suppression`` (which must NOT swallow this move).
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=15, tilt=34),
-        our_state=50,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=2,
-        secondary_axis_check=_secondary_check(policy, 35),
+        _make_event(entity_id, position=15, tilt=34),
+        StateChangeInputs(
+            our_state=50,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 35),
+        ),
     )
 
     assert mgr.is_cover_manual(entity_id), (
@@ -1615,13 +1690,15 @@ def test_inverse_tilt_wire_publish_of_verified_target_is_not_manual_override() -
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
-        our_state=2,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=10,
-        secondary_axis_check=check,
+        _make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
+        StateChangeInputs(
+            our_state=2,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=10,
+            secondary_axis_check=check,
+        ),
     )
 
     assert not mgr.is_cover_manual(
@@ -1649,15 +1726,15 @@ def test_inverse_tilt_genuine_off_target_move_still_trips() -> None:
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(
-            entity_id, position=2, tilt=70
-        ),  # wire 70 -> logical 30
-        our_state=2,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=10,
-        secondary_axis_check=check,
+        _make_event(entity_id, position=2, tilt=70),  # wire 70 -> logical 30
+        StateChangeInputs(
+            our_state=2,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=10,
+            secondary_axis_check=check,
+        ),
     )
 
     assert mgr.is_cover_manual(
@@ -1681,13 +1758,15 @@ def test_inverse_tilt_mirror_value_move_still_trips() -> None:
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=2, tilt=96),  # wire 96 -> logical 4
-        our_state=2,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=10,
-        secondary_axis_check=check,
+        _make_event(entity_id, position=2, tilt=96),  # wire 96 -> logical 4
+        StateChangeInputs(
+            our_state=2,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=10,
+            secondary_axis_check=check,
+        ),
     )
 
     assert mgr.is_cover_manual(entity_id), (
@@ -1743,13 +1822,15 @@ def test_non_inverting_tilt_delta_is_unchanged() -> None:
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=2, tilt=65),
-        our_state=2,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=10,
-        secondary_axis_check=check,
+        _make_event(entity_id, position=2, tilt=65),
+        StateChangeInputs(
+            our_state=2,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=10,
+            secondary_axis_check=check,
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id), (
@@ -1784,13 +1865,15 @@ def test_inverse_tilt_normalises_the_dispatched_anchor() -> None:
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
-        our_state=2,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=10,
-        secondary_axis_check=check,
+        _make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
+        StateChangeInputs(
+            our_state=2,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=10,
+            secondary_axis_check=check,
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id), (

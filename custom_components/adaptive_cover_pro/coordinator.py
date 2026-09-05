@@ -101,12 +101,8 @@ from .const import (
     CONF_INVERSE_STATE,
     CONF_INVERSE_TILT,
     CONF_IRRADIANCE_ENTITY,
-    CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
-    CONF_MANUAL_OVERRIDE_DURATION,
-    CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_OVERRIDE_STRATEGY,
-    CONF_MANUAL_THRESHOLD,
     CONF_MY_POSITION_VALUE,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_RETURN_SUNSET,
@@ -156,9 +152,9 @@ from .managers.cover_command.queue import (
 )
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import (
-    STARTED_AT_SOURCE_ENGAGED,
     AdaptiveCoverManager,
     DetectorConfig,
+    StateChangeInputs,
     get_detector,
 )
 from .managers.climate_smoothing import ClimateSmoothingManager
@@ -402,15 +398,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._sun_start_time = None
         self._sun_start_position: dict[str, float] | None = None
         self._sun_end_position: dict[str, float] | None = None
-        self.manual_reset = self.config_entry.options.get(
-            CONF_MANUAL_OVERRIDE_RESET, False
-        )
-        self.manual_duration = self.config_entry.options.get(
-            CONF_MANUAL_OVERRIDE_DURATION
-        ) or {"hours": 2}
-        self.manual_ignore_external = self.config_entry.options.get(
-            CONF_MANUAL_IGNORE_EXTERNAL, False
-        )
+        # Built once here and reused for every seeded option below: the
+        # manual-override mirrors, the detector config, the command-service
+        # construction (position_tolerance) and the late policy.attach. Each
+        # default is then declared once — in config_types — instead of being
+        # restated at every read site.
+        rc = RuntimeConfig.from_options(self.config_entry.options)
+        self.manual_reset = rc.manual_override.reset
+        self.manual_duration = rc.manual_override.duration
+        self.manual_ignore_external = rc.manual_override.ignore_external
         self.state_change = False
         self.cover_state_change = False
         self.first_refresh = False
@@ -484,7 +480,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             detector=get_detector(
                 self.config_entry.options.get(CONF_MANUAL_OVERRIDE_STRATEGY)
                 or DEFAULT_MANUAL_OVERRIDE_STRATEGY,
-                self._make_detector_config(self.config_entry.options),
+                self._make_detector_config(self.config_entry.options, rc),
             ),
         )
         # Populate the manager's cover set at construction so the manual-override
@@ -720,26 +716,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # again instead of it staying silenced from the first occurrence.
         self._irradiance_unit_warned: tuple[str | None, str | None] | None = None
 
-        # Built once and reused for both the command-service construction
-        # (position_tolerance) and the late policy.attach below.
-        _rc_attach = RuntimeConfig.from_options(self.config_entry.options)
         # Seeded here so the live lambda passed to policy.attach reads a value
         # before the first _update_options cycle; refreshed each cycle (#679).
-        self._enforce_delta_at_endpoints = (
-            _rc_attach.tracking.enforce_delta_at_endpoints
-        )
+        self._enforce_delta_at_endpoints = rc.tracking.enforce_delta_at_endpoints
         # Seeded here so the live drift-reset lambda passed to policy.attach
         # reads a value before the first _update_options cycle; refreshed each
         # cycle (issue #663).
-        self._venetian_tilt_reset_threshold = _rc_attach.venetian.tilt_reset_threshold
+        self._venetian_tilt_reset_threshold = rc.venetian.tilt_reset_threshold
         # Seeded alongside the threshold so the live drift-reset direction lambda
         # passed to policy.attach reads a value before the first _update_options
         # cycle; refreshed each cycle (issue #686).
-        self._venetian_tilt_reset_direction = _rc_attach.venetian.tilt_reset_direction
+        self._venetian_tilt_reset_direction = rc.venetian.tilt_reset_direction
         # Seeded alongside the threshold so the live drift-reset scope lambda
         # passed to policy.attach reads a value before the first _update_options
         # cycle; refreshed each cycle (issue #808).
-        self._venetian_tilt_reset_scope = _rc_attach.venetian.tilt_reset_scope
+        self._venetian_tilt_reset_scope = rc.venetian.tilt_reset_scope
         # Seeded so the end-time sensor and the reboot-restore path — both of
         # which can reach expiry_for() before the first _update_options cycle —
         # read a real mode rather than raising AttributeError; refreshed each
@@ -748,7 +739,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # CONF_MANUAL_OVERRIDE_DURATION_MODE from options. The config/options
         # flow, the field schema and the service validator still read the raw
         # key — correctly, since none of them has a coordinator to read from.
-        self.manual_override_duration_mode = _rc_attach.manual_override.duration_mode
+        self.manual_override_duration_mode = rc.manual_override.duration_mode
 
         # Named dispatch queue (issue #1189). Resolved once, at setup: the queue
         # is cross-entry shared state, so it is looked up in the hass.data
@@ -757,7 +748,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # assignment full-reloads the entry — it is setup wiring (this
         # constructor argument, this refcount), not a value the running
         # coordinator can re-read.
-        _queue_name = normalize_queue_name(_rc_attach.tracking.command_queue)
+        _queue_name = normalize_queue_name(rc.tracking.command_queue)
         if _queue_name:
             self._command_queue = get_command_queue(self.hass, _queue_name)
             self._command_queue.attach()
@@ -781,8 +772,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             open_close_threshold=self.config_entry.options.get(
                 CONF_OPEN_CLOSE_THRESHOLD, 50
             ),
-            endpoint_use_open_close=_rc_attach.tracking.endpoint_use_open_close,
-            position_tolerance=_rc_attach.tracking.position_tolerance,
+            endpoint_use_open_close=rc.tracking.endpoint_use_open_close,
+            position_tolerance=rc.tracking.position_tolerance,
             transit_timeout_seconds=self.config_entry.options.get(CONF_TRANSIT_TIMEOUT)
             or DEFAULT_TRANSIT_TIMEOUT_SECONDS,
             on_tick=self._check_time_window_transition,
@@ -894,15 +885,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.hass, eid, "current_tilt_position"
             ),
             event_buffer=self._event_buffer,
-            tilt_skip_above=_rc_attach.venetian.tilt_skip_above,
-            venetian_tilt_skip_mode=_rc_attach.venetian.tilt_skip_mode,
-            venetian_mode=_rc_attach.venetian.venetian_mode,
-            venetian_tilt_only_scope=_rc_attach.venetian.tilt_only_scope,
-            post_settle_hold_seconds=_rc_attach.venetian.post_settle_hold_seconds,
-            post_settle_mode=_rc_attach.venetian.post_settle_mode,
-            backrotate_publish_lag_seconds=(
-                _rc_attach.venetian.backrotate_publish_lag_seconds
-            ),
+            tilt_skip_above=rc.venetian.tilt_skip_above,
+            venetian_tilt_skip_mode=rc.venetian.tilt_skip_mode,
+            venetian_mode=rc.venetian.venetian_mode,
+            venetian_tilt_only_scope=rc.venetian.tilt_only_scope,
+            post_settle_hold_seconds=rc.venetian.post_settle_hold_seconds,
+            post_settle_mode=rc.venetian.post_settle_mode,
+            backrotate_publish_lag_seconds=rc.venetian.backrotate_publish_lag_seconds,
             # Lets a dual-axis policy report its own tilt frames to this
             # instance's command queue (issue #1189). The settle+tilt tail runs
             # outside the queue slot by design, so without this the queue would
@@ -1003,20 +992,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # cancelled on shutdown so nothing is left pending after an unload.
         self._external_interlock_tasks: dict[frozenset[str], asyncio.Task] = {}
 
-    def _make_detector_config(self, options) -> DetectorConfig:
-        """Build the manual-override DetectorConfig from raw options.
+    def _make_detector_config(self, options, rc: RuntimeConfig) -> DetectorConfig:
+        """Build the DetectorConfig for the engine and active detector.
 
-        Single source of truth shared by manager construction and
-        ``update_config`` so the detector and the engine never drift.
+        ``duration`` comes from the already-built RuntimeConfig slice so the hold
+        default is declared once (config_types); ``command_window_seconds`` still
+        reads CONF_TRANSIT_TIMEOUT directly because no slice tracks it.
         """
         return DetectorConfig(
-            manual_threshold=options.get(CONF_MANUAL_THRESHOLD),
             command_window_seconds=float(
                 options.get(CONF_TRANSIT_TIMEOUT) or DEFAULT_TRANSIT_TIMEOUT_SECONDS
             ),
-            reset=options.get(CONF_MANUAL_OVERRIDE_RESET, False),
-            duration=options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2},
-            ignore_external=options.get(CONF_MANUAL_IGNORE_EXTERNAL, False),
+            duration=rc.manual_override.duration,
         )
 
     # --- Property delegates for CoverCommandService state ---
@@ -2715,7 +2702,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Reset expired manual overrides BEFORE running the pipeline so the
         # pipeline sees the cleared state and computes the correct position.
-        auto_expired = await self.manager.reset_if_needed()
+        auto_expired = self.manager.reset_if_needed()
 
         # On first refresh after HA restart, restore the weather override flag BEFORE
         # the pipeline runs so the weather handler sees the correct state on cycle 1.
@@ -4004,15 +3991,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # defaults) before reconciliation can resurrect it (issue #215/#216).
             self.manager.handle_state_change(
                 event_data,
-                expected_position,
-                self._policy,
-                self.manual_reset,
-                self._cmd_svc.is_waiting_for_target,
-                detection_threshold,
-                has_recorded_target=recorded_target is not None,
-                secondary_axis_check=secondary_axis_check,
-                is_in_command_grace=self._grace_mgr.is_in_command_grace_period,
-                is_in_transit=self._cmd_svc._is_cover_in_transit,
+                StateChangeInputs(
+                    our_state=expected_position,
+                    policy=self._policy,
+                    allow_reset=self.manual_reset,
+                    is_waiting=self._cmd_svc.is_waiting_for_target,
+                    manual_threshold=detection_threshold,
+                    has_recorded_target=recorded_target is not None,
+                    secondary_axis_check=secondary_axis_check,
+                    is_in_command_grace=self._grace_mgr.is_in_command_grace_period,
+                    is_in_transit=self._cmd_svc.is_cover_in_transit,
+                ),
             )
 
         self.cover_state_change = False
@@ -4261,7 +4250,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # runtime (auto-reset duration, threshold, command window) so changes
         # take effect without a reload. The detection *strategy* itself is
         # selected at construction; switching it requires a config-entry reload.
-        self.manager.update_config(self._make_detector_config(options))
+        self.manager.update_config(self._make_detector_config(options, rc))
         self.start_value = rc.tracking.interp_start
         self.end_value = rc.tracking.interp_end
         self.normal_list = rc.tracking.interp_list
@@ -6003,10 +5992,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # already implies ``expiry_for`` is non-None; the guard below stays as
         # the belt-and-braces read.
         for eid in self.manager.active_entities():
-            started_at = self.manager.manual_control_time.get(eid)
+            state = self.manager.override_for(eid)
             expires_at = self.manager.expiry_for(eid)
-            if started_at is None or expires_at is None:
+            if state is None or expires_at is None:
                 continue
+            started_at = state.started_at
             if started_at.tzinfo is None:
                 started_at = started_at.replace(tzinfo=dt.UTC)
             entries[eid] = {
@@ -6016,9 +6006,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 # reader (or a saved diagnostics file) already knows is unchanged.
                 "active": True,
                 "started_at": started_at.isoformat(),
-                "started_at_source": self.manager.manual_control_start_source.get(
-                    eid, STARTED_AT_SOURCE_ENGAGED
-                ),
+                "started_at_source": state.start_source,
                 "expires_at": expires_at.isoformat(),
                 "remaining_seconds": int(max(0, (expires_at - now).total_seconds())),
             }

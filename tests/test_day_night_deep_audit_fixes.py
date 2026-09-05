@@ -43,7 +43,7 @@ from custom_components.adaptive_cover_pro.engine.covers.day_night_shade import (
     DAY_NIGHT_BLACKOUT,
     DAY_NIGHT_SHEER,
 )
-from custom_components.adaptive_cover_pro.managers.manual_override import inverse_state
+from custom_components.adaptive_cover_pro.position_utils import inverse_state
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 _MIDDLE = "cover.middle_rail"

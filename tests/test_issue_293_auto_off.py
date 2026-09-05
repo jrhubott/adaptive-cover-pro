@@ -33,6 +33,9 @@ from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
     PositionContext,
 )
+from custom_components.adaptive_cover_pro.managers.manual_override import (
+    StateChangeInputs,
+)
 
 
 def _event(entity_id, position):
@@ -233,13 +236,15 @@ async def test_discard_target_called_when_observation_flips_to_manual():
 
     manager.handle_state_change(
         event,
-        100,  # latched target
-        policy,
-        False,  # allow_reset
-        lambda _e: False,  # is_waiting
-        5,  # manual_threshold
-        is_in_command_grace=lambda _e: False,
-        is_in_transit=lambda _e: False,
+        StateChangeInputs(
+            our_state=100,  # latched target
+            policy=policy,
+            allow_reset=False,
+            is_waiting=lambda _e: False,
+            manual_threshold=5,
+            is_in_command_grace=lambda _e: False,
+            is_in_transit=lambda _e: False,
+        ),
     )
 
     assert manager.is_cover_manual(entity_id)

@@ -1,6 +1,6 @@
 """Single source of truth for the manual-override expiry ↔ start-time inverse.
 
-``manual_control_time[eid] + reset_duration`` is the ``fixed``-mode hold: the
+``OverrideState.started_at + reset_duration`` is the ``fixed``-mode hold: the
 override runs for a flat clock duration from the moment the user touched the
 cover. Since issue #1044 that is one of several duration modes, so this pair is
 no longer the end-time *authority* — :meth:`.manager.AdaptiveCoverManager.expiry_for`

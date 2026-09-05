@@ -1426,7 +1426,7 @@ class TestReconciliationPassAllowance:
         with (
             _patch_caps(),
             patch.object(svc, "_get_current_position", return_value=10),
-            patch.object(svc, "_is_cover_in_transit", return_value=False),
+            patch.object(svc, "is_cover_in_transit", return_value=False),
         ):
             await asyncio.wait_for(
                 svc.run_reconciliation_pass(dt.datetime.now(dt.UTC)), timeout=5.0
@@ -1458,7 +1458,7 @@ class TestReconciliationPassAllowance:
         with (
             _patch_caps(),
             patch.object(svc, "_get_current_position", return_value=10),
-            patch.object(svc, "_is_cover_in_transit", return_value=False),
+            patch.object(svc, "is_cover_in_transit", return_value=False),
             patch.object(svc, "_reconciliation_queue_budget", return_value=budget),
         ):
             await asyncio.wait_for(
@@ -1520,7 +1520,7 @@ class TestReconciliationPassAllowance:
         with (
             _patch_caps(),
             patch.object(svc, "_get_current_position", return_value=10),
-            patch.object(svc, "_is_cover_in_transit", return_value=False),
+            patch.object(svc, "is_cover_in_transit", return_value=False),
         ):
             for cycle in range(3):
                 # Sun tracking re-targets the first cover between passes.

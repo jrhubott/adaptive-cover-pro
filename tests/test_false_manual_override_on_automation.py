@@ -27,6 +27,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.cover_types import get_policy
+from custom_components.adaptive_cover_pro.managers.manual_override import (
+    StateChangeInputs,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -245,8 +248,8 @@ async def test_matching_off_lowers_detection_threshold_to_tolerance():
     await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 72)
 
     coordinator.manager.handle_state_change.assert_called_once()
-    # Positional arg 5 is the detection threshold (see the call site).
-    passed_threshold = coordinator.manager.handle_state_change.call_args.args[5]
+    inputs = coordinator.manager.handle_state_change.call_args.args[1]
+    passed_threshold = inputs.manual_threshold
     assert passed_threshold == 3  # lowered to position tolerance, not 10
 
 
@@ -272,7 +275,8 @@ async def test_matching_on_passes_manual_threshold_unchanged():
     await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 72)
 
     coordinator.manager.handle_state_change.assert_called_once()
-    passed_threshold = coordinator.manager.handle_state_change.call_args.args[5]
+    inputs = coordinator.manager.handle_state_change.call_args.args[1]
+    passed_threshold = inputs.manual_threshold
     assert passed_threshold == 10  # unchanged — matching-on path untouched
 
 
@@ -309,11 +313,13 @@ def test_position_within_tolerance_floor_not_flagged_as_manual():
 
     manager.handle_state_change(
         state_data,
-        our_state=72,
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=None,  # No user threshold configured
+        StateChangeInputs(
+            our_state=72,
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=None,  # No user threshold configured
+        ),
     )
 
     assert not manager.is_cover_manual(
@@ -332,11 +338,13 @@ def test_position_within_tolerance_floor_not_flagged_strict_user_threshold():
 
     manager.handle_state_change(
         state_data,
-        our_state=72,
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=1,
+        StateChangeInputs(
+            our_state=72,
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=1,
+        ),
     )
 
     assert not manager.is_cover_manual(entity_id), (
@@ -355,11 +363,13 @@ def test_position_exceeding_tolerance_floor_and_no_user_threshold_triggers_overr
 
     manager.handle_state_change(
         state_data,
-        our_state=72,
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=None,
+        StateChangeInputs(
+            our_state=72,
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=None,
+        ),
     )
 
     assert manager.is_cover_manual(
@@ -377,11 +387,13 @@ def test_position_exceeding_user_threshold_and_tolerance_triggers_override():
 
     manager.handle_state_change(
         state_data,
-        our_state=72,
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
+        StateChangeInputs(
+            our_state=72,
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+        ),
     )
 
     assert manager.is_cover_manual(
@@ -407,11 +419,13 @@ def test_position_exactly_at_tolerance_boundary_not_flagged():
 
     manager.handle_state_change(
         state_data,
-        our_state=72,
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=None,
+        StateChangeInputs(
+            our_state=72,
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=None,
+        ),
     )
 
     assert not manager.is_cover_manual(entity_id), (
@@ -433,11 +447,13 @@ def test_position_just_inside_tolerance_boundary_not_flagged():
 
     manager.handle_state_change(
         state_data,
-        our_state=72,
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=None,
+        StateChangeInputs(
+            our_state=72,
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=None,
+        ),
     )
 
     assert not manager.is_cover_manual(entity_id), (
@@ -458,11 +474,13 @@ def test_large_user_threshold_wins_over_tolerance_floor():
 
     manager.handle_state_change(
         state_data,
-        our_state=72,
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=10,
+        StateChangeInputs(
+            our_state=72,
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=10,
+        ),
     )
 
     assert not manager.is_cover_manual(
@@ -479,11 +497,13 @@ def test_large_user_threshold_triggers_when_difference_exceeds_it():
 
     manager.handle_state_change(
         state_data,
-        our_state=72,
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=10,
+        StateChangeInputs(
+            our_state=72,
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=10,
+        ),
     )
 
     assert manager.is_cover_manual(
@@ -501,11 +521,13 @@ def test_wait_for_target_prevents_override_regardless_of_tolerance():
 
     manager.handle_state_change(
         state_data,
-        our_state=72,
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: True,  # Still waiting for target
-        manual_threshold=None,
+        StateChangeInputs(
+            our_state=72,
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: True,  # Still waiting for target
+            manual_threshold=None,
+        ),
     )
 
     assert not manager.is_cover_manual(
@@ -536,12 +558,14 @@ def test_position_change_inside_command_grace_is_not_override():
 
     manager.handle_state_change(
         state_data,
-        our_state=72,
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        is_in_command_grace=grace_mgr.is_in_command_grace_period,
+        StateChangeInputs(
+            our_state=72,
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            is_in_command_grace=grace_mgr.is_in_command_grace_period,
+        ),
     )
 
     assert not manager.is_cover_manual(
@@ -573,12 +597,14 @@ def test_position_change_after_grace_expired_trips_override():
 
     manager.handle_state_change(
         state_data,
-        our_state=72,
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        is_in_command_grace=grace_mgr.is_in_command_grace_period,
+        StateChangeInputs(
+            our_state=72,
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            is_in_command_grace=grace_mgr.is_in_command_grace_period,
+        ),
     )
 
     assert (
@@ -605,11 +631,13 @@ def test_tolerance_floor_applies_to_tilt_cover():
 
     manager.handle_state_change(
         state_data,
-        our_state=45,
-        policy=get_policy("cover_tilt"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=None,
+        StateChangeInputs(
+            our_state=45,
+            policy=get_policy("cover_tilt"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=None,
+        ),
     )
 
     assert not manager.is_cover_manual(
@@ -699,8 +727,8 @@ async def test_no_recorded_target_passes_has_recorded_target_false():
     )
 
     coordinator.manager.handle_state_change.assert_called_once()
-    _, kwargs = coordinator.manager.handle_state_change.call_args
-    assert kwargs["has_recorded_target"] is False
+    inputs = coordinator.manager.handle_state_change.call_args.args[1]
+    assert inputs.has_recorded_target is False
 
 
 @pytest.mark.asyncio
@@ -721,8 +749,8 @@ async def test_recorded_target_passes_has_recorded_target_true():
     )
 
     coordinator.manager.handle_state_change.assert_called_once()
-    _, kwargs = coordinator.manager.handle_state_change.call_args
-    assert kwargs["has_recorded_target"] is True
+    inputs = coordinator.manager.handle_state_change.call_args.args[1]
+    assert inputs.has_recorded_target is True
 
 
 @pytest.mark.asyncio
@@ -783,12 +811,14 @@ def test_no_recorded_target_real_move_engages_override_end_to_end():
 
     manager.handle_state_change(
         state_data,
-        our_state=100,  # meaningless pipeline default (never commanded)
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=3,
-        has_recorded_target=False,
+        StateChangeInputs(
+            our_state=100,  # meaningless pipeline default (never commanded)
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=3,
+            has_recorded_target=False,
+        ),
     )
 
     assert manager.is_cover_manual(entity_id), (
@@ -812,12 +842,14 @@ def test_no_recorded_target_resting_republish_no_override_end_to_end():
 
     manager.handle_state_change(
         state_data,
-        our_state=100,  # meaningless pipeline default (never commanded)
-        policy=get_policy("cover_blind"),
-        allow_reset=False,
-        is_waiting=lambda _eid: False,
-        manual_threshold=3,
-        has_recorded_target=False,
+        StateChangeInputs(
+            our_state=100,  # meaningless pipeline default (never commanded)
+            policy=get_policy("cover_blind"),
+            allow_reset=False,
+            is_waiting=lambda _eid: False,
+            manual_threshold=3,
+            has_recorded_target=False,
+        ),
     )
 
     assert not manager.is_cover_manual(entity_id), (

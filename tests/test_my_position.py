@@ -626,10 +626,10 @@ class TestHandleStopServiceCall:
         m._test_event_buffer = event_buffer
         return m
 
-    def test_marks_manual_control(self, mgr):
-        """handle_stop_service_call sets manual_control[entity_id] = True."""
+    def test_marks_the_cover_manual(self, mgr):
+        """handle_stop_service_call arms the override for the entity."""
         mgr.handle_stop_service_call("cover.somfy", 50, lambda _eid: False)
-        assert mgr.manual_control.get("cover.somfy") is True
+        assert mgr.is_cover_manual("cover.somfy") is True
 
     def test_records_event(self, mgr):
         """handle_stop_service_call appends a 'manual_override_set' event to the ring buffer."""
@@ -642,19 +642,19 @@ class TestHandleStopServiceCall:
     def test_noop_when_entity_not_tracked(self, mgr):
         """handle_stop_service_call ignores entities not in self.covers."""
         mgr.handle_stop_service_call("cover.unknown", 50, lambda _eid: False)
-        assert mgr.manual_control.get("cover.unknown") is None
+        assert mgr.is_cover_manual("cover.unknown") is False
 
     def test_noop_when_wait_for_target_active(self, mgr):
         """handle_stop_service_call skips when wait_for_target is True (ACP command in flight)."""
         mgr.handle_stop_service_call(
             "cover.somfy", 50, lambda eid: eid == "cover.somfy"
         )
-        assert mgr.manual_control.get("cover.somfy") is None
+        assert mgr.is_cover_manual("cover.somfy") is False
 
-    def test_sets_manual_control_time(self, mgr):
+    def test_records_the_override_start_time(self, mgr):
         """handle_stop_service_call records a timestamp for override duration tracking."""
         mgr.handle_stop_service_call("cover.somfy", 50, lambda _eid: False)
-        assert "cover.somfy" in mgr.manual_control_time
+        assert mgr.override_for("cover.somfy") is not None
 
     def test_no_crash_when_entity_id_wrong_type(self, mgr):
         """handle_stop_service_call is tolerant of unexpected entity ids."""
@@ -726,7 +726,7 @@ class TestCoverServiceCallHandler:
         event = self._make_event("cover.somfy")
         await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
 
-        assert mgr.manual_control.get("cover.somfy") is True
+        assert mgr.is_cover_manual("cover.somfy") is True
         coord._cmd_svc.set_target.assert_called_with("cover.somfy", 50)
 
     @pytest.mark.asyncio
@@ -773,7 +773,7 @@ class TestCoverServiceCallHandler:
         event = self._make_event("cover.somfy", context_id="ctx-abc", user_id="u1")
         await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
 
-        assert mgr.manual_control.get("cover.somfy") is True
+        assert mgr.is_cover_manual("cover.somfy") is True
         events = event_buffer.snapshot()
         assert len(events) == 1
         assert events[0]["event"] == "manual_override_set"
@@ -820,7 +820,7 @@ class TestCoverServiceCallHandler:
         event = self._make_event("cover.somfy", context_id=acp_ctx_id)
         await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
 
-        assert mgr.manual_control.get("cover.somfy") is None
+        assert mgr.is_cover_manual("cover.somfy") is False
 
     @pytest.mark.asyncio
     async def test_no_my_position_value_skips_override(self, mock_hass):
@@ -854,7 +854,7 @@ class TestCoverServiceCallHandler:
         event = self._make_event("cover.somfy")
         await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
 
-        assert mgr.manual_control.get("cover.somfy") is None
+        assert mgr.is_cover_manual("cover.somfy") is False
 
     @pytest.mark.asyncio
     async def test_non_stop_service_is_ignored(self, mock_hass):
@@ -891,7 +891,7 @@ class TestCoverServiceCallHandler:
         event.context = MagicMock()
         event.context.id = "some-id"
         await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
-        assert mgr.manual_control.get("cover.somfy") is None
+        assert mgr.is_cover_manual("cover.somfy") is False
 
     @pytest.mark.asyncio
     async def test_list_entity_id_in_service_data(self, mock_hass):
@@ -929,8 +929,8 @@ class TestCoverServiceCallHandler:
         event.context = Context()
         await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
 
-        assert mgr.manual_control.get("cover.somfy") is True
-        assert mgr.manual_control.get("cover.other") is True
+        assert mgr.is_cover_manual("cover.somfy") is True
+        assert mgr.is_cover_manual("cover.other") is True
         set_target_calls = {
             call.args for call in coord._cmd_svc.set_target.call_args_list
         }

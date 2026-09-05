@@ -250,7 +250,7 @@ class CoverCommandService:
             hass,
             logger,
             dry_run_fn=lambda: self._dry_run,
-            is_in_transit_fn=self._is_cover_in_transit,
+            is_in_transit_fn=self.is_cover_in_transit,
             queue_fn=lambda: self._queue,
         )
 
@@ -1428,15 +1428,19 @@ class CoverCommandService:
         """
         return self._get_current_position(entity)
 
-    def _is_cover_in_transit(self, entity_id: str) -> bool:
+    def is_cover_in_transit(self, entity_id: str) -> bool:
         """Return True when HA reports the cover as actively opening or closing.
 
-        Thin wrapper over :func:`managers.cover_command.transit.is_state_in_transit`
-        so the cover-command service, the dual-axis sequencer, and the
-        state classifier all consult the same string-membership rule (issue
-        #33 Phase 5). Callers that need to guard against stale position
-        reads during a transit move delegate here rather than inlining the
-        state check.
+        The public transit check: the coordinator hands it to the
+        manual-override engine as ``is_in_transit``, so it is part of this
+        service's surface rather than an internal helper (#1274). A thin
+        wrapper over
+        :func:`managers.cover_command.transit.is_state_in_transit` so the
+        cover-command service, the dual-axis sequencer, and the state
+        classifier all consult the same string-membership rule (issue #33
+        Phase 5). Callers that need to guard against stale position reads
+        during a transit move delegate here rather than inlining the state
+        check.
         """
         from .transit import is_state_in_transit
 
@@ -2959,7 +2963,7 @@ class CoverCommandService:
             # now would race the in-flight command and produce a double-move.
             # The cover will emit another state-change event when it stops;
             # that tick runs the full reconciliation path.
-            if self._is_cover_in_transit(entity_id):
+            if self.is_cover_in_transit(entity_id):
                 cover_state = getattr(
                     self._hass.states.get(entity_id), "state", "unknown"
                 )

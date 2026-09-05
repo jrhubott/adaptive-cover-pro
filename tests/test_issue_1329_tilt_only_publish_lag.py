@@ -41,6 +41,7 @@ from custom_components.adaptive_cover_pro.cover_types.venetian.policy import (
 from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
     SecondaryAxisCheck,
+    StateChangeInputs,
 )
 
 # Zero the real-motor sleep delays — update_tilt_only drives the real
@@ -424,13 +425,15 @@ async def test_position_axis_still_trips_manual_override_inside_tilt_publish_lag
     event.old_state = None
 
     mgr.handle_state_change(
-        states_data=event,
-        our_state=19,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=3,
-        secondary_axis_check=check,
+        event,
+        StateChangeInputs(
+            our_state=19,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=3,
+            secondary_axis_check=check,
+        ),
     )
 
     assert mgr.is_cover_manual(entity_id), (

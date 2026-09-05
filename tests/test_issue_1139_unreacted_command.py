@@ -34,6 +34,9 @@ import datetime as dt
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from custom_components.adaptive_cover_pro.managers.manual_override import (
+    StateChangeInputs,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers — cloned from test_issue_518_optimistic_target_replay.py, extended
@@ -439,11 +442,13 @@ class TestEndToEndNoFalseOverride:
 
         manager.handle_state_change(
             coord.state_change_data,
-            our_state=0,
-            policy=get_policy("cover_blind"),
-            allow_reset=False,
-            is_waiting=coord._cmd_svc.is_waiting_for_target,
-            manual_threshold=3,
+            StateChangeInputs(
+                our_state=0,
+                policy=get_policy("cover_blind"),
+                allow_reset=False,
+                is_waiting=coord._cmd_svc.is_waiting_for_target,
+                manual_threshold=3,
+            ),
         )
 
         assert manager.is_cover_manual(entity_id) is False, (

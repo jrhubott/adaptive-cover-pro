@@ -954,6 +954,7 @@ class RuntimeConfig:
             DEFAULT_ENABLE_POSITION_MATCHING,
             DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
             DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS,
+            DEFAULT_MANUAL_OVERRIDE_DURATION,
             DEFAULT_MAX_COVERAGE_STEPS,
             DEFAULT_MINIMIZE_MOVEMENTS,
             DEFAULT_MOTION_TIMEOUT,
@@ -1017,7 +1018,15 @@ class RuntimeConfig:
             ),
             manual_override=ManualOverrideSlice(
                 reset=options.get(CONF_MANUAL_OVERRIDE_RESET, False),
-                duration=options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2},
+                # Copied, not aliased: the constant is a mutable dict and this
+                # value reaches ``coordinator.manual_duration`` and
+                # ``DetectorConfig.duration``, so handing out the module-level
+                # object would let one entry's in-place edit retune every other
+                # entry's override window (issue #1274).
+                duration=(
+                    options.get(CONF_MANUAL_OVERRIDE_DURATION)
+                    or dict(DEFAULT_MANUAL_OVERRIDE_DURATION)
+                ),
                 ignore_external=options.get(CONF_MANUAL_IGNORE_EXTERNAL, False),
                 input_entities=options.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES, []),
                 input_template=options.get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE),

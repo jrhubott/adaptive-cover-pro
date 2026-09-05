@@ -1,6 +1,7 @@
 """Tests for manual override detection with grace period."""
 
 import datetime as dt
+import inspect
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -333,8 +334,16 @@ async def test_reset_clears_wait_for_target_when_no_command_sent():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_reset_if_needed_returns_expired_entity_ids():
+def test_reset_if_needed_is_synchronous():
+    """#1274: reset_if_needed awaits nothing, so it is a plain method."""
+    from custom_components.adaptive_cover_pro.managers.manual_override import (
+        AdaptiveCoverManager,
+    )
+
+    assert not inspect.iscoroutinefunction(AdaptiveCoverManager.reset_if_needed)
+
+
+def test_reset_if_needed_returns_expired_entity_ids():
     """reset_if_needed() must return the set of entity IDs whose override just expired."""
     from custom_components.adaptive_cover_pro.managers.manual_override import (
         AdaptiveCoverManager,
@@ -351,20 +360,19 @@ async def test_reset_if_needed_returns_expired_entity_ids():
 
     # Mark both as manual with a timestamp old enough to expire
     old_time = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=10)
-    manager.manual_control[entity_a] = True
-    manager.manual_control_time[entity_a] = old_time
-    manager.manual_control[entity_b] = True
-    manager.manual_control_time[entity_b] = old_time
+    for entity in (entity_a, entity_b):
+        manager.set_last_updated(
+            entity, MagicMock(last_updated=old_time), allow_reset=True
+        )
 
-    expired = await manager.reset_if_needed()
+    expired = manager.reset_if_needed()
 
     assert expired == {entity_a, entity_b}
     assert not manager.is_cover_manual(entity_a)
     assert not manager.is_cover_manual(entity_b)
 
 
-@pytest.mark.asyncio
-async def test_reset_if_needed_returns_empty_when_nothing_expired():
+def test_reset_if_needed_returns_empty_when_nothing_expired():
     """reset_if_needed() must return an empty set when no overrides have expired."""
     from custom_components.adaptive_cover_pro.managers.manual_override import (
         AdaptiveCoverManager,
@@ -377,10 +385,11 @@ async def test_reset_if_needed_returns_empty_when_nothing_expired():
     )
 
     entity = "cover.recent"
-    manager.manual_control[entity] = True
-    manager.manual_control_time[entity] = dt.datetime.now(dt.UTC)  # just set
+    manager.set_last_updated(
+        entity, MagicMock(last_updated=dt.datetime.now(dt.UTC)), allow_reset=True
+    )
 
-    expired = await manager.reset_if_needed()
+    expired = manager.reset_if_needed()
 
     assert expired == set()
     assert manager.is_cover_manual(entity)
@@ -431,7 +440,7 @@ async def test_reset_sends_correct_position_with_climate_mode():
 
 
 def test_mark_user_command_sets_flag_and_timestamp():
-    """mark_user_command flips manual_control and records a timestamp."""
+    """mark_user_command arms the override and records a start time."""
     from custom_components.adaptive_cover_pro.managers.manual_override import (
         AdaptiveCoverManager,
     )
@@ -444,8 +453,9 @@ def test_mark_user_command_sets_flag_and_timestamp():
     manager.mark_user_command("cover.test", reason="proxy_managed")
 
     assert manager.is_cover_manual("cover.test")
-    assert "cover.test" in manager.manual_control_time
-    assert isinstance(manager.manual_control_time["cover.test"], dt.datetime)
+    state = manager.override_for("cover.test")
+    assert state is not None
+    assert isinstance(state.started_at, dt.datetime)
 
 
 def test_mark_user_command_records_diagnostic_event():
@@ -505,14 +515,14 @@ def test_mark_user_command_setdefault_does_not_extend_timestamp():
     )
 
     manager.mark_user_command("cover.test", reason="first")
-    first_ts = manager.manual_control_time["cover.test"]
+    first_ts = manager.override_for("cover.test").started_at
 
     # Move the clock forward slightly between calls
     import time
 
     time.sleep(0.01)
     manager.mark_user_command("cover.test", reason="second")
-    second_ts = manager.manual_control_time["cover.test"]
+    second_ts = manager.override_for("cover.test").started_at
 
     assert (
         second_ts == first_ts
