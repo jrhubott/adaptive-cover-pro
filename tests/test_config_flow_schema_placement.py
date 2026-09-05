@@ -27,6 +27,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_POSITION_TOLERANCE,
     CONF_RETURN_SUNSET,
+    CONF_SUNRISE_GATES_START,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
@@ -73,6 +74,9 @@ _L2B_BEHAVIOR_KEYS = [
     CONF_INVERSE_STATE,
     CONF_SUNSET_OFFSET,
     CONF_SUNRISE_OFFSET,
+    # The sunrise floor (#1340) is a timing gate, not a % target — it belongs
+    # beside the sunrise offset it composes with, never on the position step.
+    CONF_SUNRISE_GATES_START,
     CONF_RETURN_SUNSET,
     CONF_SUNSET_TIME_ENTITY,
 ]

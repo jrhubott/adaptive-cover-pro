@@ -152,6 +152,7 @@ from .const import (
     CONF_MOTION_TIMEOUT_MODE,
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_MOTION_TIMEOUT_MODE,
+    DEFAULT_SUNRISE_GATES_START,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     MOTION_TIMEOUT_MODE_HOLD,
     MOTION_TIMEOUT_MODE_RETURN,
@@ -172,6 +173,7 @@ from .const import (
     CONF_START_ENTITY,
     CONF_START_TIME,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+    CONF_SUNRISE_GATES_START,
     CONF_SUNRISE_OFFSET,
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
@@ -924,6 +926,12 @@ BEHAVIOR_SCHEMA = vol.Schema(
                 unit_of_measurement="minutes",
             )
         ),
+        # Does that sunrise boundary also gate the window (issue #1340)? The
+        # literal False is the sanctioned selector-default convention; const
+        # owns the runtime default RuntimeConfig reads.
+        vol.Optional(
+            CONF_SUNRISE_GATES_START, default=False
+        ): selector.BooleanSelector(),
         vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
         # Daytime gate (issue #632): a binary-sensor list and/or a Jinja condition
         # template that REPLACES the astronomical sunset/sunrise boundary when set.
@@ -1931,6 +1939,10 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "timing.until_time": "until {time}",
     "timing.active_daylight": "Active during daylight",
     "timing.line": "{indent}🕒 {timing}.",
+    "timing.sunrise_gates_start": (
+        "{indent}🌄 Waits for sunrise before starting — the window opens at the "
+        "start time or sunrise, whichever is later."
+    ),
     "timing.ann_via": "via {entity}",
     "timing.ann_today": "today ~{time}",
     "timing.offset_plus": "+{minutes} min",
@@ -3338,6 +3350,14 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         )
         indent = _GATE_SUMMARY_INDENT
         _sub(L["timing.line"].format(indent=indent, timing=timing_str))
+        # The sunrise floor (issue #1340) raises the window's lower bound to
+        # max(start, sunrise). Rendered only where it can actually bite: a
+        # blank start already waits for sunrise (#1256), so the line would be
+        # a lie there.
+        if config.get(CONF_SUNRISE_GATES_START, DEFAULT_SUNRISE_GATES_START) and (
+            start_entity or (start_time and start_time != BLANK_TIME)
+        ):
+            _sub(L["timing.sunrise_gates_start"].format(indent=indent))
         if sunset_pos is not None:
             # Merge today's effective time (or entity ID) and offset into one parenthetical
             def _sun_annotation(
@@ -3845,6 +3865,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_SUNSET_USE_MY,
             CONF_SUNSET_OFFSET,
             CONF_SUNRISE_OFFSET,
+            CONF_SUNRISE_GATES_START,
             CONF_SUNSET_TIME_ENTITY,
             CONF_SUNRISE_TIME_ENTITY,
             CONF_DAYTIME_GATE_SENSORS,
@@ -4853,7 +4874,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # its exact position after the window closes", which is both today's
     # behaviour and what #895 asked for, so the v3.20 → v3.21 block seeds
     # nothing.
-    MINOR_VERSION = 21
+    # 3.22 (issue #1340): the same shape once more for the additive
+    # sunrise_gates_start opt-in — absent reads as OFF, which is what every
+    # install does today (#438 is the decision of record), so the v3.21 → v3.22
+    # block seeds nothing.
+    MINOR_VERSION = 22
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

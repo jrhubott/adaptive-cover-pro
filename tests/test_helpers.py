@@ -1059,3 +1059,77 @@ def test_resolve_sun_boundaries_rolls_entity_times_forward_in_local_space_across
     assert b.sunrise == dt.datetime(2026, 3, 7, 11, 0)
     assert b.next_sunrise == dt.datetime(2026, 3, 8, 10, 0)
     assert b.next_sunrise - b.sunrise == dt.timedelta(hours=23)
+
+
+@pytest.mark.unit
+def test_utc_naive_to_local_naive_inverts_local_naive_to_utc_naive():
+    """The naive-UTC → naive-local conversion is the exact inverse of its sibling.
+
+    The time-window gate compares against ``local_now_naive()``, while
+    ``resolve_sun_boundaries`` speaks naive-UTC. One shared conversion pair
+    keeps the two frames from drifting (issue #1340).
+    """
+    from custom_components.adaptive_cover_pro.helpers import (
+        _local_naive_to_utc_naive,
+        _utc_naive_to_local_naive,
+    )
+
+    ny = zoneinfo.ZoneInfo("America/New_York")
+    local = dt.datetime(2026, 9, 3, 6, 25)
+
+    with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", ny):
+        utc_naive = _local_naive_to_utc_naive(local)
+        assert utc_naive == dt.datetime(2026, 9, 3, 10, 25)  # EDT is UTC-4
+        assert _utc_naive_to_local_naive(utc_naive) == local
+        assert _utc_naive_to_local_naive(utc_naive).tzinfo is None
+
+
+@pytest.mark.unit
+def test_read_sun_boundaries_composes_options_and_astral():
+    """``read_sun_boundaries`` is the one hass-side entry point for the boundaries.
+
+    It must equal ``_read_sun_boundary_options`` + ``resolve_sun_boundaries``
+    with the same inputs, so the window gate (#1340), the day/night position
+    and the manual-override deadline cannot disagree about what "sunrise"
+    means (CODING_GUIDELINES § no-duplication).
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUNRISE_OFFSET,
+        CONF_SUNRISE_TIME_ENTITY,
+    )
+    from custom_components.adaptive_cover_pro.helpers import (
+        local_now_naive,
+        read_sun_boundaries,
+        resolve_sun_boundaries,
+    )
+
+    sun_data = _boundary_sun_data()
+    options = {
+        CONF_SUNRISE_TIME_ENTITY: "sensor.dawn",
+        CONF_SUNRISE_OFFSET: 30,
+    }
+    hass = MagicMock()
+    state = MagicMock()
+    state.state = "2026-07-02T05:00:00"
+    hass.states.get.return_value = state
+
+    b = read_sun_boundaries(hass, options, sun_data)
+
+    # The entity replaces astral and the offset lands on top — 05:00 + 30 min,
+    # re-anchored onto today's local date by _read_time_entity (issue #531).
+    today = local_now_naive().date()
+    assert b.sunrise == dt.datetime.combine(today, dt.time(5, 30))
+    sun_data.sunrise.assert_not_called()
+    # Sunset has no entity configured, so it stays astral.
+    assert b.sunset == dt.datetime(2026, 7, 2, 19, 30)
+
+    # And it is exactly the composition, not a second implementation of it.
+    expected = resolve_sun_boundaries(
+        sun_data,
+        sunset_time=None,
+        sunrise_time=dt.datetime.combine(today, dt.time(5, 0)),
+        sunset_off=0,
+        sunrise_off=30,
+    )
+    assert b.sunrise == expected.sunrise
+    assert b.sunset == expected.sunset

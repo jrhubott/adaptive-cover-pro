@@ -1168,6 +1168,18 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # their night shift again.
     new_minor = _advance_noop_minor(new_version, new_minor, 21)
 
+    # v3.21 → v3.22: added the additive sunrise-gates-start opt-in
+    # sunrise_gates_start (issue #1340). An absent key already reads as OFF —
+    # a configured start earlier than sunrise opens the window at the start
+    # time — which is what every existing install does today and is #438's
+    # decision of record, so nothing needs seeding; this is a no-op minor bump
+    # kept only to advance entries sitting at minor 21 to 22 so they stop
+    # re-triggering migration every restart (the v3.20 → v3.21 precedent).
+    # Rollback-safe: an older build finds every key exactly as it left it and
+    # ignores the one it does not know, so the window simply opens at the start
+    # time again.
+    new_minor = _advance_noop_minor(new_version, new_minor, 22)
+
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
     )

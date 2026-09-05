@@ -1118,6 +1118,27 @@ class TestSetSunsetSunrise:
         assert new_opts[CONF_SUNSET_USE_MY] is True
         assert new_opts[CONF_MY_POSITION_VALUE] == 50
 
+    async def test_updates_sunrise_gates_start(self, hass: HomeAssistant):
+        """The #1340 opt-in is settable through the service, not just the UI.
+
+        ``set_sunset_sunrise`` owns the sunrise boundary options, so the flag
+        that decides whether that boundary gates the window belongs in the same
+        section — otherwise ``_build_patch`` silently drops it.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_SUNRISE_GATES_START,
+        )
+
+        await _setup(hass, entry_id="ss_gates_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_sunset_sunrise", {CONF_SUNRISE_GATES_START: True})
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_SUNRISE_GATES_START] is True
+
 
 class TestSetAutomationTiming:
     """Integration tests for set_automation_timing service."""

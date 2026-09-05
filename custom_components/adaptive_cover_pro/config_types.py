@@ -15,6 +15,7 @@ from .const import (
     DEFAULT_SOLAR_COVER_SHADE,
     DEFAULT_SOLAR_COVER_SIDE,
     DEFAULT_SOLAR_G_GLAZING,
+    DEFAULT_SUNRISE_GATES_START,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WEATHER_ENABLED,
     VENETIAN_TILT_TRANSFORM_CLAMP,
@@ -717,6 +718,10 @@ class TimeWindowSlice:
     gate_sensors: list[str] = field(default_factory=list)
     gate_template: str | None = None
     gate_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
+    # Opt-in sunrise floor on a REAL configured start (issue #1340). False —
+    # every pre-#1340 install — keeps #438: an early start opens the window at
+    # the start time.
+    sunrise_gates_start: bool = DEFAULT_SUNRISE_GATES_START
 
 
 @dataclass(frozen=True, slots=True)
@@ -907,6 +912,7 @@ class RuntimeConfig:
             CONF_POSITION_TOLERANCE,
             CONF_START_ENTITY,
             CONF_START_TIME,
+            CONF_SUNRISE_GATES_START,
             CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
             CONF_VENETIAN_MODE,
             CONF_VENETIAN_POST_SETTLE_HOLD,
@@ -944,6 +950,7 @@ class RuntimeConfig:
             DEFAULT_MINIMIZE_MOVEMENTS,
             DEFAULT_MOTION_TIMEOUT,
             DEFAULT_OUTSIDE_TEMP_SOURCE,
+            DEFAULT_SUNRISE_GATES_START,
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             DEFAULT_VENETIAN_MODE,
             DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
@@ -1020,6 +1027,9 @@ class RuntimeConfig:
                 gate_template=options.get(CONF_DAYTIME_GATE_TEMPLATE),
                 gate_template_mode=options.get(
                     CONF_DAYTIME_GATE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+                ),
+                sunrise_gates_start=options.get(
+                    CONF_SUNRISE_GATES_START, DEFAULT_SUNRISE_GATES_START
                 ),
             ),
             motion=MotionSlice(

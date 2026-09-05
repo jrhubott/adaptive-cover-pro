@@ -144,6 +144,7 @@ from .const import (
     CONF_START_ENTITY,
     CONF_START_TIME,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+    CONF_SUNRISE_GATES_START,
     CONF_SUNRISE_OFFSET,
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
@@ -230,6 +231,7 @@ from .const import (
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_MOTION_TIMEOUT_MODE,
+    DEFAULT_SUNRISE_GATES_START,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     DEFAULT_WEATHER_OUTSIDE_WINDOW,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
@@ -721,6 +723,16 @@ _POSITION_SPECS = _spec(
             mode=selector.NumberSelectorMode.BOX,
             unit="minutes",
         ),
+    ),
+    # Whether that sunrise boundary also gates the operating window (issue
+    # #1340). Declared beside the offset it composes with, so both reach the
+    # config flow, the options service and RuntimeConfig from one place.
+    FieldSpec(
+        CONF_SUNRISE_GATES_START,
+        SECTION_POSITION,
+        ValidatorKind.BOOL,
+        default=DEFAULT_SUNRISE_GATES_START,
+        make_selector=_bool(),
     ),
     FieldSpec(
         CONF_RETURN_SUNSET,

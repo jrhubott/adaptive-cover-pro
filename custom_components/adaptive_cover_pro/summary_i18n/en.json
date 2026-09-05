@@ -183,6 +183,7 @@
     "until_time": "until {time}",
     "active_daylight": "Active during daylight",
     "line": "{indent}🕒 {timing}.",
+    "sunrise_gates_start": "{indent}🌄 Waits for sunrise before starting — the window opens at the start time or sunrise, whichever is later.",
     "ann_via": "via {entity}",
     "ann_today": "today ~{time}",
     "offset_plus": "+{minutes} min",
