@@ -660,6 +660,12 @@ CONF_TRANSPARENT_BLIND = "transparent_blind"
 CONF_SUNSET_POS = "sunset_position"  # post-sunset position 0-100; None=default
 CONF_SUNSET_OFFSET = "sunset_offset"  # minutes ±120 from sunset to switch
 CONF_SUNRISE_OFFSET = "sunrise_offset"  # minutes ±120 from sunrise to resume
+# Opt-in (issue #1340): the operating window may not open before the resolved
+# sunrise boundary (sunrise entity/astral + sunrise_offset) — the start becomes
+# max(configured start, sunrise). Off preserves #438: a start earlier than
+# sunrise opens the window (and ends the night position) at the start time.
+CONF_SUNRISE_GATES_START = "sunrise_gates_start"
+DEFAULT_SUNRISE_GATES_START = False
 CONF_RETURN_SUNSET = "return_sunset"  # True: force-send default at end_time
 # Optional end-of-window position 0-100 (issue #625); None=disabled. Applied at the
 # operating-window end time (gated by CONF_RETURN_SUNSET) regardless of astral sunset.

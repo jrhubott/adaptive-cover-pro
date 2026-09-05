@@ -375,6 +375,315 @@ async def test_blank_start_opens_window_at_sunrise_not_before():
 
 
 # ---------------------------------------------------------------------------
+# sunrise_gates_start (issue #1340): the OPT-IN sunrise floor on a REAL start
+# ---------------------------------------------------------------------------
+#
+# #438 decided that a configured start earlier than sunrise opens the window at
+# the start time. #1340's reporter wants the copy's promise instead — "uses
+# whichever is later". Both are legitimate for the same config shape, so the
+# floor is opt-in and OFF by default; these tests pin both sides.
+
+_1340_DAY = dt.date(2026, 9, 3)
+_1340_SUNRISE = dt.datetime(2026, 9, 3, 6, 25)
+
+
+def _at(hour: int, minute: int = 0, second: int = 0) -> dt.datetime:
+    """Return a naive-local datetime on the #1340 reporter's day."""
+    return dt.datetime.combine(_1340_DAY, dt.time(hour, minute, second))
+
+
+@pytest.mark.unit
+def test_sunrise_gates_start_holds_window_closed_until_sunrise():
+    """Opt-in ON: a 05:30 start with a 06:25 sunrise opens at 06:25, not 05:30.
+
+    The reporter's exact shape (#1340). Every window predicate must agree —
+    including ``window_explicitly_started``, which is what suppresses the
+    night position in ``compute_effective_default``.
+    """
+    mgr = _make_manager(sunrise_provider=_sunrise_provider(6, 25, day=_1340_DAY))
+    mgr.update_config(
+        start_time="05:30:00",
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity=None,
+        sunrise_gates_start=True,
+    )
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_at(5, 30)),
+        patch(f"{_TIME_WINDOW}.local_now_naive", return_value=_at(5, 31)),
+    ):
+        assert mgr.after_start_time is False
+        assert mgr.clock_window_open is False
+        assert mgr.is_active is False
+        assert mgr.window_explicitly_started is False
+        assert mgr.resolved_start_time == _1340_SUNRISE
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_at(5, 30)),
+        patch(f"{_TIME_WINDOW}.local_now_naive", return_value=_at(6, 26)),
+    ):
+        assert mgr.after_start_time is True
+        assert mgr.clock_window_open is True
+        assert mgr.is_active is True
+        assert mgr.window_explicitly_started is True
+        assert mgr.resolved_start_time == _1340_SUNRISE
+
+
+@pytest.mark.unit
+def test_sunrise_gates_start_uses_start_entity():
+    """The floor applies to a start ENTITY too — the reporter's actual config.
+
+    All three diagnostics attachments use ``start_entity``
+    (input_datetime.adaptive_cover_start_time_eg → 05:30), not a static
+    ``start_time``, so gating only the static branch would miss the report.
+    """
+    mgr = _make_manager(sunrise_provider=_sunrise_provider(6, 25, day=_1340_DAY))
+    mgr.update_config(
+        start_time=None,
+        start_time_entity="input_datetime.adaptive_cover_start_time_eg",
+        end_time=None,
+        end_time_entity=None,
+        sunrise_gates_start=True,
+    )
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_safe_state", return_value="2026-09-03T05:30:00"),
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_at(5, 30)),
+        patch(f"{_TIME_WINDOW}.local_now_naive", return_value=_at(5, 31)),
+    ):
+        assert mgr.after_start_time is False
+        assert mgr.is_active is False
+        assert mgr.window_explicitly_started is False
+        assert mgr.resolved_start_time == _1340_SUNRISE
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_safe_state", return_value="2026-09-03T05:30:00"),
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_at(5, 30)),
+        patch(f"{_TIME_WINDOW}.local_now_naive", return_value=_at(6, 26)),
+    ):
+        assert mgr.after_start_time is True
+        assert mgr.window_explicitly_started is True
+
+
+@pytest.mark.unit
+def test_sunrise_gates_start_is_noop_when_start_after_sunrise():
+    """``max(start, sunrise)``, not ``sunrise`` — a later start still governs.
+
+    Guards the #383 direction: sunrise must never pull the window's lower
+    bound EARLIER than the user's configured start.
+    """
+    mgr = _make_manager(sunrise_provider=_sunrise_provider(6, 25, day=_1340_DAY))
+    mgr.update_config(
+        start_time="08:00:00",
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity=None,
+        sunrise_gates_start=True,
+    )
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_at(8, 0)),
+        patch(f"{_TIME_WINDOW}.local_now_naive", return_value=_at(7, 0)),
+    ):
+        assert mgr.after_start_time is False
+        assert mgr.resolved_start_time == _at(8, 0)
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_at(8, 0)),
+        patch(f"{_TIME_WINDOW}.local_now_naive", return_value=_at(8, 1)),
+    ):
+        assert mgr.after_start_time is True
+        assert mgr.resolved_start_time == _at(8, 0)
+
+
+@pytest.mark.unit
+def test_sunrise_gates_start_off_keeps_start_time():
+    """OFF (the default) leaves #438 byte-identical: the start time opens the window.
+
+    Both spellings of "off" are pinned — an explicit ``False`` and the kwarg
+    omitted entirely — because the default is the whole reason #438 and #1340
+    can both be true.
+    """
+    for kwargs in ({"sunrise_gates_start": False}, {}):
+        mgr = _make_manager(sunrise_provider=_sunrise_provider(6, 25, day=_1340_DAY))
+        mgr.update_config(
+            start_time="05:30:00",
+            start_time_entity=None,
+            end_time=None,
+            end_time_entity=None,
+            **kwargs,
+        )
+
+        with (
+            patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_at(5, 30)),
+            patch(f"{_TIME_WINDOW}.local_now_naive", return_value=_at(5, 31)),
+        ):
+            assert mgr.after_start_time is True
+            assert mgr.window_explicitly_started is True
+            assert mgr.resolved_start_time == _at(5, 30)
+
+
+@pytest.mark.unit
+def test_sunrise_gates_start_leaves_blank_start_to_1256():
+    """A BLANK start keeps the #1256 semantics — the floor never invents a start.
+
+    The blank sentinel must not become an explicit start (#492/#493): with an
+    end bound configured the #1256 sunrise anchor still applies, and with no
+    end bound the window still fails open.
+    """
+    mgr = _make_manager(sunrise_provider=_sunrise_provider(6, 0))
+    mgr.update_config(
+        start_time=BLANK_TIME,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity="sensor.sun_next_setting",
+        sunrise_gates_start=True,
+    )
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_safe_state", return_value=_END_ENTITY_RAW),
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_END_ENTITY_PARSED),
+        patch(
+            f"{_TIME_WINDOW}.local_now_naive",
+            return_value=dt.datetime(2026, 8, 12, 0, 5, 0),
+        ),
+    ):
+        assert mgr.after_start_time is False
+        assert mgr.window_explicitly_started is False
+        assert mgr.resolved_start_time is None
+
+    mgr.update_config(
+        start_time=BLANK_TIME,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity=None,
+        sunrise_gates_start=True,
+    )
+    with patch(
+        f"{_TIME_WINDOW}.local_now_naive",
+        return_value=dt.datetime(2026, 8, 12, 0, 5, 0),
+    ):
+        assert mgr.after_start_time is True
+        assert mgr.window_explicitly_started is False
+
+
+@pytest.mark.unit
+def test_sunrise_gates_start_skips_floor_when_sunrise_after_end():
+    """A sunrise later than the configured end must not invert the window.
+
+    Polar-winter shape: raising the start past ``end_time`` would wedge the
+    window permanently shut and trip the "Start time is after end time" health
+    check. The configured start governs instead.
+    """
+    mgr = _make_manager(sunrise_provider=_sunrise_provider(9, 0, day=_1340_DAY))
+    mgr.update_config(
+        start_time="05:30:00",
+        start_time_entity=None,
+        end_time="08:00:00",
+        end_time_entity=None,
+        sunrise_gates_start=True,
+    )
+
+    parsed = {"05:30:00": _at(5, 30), "08:00:00": _at(8, 0)}
+    with (
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", side_effect=lambda s: parsed[s]),
+        patch(f"{_TIME_WINDOW}.local_now_naive", return_value=_at(6, 0)),
+    ):
+        assert mgr.after_start_time is True
+        assert mgr.is_active is True
+        assert mgr.resolved_start_time == _at(5, 30)
+        mgr.logger.error.assert_not_called()
+        # The predicate the coordinator's config health check uses.
+        assert not (mgr.resolved_start_time >= mgr.end_time)
+
+
+@pytest.mark.unit
+def test_sunrise_gates_start_fails_open_without_sunrise():
+    """No resolvable sunrise → the configured start governs (fail open).
+
+    Mirrors ``after_start_time``'s own #1256 contract: an unresolvable sunrise
+    must degrade to the pre-#1340 behaviour rather than freeze the window.
+    """
+    for provider in (lambda: None, None):
+        mgr = _make_manager(sunrise_provider=provider)
+        mgr.update_config(
+            start_time="05:30:00",
+            start_time_entity=None,
+            end_time=None,
+            end_time_entity=None,
+            sunrise_gates_start=True,
+        )
+
+        with (
+            patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_at(5, 30)),
+            patch(f"{_TIME_WINDOW}.local_now_naive", return_value=_at(5, 31)),
+        ):
+            assert mgr.after_start_time is True
+            assert mgr.window_explicitly_started is True
+            assert mgr.resolved_start_time == _at(5, 30)
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_sunrise_gates_start_no_window_open_transition_before_sunrise():
+    """No ``time_window_changed`` at the start time — the reporter's 05:30:17 log line.
+
+    The diagnostics show ``time_window_changed false → true`` at 05:30:17
+    local followed immediately by ``cover_command_sent OPEN_COVER 100``. With
+    the floor armed that transition must land at sunrise instead.
+    """
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    event_buffer = EventBuffer(maxlen=50)
+    mgr = TimeWindowManager(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        event_buffer=event_buffer,
+        sunrise_provider=_sunrise_provider(6, 25, day=_1340_DAY),
+    )
+    mgr.update_config(
+        start_time="05:30:00",
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity=None,
+        sunrise_gates_start=True,
+    )
+    on_window_open = AsyncMock()
+    refresh_callback = AsyncMock()
+
+    for now in (_at(5, 0), _at(5, 31)):
+        with (
+            patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_at(5, 30)),
+            patch(f"{_TIME_WINDOW}.local_now_naive", return_value=now),
+        ):
+            await mgr.check_transition(
+                track_end_time=True,
+                refresh_callback=refresh_callback,
+                on_window_open=on_window_open,
+            )
+
+    on_window_open.assert_not_awaited()
+    assert all(
+        event.get("event") != "time_window_changed" for event in event_buffer.snapshot()
+    )
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_at(5, 30)),
+        patch(f"{_TIME_WINDOW}.local_now_naive", return_value=_at(6, 26)),
+    ):
+        await mgr.check_transition(
+            track_end_time=True,
+            refresh_callback=refresh_callback,
+            on_window_open=on_window_open,
+        )
+
+    on_window_open.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
 # end_time: entity-based and midnight branches
 # ---------------------------------------------------------------------------
 

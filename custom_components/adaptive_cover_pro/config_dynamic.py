@@ -77,6 +77,7 @@ from .const import (
     CONF_POSITION_TOLERANCE,
     CONF_RETURN_SUNSET,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+    CONF_SUNRISE_GATES_START,
     CONF_SUNRISE_OFFSET,
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
@@ -923,6 +924,11 @@ def behavior_schema(options: dict | None = None) -> vol.Schema:
                 unit_of_measurement="minutes",
             )
         ),
+        # Does that sunrise boundary also gate the window (issue #1340)? Per
+        # cover, like the offsets it composes with — not a profile-owned field.
+        vol.Optional(
+            CONF_SUNRISE_GATES_START, default=False
+        ): selector.BooleanSelector(),
         vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_DAYTIME_GATE_SENSORS, default=[]): binary_on_selector(
             multiple=True
