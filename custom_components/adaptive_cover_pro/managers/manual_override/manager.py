@@ -987,11 +987,11 @@ class AdaptiveCoverManager:
         user's set point.
 
         Arms with ``overwrite=False`` so successive drags do not extend the
-        override window (matches ``allow_reset=False`` semantics).  Does not require the entity to be in ``self.covers`` —
-        the proxy may dispatch before ``add_covers`` runs. Does NOT fire the
-        ``on_engaged`` edge callback: these ACP-routed paths set a command
-        target immediately afterward, so the command-side discard would be
-        counter-productive.
+        override window (matches ``allow_reset=False`` semantics). Does not
+        require the entity to be in ``self.covers`` — the proxy may dispatch
+        before ``add_covers`` runs. Does NOT fire the ``on_engaged`` edge
+        callback: these ACP-routed paths set a command target immediately
+        afterward, so the command-side discard would be counter-productive.
 
         Args:
             entity_id: Cover entity ID to mark as manually overridden.

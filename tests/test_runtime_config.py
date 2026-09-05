@@ -180,6 +180,26 @@ def test_runtime_config_reads_enforce_delta_at_endpoints() -> None:
     assert rc.tracking.enforce_delta_at_endpoints is True
 
 
+def test_default_override_duration_is_not_shared_between_entries() -> None:
+    """#1274: two entries on the default hold must not alias one dict object.
+
+    ``DEFAULT_MANUAL_OVERRIDE_DURATION`` is a module-level mutable, and the
+    slice value reaches ``coordinator.manual_duration`` and
+    ``DetectorConfig.duration``. Handing out the constant itself would let one
+    entry's in-place edit silently retune every other entry's override window.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        DEFAULT_MANUAL_OVERRIDE_DURATION,
+    )
+
+    first = RuntimeConfig.from_options({}).manual_override.duration
+    second = RuntimeConfig.from_options({}).manual_override.duration
+
+    assert first == second == DEFAULT_MANUAL_OVERRIDE_DURATION
+    assert first is not second
+    assert first is not DEFAULT_MANUAL_OVERRIDE_DURATION
+
+
 def test_manual_override_input_entities_defaults_empty() -> None:
     """Empty options → no input-sensor override entities configured (issue #688)."""
     rc = RuntimeConfig.from_options({})

@@ -1010,9 +1010,14 @@ class RuntimeConfig:
             ),
             manual_override=ManualOverrideSlice(
                 reset=options.get(CONF_MANUAL_OVERRIDE_RESET, False),
+                # Copied, not aliased: the constant is a mutable dict and this
+                # value reaches ``coordinator.manual_duration`` and
+                # ``DetectorConfig.duration``, so handing out the module-level
+                # object would let one entry's in-place edit retune every other
+                # entry's override window (issue #1274).
                 duration=(
                     options.get(CONF_MANUAL_OVERRIDE_DURATION)
-                    or DEFAULT_MANUAL_OVERRIDE_DURATION
+                    or dict(DEFAULT_MANUAL_OVERRIDE_DURATION)
                 ),
                 ignore_external=options.get(CONF_MANUAL_IGNORE_EXTERNAL, False),
                 input_entities=options.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES, []),
