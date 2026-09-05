@@ -613,6 +613,86 @@ async def test_coordinator_sunrise_provider_unavailable_entity_falls_back_to_ast
     assert dt.time(4, 0) <= sunrise.time() <= dt.time(10, 0)
 
 
+async def test_coordinator_sunrise_provider_inherits_sunset_offset_when_unset(
+    hass: HomeAssistant,
+) -> None:
+    """No sunrise offset configured → the window's sunrise inherits the SUNSET offset.
+
+    A default-ON behaviour delta introduced by routing the provider through
+    ``read_sun_boundaries`` (#1340). ``resolve_sunrise_offset`` falls back to
+    ``resolve_sunset_offset`` when the sunrise key is absent or ``None`` — an
+    explicit ``0`` is a real choice and does NOT fall back (issue #1050). So an
+    install that only ever set a sunset offset now has its #1256 blank-start
+    anchor at sunrise + that offset, where the old pure-astral provider used
+    bare astral sunrise.
+
+    Pinned here so the delta is documented rather than discovered, and cannot
+    drift back unnoticed. Note ``VERTICAL_OPTIONS`` stores ``sunrise_offset: 0``,
+    which is exactly the explicit-zero case — the key has to be removed for the
+    fallback to be reachable at all.
+    """
+    import datetime as dt
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUNRISE_OFFSET,
+        CONF_SUNRISE_TIME_ENTITY,
+        CONF_SUNSET_OFFSET,
+    )
+
+    def _without_sunrise_offset(**extra) -> dict:
+        opts = {**VERTICAL_OPTIONS, **extra}
+        opts.pop(CONF_SUNRISE_OFFSET, None)
+        return opts
+
+    # 1. Entity path — exact, no astral dependency. 04:00 plus the 30-minute
+    #    SUNSET offset, inherited because no sunrise offset is configured.
+    hass.states.async_set("input_datetime.dawn", "2026-09-03T04:00:00")
+    inherited = _coordinator_for(
+        hass,
+        _without_sunrise_offset(
+            **{CONF_SUNRISE_TIME_ENTITY: "input_datetime.dawn", CONF_SUNSET_OFFSET: 30}
+        ),
+        "sunrise_offset_fallback_01",
+    )._time_mgr._sunrise_provider()
+
+    assert inherited is not None
+    assert inherited.tzinfo is None
+    assert inherited.time() == dt.time(4, 30)
+
+    # 2. Astral path — the realistic shape for an existing install with no
+    #    sunrise entity. Asserted as a DELTA so no astral value is hardcoded.
+    shifted = _coordinator_for(
+        hass,
+        _without_sunrise_offset(**{CONF_SUNSET_OFFSET: 30}),
+        "sunrise_offset_fallback_astral_01",
+    )._time_mgr._sunrise_provider()
+    unshifted = _coordinator_for(
+        hass,
+        _without_sunrise_offset(**{CONF_SUNSET_OFFSET: 0}),
+        "sunrise_offset_fallback_astral_02",
+    )._time_mgr._sunrise_provider()
+
+    assert shifted is not None
+    assert unshifted is not None
+    assert shifted - unshifted == dt.timedelta(minutes=30)
+
+    # 3. The counter-case that scopes the fallback: an EXPLICIT sunrise offset
+    #    of 0 is honoured, so the sunset offset is not inherited.
+    explicit_zero = _coordinator_for(
+        hass,
+        {
+            **VERTICAL_OPTIONS,
+            CONF_SUNRISE_TIME_ENTITY: "input_datetime.dawn",
+            CONF_SUNSET_OFFSET: 30,
+            CONF_SUNRISE_OFFSET: 0,
+        },
+        "sunrise_offset_explicit_zero_01",
+    )._time_mgr._sunrise_provider()
+
+    assert explicit_zero is not None
+    assert explicit_zero.time() == dt.time(4, 0)
+
+
 # ---------------------------------------------------------------------------
 # Venetian mode wiring
 # ---------------------------------------------------------------------------
