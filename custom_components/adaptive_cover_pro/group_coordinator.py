@@ -36,6 +36,13 @@ from homeassistant.config_entries import SIGNAL_CONFIG_ENTRY_CHANGED, ConfigEntr
 from homeassistant.const import ATTR_ENTITY_ID, SERVICE_STOP_COVER, Platform
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
+
+# ``dr`` is imported for its EVENT_DEVICE_REGISTRY_UPDATED name only — an event
+# constant, not a registry read. The device<->area registry *hop* still lives
+# solely in ``state.area_resolver`` (issue #786); that invariant is about who
+# reads the registry, and this file reads none of it. ``ar`` above is here on
+# exactly the same terms: its only use is EVENT_AREA_REGISTRY_UPDATED.
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import async_track_state_change_event
@@ -77,7 +84,7 @@ from .managers.cover_command.state_store import PositionContext
 from .managers.grace_period import GracePeriodManager
 from .pipeline.types import GroupIntent
 from .position_utils import flip_if
-from .state.area_resolver import device_area_id
+from .state.area_resolver import area_device_ids, device_area_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -127,7 +134,7 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         self._unsub_registry: list[CALLBACK_TYPE] = []
         self._unsub_entry_state: CALLBACK_TYPE | None = None
         self._member_subs: dict[str, _MemberSubscription] = {}
-        self._roster_snapshot: tuple[tuple[str, ...], tuple[str, ...]] | None = None
+        self._roster_snapshot: tuple[frozenset[str], frozenset[str]] | None = None
         self._adopt_policy = get_policy(_ADOPT_COVER_TYPE)
         self._grace_mgr = GracePeriodManager(_LOGGER)
         self._cmd_svc = CoverCommandService(
@@ -155,14 +162,46 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         return device_area_id(self.hass, reg_entry.device_id)
 
     def _cover_entities_in_area(self, area_id: str) -> list[str]:
-        """Every ``cover.`` entity in the area (own or device-inherited)."""
+        """Every ``cover.`` entity in the area (own or device-inherited).
+
+        Two passes over the registries' own indexes, replacing a scan of every
+        entity in the install — deprecated, and removed in HA 2027.9.0
+        (issue #1339). Three things about it are load-bearing:
+
+        - ``include_disabled_entities=True`` on the per-device pass is
+          deliberate and *not* the default. The two accessors are asymmetric:
+          ``async_entries_for_area`` applies no ``disabled_by`` filter, while
+          ``async_entries_for_device`` drops disabled entries unless told
+          otherwise. Omitting the flag would silently strip disabled covers
+          from area rosters.
+        - ``not reg_entry.area_id`` on the device pass preserves
+          :meth:`_entity_area_id`'s entity-over-device precedence: a cover
+          whose own area names a *different* area must not be collected via
+          its device. The test is falsiness, not ``is None``, so that it
+          agrees with :meth:`_entity_area_id` on a blank ``area_id``: HA
+          indexes an entity's own area on ``is not None``, so an ``""`` would
+          be filed under ``""`` — invisible to pass 1 — and ``is None`` would
+          reject it here too, losing a cover the old full scan collected.
+        - The passes are disjoint by construction — pass 1 requires an own
+          area equal to a real (non-empty) ``area_id``, pass 2 requires a
+          falsy one — and an entity has exactly one device, so no dedup is
+          needed.
+        """
         ent_reg = er.async_get(self.hass)
-        return [
+        entity_ids = [
             reg_entry.entity_id
-            for reg_entry in ent_reg.entities.values()
+            for reg_entry in er.async_entries_for_area(ent_reg, area_id)
             if reg_entry.domain == Platform.COVER
-            and self._entity_area_id(reg_entry.entity_id) == area_id
         ]
+        for device_id in area_device_ids(self.hass, area_id):
+            entity_ids.extend(
+                reg_entry.entity_id
+                for reg_entry in er.async_entries_for_device(
+                    ent_reg, device_id, include_disabled_entities=True
+                )
+                if reg_entry.domain == Platform.COVER and not reg_entry.area_id
+            )
+        return entity_ids
 
     def member_entry_ids(self) -> list[str]:
         """Effective ACP member entry ids: static roster ∪ area members.
@@ -622,9 +661,16 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         """Subscribe to member-state and (with an area) registry changes.
 
         The registry subscriptions keep area membership live: covers moved
-        into or out of the area re-resolve the rosters. The config-entry
-        subscription keeps the *member coordinator* subscriptions live — see
-        :meth:`_handle_config_entry_change`.
+        into or out of the area re-resolve the rosters. All three registries
+        matter — a cover joins an area by its own ``area_id`` (entity), by its
+        *device's* (device), or because the area itself changed (area) — and a
+        device move touches neither of the other two, so it needs its own
+        listener. The config-entry subscription keeps the *member coordinator*
+        subscriptions live — see :meth:`_handle_config_entry_change`.
+
+        All three fire on any attribute change, not only area moves;
+        :meth:`_handle_registry_change`'s snapshot comparison is what keeps
+        that chatter from turning into reloads.
         """
         entities = self.member_cover_entities()
         if entities:
@@ -644,11 +690,23 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
                 self.hass.bus.async_listen(
                     ar.EVENT_AREA_REGISTRY_UPDATED, self._handle_registry_change
                 ),
+                self.hass.bus.async_listen(
+                    dr.EVENT_DEVICE_REGISTRY_UPDATED, self._handle_registry_change
+                ),
             ]
 
-    def _current_roster_snapshot(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """Return a comparable snapshot of the effective rosters."""
-        return (tuple(self.member_entry_ids()), tuple(self.generic_cover_ids()))
+    def _current_roster_snapshot(self) -> tuple[frozenset[str], frozenset[str]]:
+        """Return a comparable snapshot of the effective rosters.
+
+        Membership, not order. The rosters are a union of an own-area pass and
+        a device-inherited pass, so clearing a cover's own area while its
+        device already sits in the same area shuffles it between the two
+        without changing who is in the group — an ordered comparison would
+        read that as a roster change and reload for nothing. Order is not
+        load-bearing here: it is recomputed from the registries on every read,
+        and a reload would reproduce exactly the same order.
+        """
+        return (frozenset(self.member_entry_ids()), frozenset(self.generic_cover_ids()))
 
     @callback
     def _handle_registry_change(self, _event: Event) -> None:

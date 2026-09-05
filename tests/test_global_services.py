@@ -278,9 +278,15 @@ def test_resolve_string_area_id_normalized():
     config_device.area_id = None
 
     dev_reg_mock = MagicMock()
-    # devices.values() used for area expansion
-    dev_reg_mock.devices = MagicMock()
-    dev_reg_mock.devices.values = MagicMock(return_value=[area_device])
+    # The registry's own area index backs area expansion — dr.async_entries_for_area
+    # is a thin wrapper over devices.get_devices_for_area_id (issue #1339). The
+    # spec deliberately omits values()/items()/keys()/get(), so a mapping scan
+    # would raise AttributeError here rather than quietly passing, and the
+    # side_effect is area-aware so the mock encodes the index's contract.
+    dev_reg_mock.devices = MagicMock(spec=["get_devices_for_area_id"])
+    dev_reg_mock.devices.get_devices_for_area_id.side_effect = lambda area_id: (
+        [area_device] if area_id == "area_living" else []
+    )
     # async_get called for device_id resolution
     dev_reg_mock.async_get = MagicMock(return_value=config_device)
     config_device.config_entries = ["entry_abc"]
