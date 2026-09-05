@@ -32,6 +32,7 @@ from .detector import (
     OverrideDecision,
     OverrideDetector,
     OverrideState,
+    StateChangeInputs,
     StopToMy,
     UserContextChange,
 )
@@ -42,7 +43,6 @@ from .expiry import (
     started_at_for_expiry,
 )
 from .position_delta import PositionDeltaDetector
-from .secondary_axis import SecondaryAxisCheck
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,11 +53,6 @@ _PRIMARY_AXIS_SUPPRESSION_WINDOW = dt.timedelta(hours=24)
 # WARN throttle: per-entity, fire on the first suppression then at most once
 # per hour to keep the log readable for users with chronically slow actuators.
 _PRIMARY_AXIS_SUPPRESSION_WARN_THROTTLE = dt.timedelta(hours=1)
-
-
-def _never(_entity_id: str) -> bool:
-    """Return False always — the default predicate when a gate is disabled."""
-    return False
 
 
 def _prune_suppressions(
@@ -125,7 +120,7 @@ class AdaptiveCoverManager:
         # :class:`.detector.OverrideState`, so they cannot disagree about
         # which cover is armed. Written only by :meth:`_arm`, cleared only by
         # :meth:`reset`; read through :meth:`override_for`.
-        self.overrides: dict[str, OverrideState] = {}
+        self._overrides: dict[str, OverrideState] = {}
         self.reset_duration = dt.timedelta(**reset_duration)
         self.logger = logger
         self._event_buffer: EventBuffer = (
@@ -402,20 +397,7 @@ class AdaptiveCoverManager:
                 if self._on_engaged is not None:
                     self._on_engaged(entity_id)
 
-    def handle_state_change(
-        self,
-        states_data,
-        our_state,
-        policy,
-        allow_reset,
-        is_waiting,
-        manual_threshold,
-        *,
-        has_recorded_target: bool = True,
-        secondary_axis_check: SecondaryAxisCheck | None = None,
-        is_in_command_grace: Callable[[str], bool] | None = None,
-        is_in_transit: Callable[[str], bool] | None = None,
-    ):
+    def handle_state_change(self, states_data, inputs: StateChangeInputs):
         """Process state change for manual override.
 
         Runs the upstream gates (tracked / wait-for-target / command-grace /
@@ -424,30 +406,14 @@ class AdaptiveCoverManager:
 
         Args:
             states_data: StateChangedData with entity_id, old_state, new_state
-            our_state: Expected position from coordinator calculation
-            policy: ``CoverTypePolicy`` describing the cover's axes. Used to
-                read the new entity position via the same axis-routing rule
-                that drives ``CoverCommandService`` and ``CoverProvider``.
-            allow_reset: If True, updates timestamp on subsequent changes
-            is_waiting: Callable(entity_id) -> bool indicating whether the cover
-                is currently expected to be moving toward a commanded target.
-            manual_threshold: Minimum position delta to trigger manual detection
-            has_recorded_target: Whether ACP has a recorded command target for
-                this entity. When False, ``our_state`` is the pipeline's
-                theoretical default rather than a commanded position, so the
-                numeric detector suppresses override detection (issue #546).
-                The user-context and stop-to-My channels are separate methods
-                and remain unaffected.
-            secondary_axis_check: Optional ``SecondaryAxisCheck`` supplied by
-                the cover-type policy. When provided, the secondary axis is
-                evaluated up front and a manual-override match short-circuits
-                the position-axis check.
-            is_in_command_grace: Optional callable ``(entity_id) -> bool`` that
-                returns True while the command-grace window is active. When
-                True, override detection is suppressed.
-            is_in_transit: Optional callable ``(entity_id) -> bool`` returning
-                True when HA reports the cover state as ``opening``/``closing``;
-                passed through to the detector via the context (issue #271).
+            inputs: :class:`.detector.StateChangeInputs` carrying every other
+                signal this evaluation needs — the expected position, the cover
+                policy, the reset flag, the threshold and the gate predicates.
+                One object rather than ten parameters (issue #1274), so a new
+                detection signal is a field with a default rather than a
+                signature change at every call site. Its gate predicates
+                default to :func:`.detector.never`, so an omitted gate is a
+                closed gate and nothing here has to guard for ``None``.
 
         """
         event = states_data
@@ -456,31 +422,34 @@ class AdaptiveCoverManager:
         entity_id = event.entity_id
         if entity_id not in self.covers:
             return
-        if is_waiting(entity_id):
+        if inputs.is_waiting(entity_id):
             self._reject_gated_update(
                 entity_id,
                 event_name="manual_override_rejected_wait_for_target",
                 reason="wait_for_target active",
-                our_state=our_state,
-                secondary_axis_check=secondary_axis_check,
+                our_state=inputs.our_state,
+                secondary_axis_check=inputs.secondary_axis_check,
                 new_state=event.new_state,
             )
             return
-        if is_in_command_grace is not None and is_in_command_grace(entity_id):
+        if inputs.is_in_command_grace(entity_id):
             self._reject_gated_update(
                 entity_id,
                 event_name="manual_override_rejected_command_grace",
                 reason="command grace period active",
-                our_state=our_state,
-                secondary_axis_check=secondary_axis_check,
+                our_state=inputs.our_state,
+                secondary_axis_check=inputs.secondary_axis_check,
                 new_state=event.new_state,
             )
             return
 
         new_state = event.new_state
 
+        secondary_axis_check = inputs.secondary_axis_check
         if secondary_axis_check is not None:
-            res = secondary_axis_check.evaluate(entity_id, new_state, manual_threshold)
+            res = secondary_axis_check.evaluate(
+                entity_id, new_state, inputs.manual_threshold
+            )
             if res.is_manual:
                 # Issue #1227: ``secondary_axis_check.expected`` is LOGICAL and
                 # the raw attribute read is WIRE — on an inverse install those
@@ -511,7 +480,7 @@ class AdaptiveCoverManager:
                     event_kwargs=res.event_kwargs,
                 ),
                 set_timestamp=lambda: self.set_last_updated(
-                    entity_id, new_state, allow_reset
+                    entity_id, new_state, inputs.allow_reset
                 ),
             )
             if res.consumed:
@@ -522,6 +491,7 @@ class AdaptiveCoverManager:
         # CoverProvider, so manual-override detection sees the same number
         # the coordinator commanded against.
         caps = check_cover_features(self.hass, entity_id)
+        policy = inputs.policy
         new_position = policy.read_axis_value(
             self.hass, entity_id, caps, state_obj=new_state
         )
@@ -547,29 +517,31 @@ class AdaptiveCoverManager:
         context_id = getattr(ctx_obj, "id", None) if ctx_obj else None
         context = DetectionContext(
             entity_id=entity_id,
-            our_state=our_state,
+            our_state=inputs.our_state,
             new_state=new_state,
             old_state=old_state_obj,
             new_position=new_position,
             old_position=old_position,
             caps=caps,
             policy=policy,
-            manual_threshold=manual_threshold,
-            has_recorded_target=has_recorded_target,
-            allow_reset=allow_reset,
+            manual_threshold=inputs.manual_threshold,
+            has_recorded_target=inputs.has_recorded_target,
+            allow_reset=inputs.allow_reset,
             is_acp_context=self._is_acp_context_fn(context_id),
             context_user_id=context_user_id,
             context_id=context_id,
             seconds_since_command=self._seconds_since_command(entity_id, now),
             secondary_axis_check=secondary_axis_check,
-            is_waiting=is_waiting,
-            is_in_command_grace=is_in_command_grace or _never,
-            is_in_transit=is_in_transit or _never,
+            is_waiting=inputs.is_waiting,
+            is_in_command_grace=inputs.is_in_command_grace,
+            is_in_transit=inputs.is_in_transit,
             now=now,
         )
         decision = self._detector.detect(context)
         resolved_allow_reset = (
-            decision.allow_reset if decision.allow_reset is not None else allow_reset
+            decision.allow_reset
+            if decision.allow_reset is not None
+            else inputs.allow_reset
         )
         self._apply_decision(
             entity_id,
@@ -712,7 +684,7 @@ class AdaptiveCoverManager:
             allow_reset: If True, updates timestamp on subsequent changes
 
         """
-        if entity_id not in self.overrides or allow_reset:
+        if entity_id not in self._overrides or allow_reset:
             last_updated = new_state.last_updated
             # Re-arm from the touch moment; a fresh physical move must not
             # inherit a pin left behind by a service call or a restore.
@@ -744,7 +716,7 @@ class AdaptiveCoverManager:
         """Write one cover's override start (and optional pinned end).
 
         The single seam every arming path goes through, and — since issue
-        #1274 — the only writer of :attr:`overrides`. Start time, pinned end
+        #1274 — the only writer of :attr:`_overrides`. Start time, pinned end
         and start-source provenance are one immutable
         :class:`.detector.OverrideState`, so they cannot disagree about which
         cover is armed, and "armed" has no separate flag left to fall out of
@@ -766,28 +738,28 @@ class AdaptiveCoverManager:
                 knows the real moment. Display-only.
 
         """
-        existing = self.overrides.get(entity_id)
+        existing = self._overrides.get(entity_id)
         if not overwrite and existing is not None:
             if expiry is None or existing.expiry is not None:
                 return
-            self.overrides[entity_id] = OverrideState(
+            self._overrides[entity_id] = OverrideState(
                 started_at=existing.started_at,
                 expiry=expiry,
                 start_source=existing.start_source,
             )
             return
-        self.overrides[entity_id] = OverrideState(
+        self._overrides[entity_id] = OverrideState(
             started_at=timestamp, expiry=expiry, start_source=start_source
         )
 
     def override_for(self, entity_id: str) -> OverrideState | None:
         """Return *entity_id*'s live override state, or ``None`` if it isn't held.
 
-        The read accessor for :attr:`overrides` (issue #1274) — the diagnostics
+        The read accessor for :attr:`_overrides` (issue #1274) — the diagnostics
         block and tests go through here rather than indexing the store, so a
         future change of representation stays inside this class.
         """
-        return self.overrides.get(entity_id)
+        return self._overrides.get(entity_id)
 
     def expiry_for(self, entity_id: str) -> dt.datetime | None:
         """Return when *entity_id*'s manual override ends, or ``None`` if it isn't held.
@@ -816,7 +788,7 @@ class AdaptiveCoverManager:
 
         The result is always tz-aware UTC.
         """
-        state = self.overrides.get(entity_id)
+        state = self._overrides.get(entity_id)
         if state is None:
             return None
         if state.expiry is not None:
@@ -841,7 +813,7 @@ class AdaptiveCoverManager:
         diagnostics block read through this rather than reaching into the
         store — which, since issue #1274, is the same list either way.
         """
-        return list(self.overrides)
+        return list(self._overrides)
 
     def restore_override(self, entity_id: str, expiry: dt.datetime) -> None:
         """Rehydrate one cover's override from a persisted absolute expiry (#1019).
@@ -1057,7 +1029,7 @@ class AdaptiveCoverManager:
         """
         expired: set[str] = set()
         current_time = dt.datetime.now(dt.UTC)
-        for entity_id in list(self.overrides):
+        for entity_id in list(self._overrides):
             deadline = self.expiry_for(entity_id)
             if deadline is not None and current_time > deadline:
                 self.logger.debug(
@@ -1081,7 +1053,7 @@ class AdaptiveCoverManager:
             entity_id: Cover entity ID to reset
 
         """
-        self.overrides.pop(entity_id, None)
+        self._overrides.pop(entity_id, None)
         # Issue #888: the assumed My/display position was a stand-in while the
         # override held the cover; clearing the override retires it too.
         self._invalidate_assumed(entity_id)
@@ -1107,7 +1079,7 @@ class AdaptiveCoverManager:
             True if cover is under manual control, False otherwise
 
         """
-        return entity_id in self.overrides
+        return entity_id in self._overrides
 
     @property
     def binary_cover_manual(self):
@@ -1118,7 +1090,7 @@ class AdaptiveCoverManager:
             False if all covers are under automatic control
 
         """
-        return bool(self.overrides)
+        return bool(self._overrides)
 
     @property
     def manual_controlled(self):
@@ -1128,4 +1100,4 @@ class AdaptiveCoverManager:
             List of cover entity IDs currently under manual control
 
         """
-        return list(self.overrides)
+        return list(self._overrides)

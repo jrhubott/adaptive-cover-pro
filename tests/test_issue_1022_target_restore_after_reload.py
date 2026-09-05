@@ -431,8 +431,9 @@ async def test_async_added_to_hass_tolerates_non_mapping_per_entity():
 def test_target_restore_composes_with_active_override_restore(override_first):
     """#1022 target restore and #1019 override restore never clobber each other.
 
-    They write to disjoint stores — the override restore populates
-    ``manager.overrides`` (#1019/#1021), the target restore seeds
+    They write to disjoint stores — the override restore arms the manual
+    override the manager reports through ``override_for`` (#1019/#1021), the
+    target restore seeds
     ``CoverCommandService._state[eid].target`` (#1022). Running both for the
     SAME entity in EITHER order must leave both intact: the active
     manual-override (a live ``OverrideState`` with a future expiry) survives AND

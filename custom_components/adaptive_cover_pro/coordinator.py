@@ -154,6 +154,7 @@ from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import (
     AdaptiveCoverManager,
     DetectorConfig,
+    StateChangeInputs,
     get_detector,
 )
 from .managers.climate_smoothing import ClimateSmoothingManager
@@ -3990,15 +3991,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # defaults) before reconciliation can resurrect it (issue #215/#216).
             self.manager.handle_state_change(
                 event_data,
-                expected_position,
-                self._policy,
-                self.manual_reset,
-                self._cmd_svc.is_waiting_for_target,
-                detection_threshold,
-                has_recorded_target=recorded_target is not None,
-                secondary_axis_check=secondary_axis_check,
-                is_in_command_grace=self._grace_mgr.is_in_command_grace_period,
-                is_in_transit=self._cmd_svc.is_cover_in_transit,
+                StateChangeInputs(
+                    our_state=expected_position,
+                    policy=self._policy,
+                    allow_reset=self.manual_reset,
+                    is_waiting=self._cmd_svc.is_waiting_for_target,
+                    manual_threshold=detection_threshold,
+                    has_recorded_target=recorded_target is not None,
+                    secondary_axis_check=secondary_axis_check,
+                    is_in_command_grace=self._grace_mgr.is_in_command_grace_period,
+                    is_in_transit=self._cmd_svc.is_cover_in_transit,
+                ),
             )
 
         self.cover_state_change = False

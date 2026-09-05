@@ -24,6 +24,9 @@ import pytest
 from freezegun import freeze_time
 
 from custom_components.adaptive_cover_pro.cover_types import get_policy
+from custom_components.adaptive_cover_pro.managers.manual_override import (
+    StateChangeInputs,
+)
 
 UTC = dt.UTC
 
@@ -1403,13 +1406,15 @@ class TestIssue215StaleSafetyTarget:
 
         manager.handle_state_change(
             event_data,
-            100,  # commanded safety target
-            policy,
-            True,  # allow_reset
-            lambda _e: False,  # is_waiting
-            5,  # manual_threshold
-            is_in_command_grace=lambda _e: False,
-            is_in_transit=lambda _e: False,
+            StateChangeInputs(
+                our_state=100,  # commanded safety target
+                policy=policy,
+                allow_reset=True,
+                is_waiting=lambda _e: False,
+                manual_threshold=5,
+                is_in_command_grace=lambda _e: False,
+                is_in_transit=lambda _e: False,
+            ),
         )
 
         assert manager.is_cover_manual(entity_id)

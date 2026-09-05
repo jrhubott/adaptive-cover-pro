@@ -8,6 +8,7 @@ command-timing clock, runtime config).
 from __future__ import annotations
 
 import datetime as dt
+import inspect
 from unittest.mock import MagicMock
 
 import pytest
@@ -20,6 +21,7 @@ from custom_components.adaptive_cover_pro.managers.manual_override import (
     OverrideDecision,
     OverrideDetector,
     PositionDeltaDetector,
+    StateChangeInputs,
     StopToMy,
     TimeWindowDetector,
     UserContextChange,
@@ -392,14 +394,40 @@ def _drive(mgr, *, our_state=100, new_position=0):
     event.new_state.last_updated = dt.datetime.now(dt.UTC)
     mgr.handle_state_change(
         event,
-        our_state,
-        policy,
-        False,
-        lambda _e: False,
-        5,
-        is_in_command_grace=lambda _e: False,
-        is_in_transit=lambda _e: False,
+        StateChangeInputs(
+            our_state=our_state,
+            policy=policy,
+            allow_reset=False,
+            is_waiting=lambda _e: False,
+            manual_threshold=5,
+            is_in_command_grace=lambda _e: False,
+            is_in_transit=lambda _e: False,
+        ),
     )
+
+
+def test_handle_state_change_takes_the_event_and_one_inputs_object():
+    """B2 (#1274): ten loose parameters collapse to one input dataclass."""
+    params = list(
+        inspect.signature(AdaptiveCoverManager.handle_state_change).parameters
+    )
+    assert params == ["self", "states_data", "inputs"]
+
+
+def test_state_change_inputs_default_gates_are_closed():
+    """An omitted gate reads as closed, never as a None the callee must guard."""
+    inputs = StateChangeInputs(
+        our_state=50,
+        policy=MagicMock(),
+        allow_reset=False,
+        is_waiting=lambda _e: False,
+        manual_threshold=5,
+    )
+
+    assert inputs.has_recorded_target is True
+    assert inputs.secondary_axis_check is None
+    assert inputs.is_in_command_grace("cover.x") is False
+    assert inputs.is_in_transit("cover.x") is False
 
 
 def test_on_engaged_fires_once_on_edge_only():

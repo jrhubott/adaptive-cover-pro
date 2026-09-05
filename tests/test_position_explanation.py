@@ -1052,7 +1052,6 @@ class TestPositionExplanationChangeDetection:
         coord._event_buffer = EventBuffer(maxlen=50)
         coord.manager = MagicMock()
         coord.manager.covers = set()
-        coord.manager.overrides = {}
         coord.manager.reset_duration = __import__("datetime").timedelta(hours=2)
         coord._cmd_svc = MagicMock()
         coord._cmd_svc.get_all_entity_state_snapshots.return_value = {}

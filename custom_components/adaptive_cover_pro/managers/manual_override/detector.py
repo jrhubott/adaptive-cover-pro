@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from .expiry import STARTED_AT_SOURCE_ENGAGED
+from .secondary_axis import SecondaryAxisCheck
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +107,50 @@ class StopToMy:
     context_user_id: str | None = None
     context_id: str | None = None
     context_parent_id: str | None = None
+
+
+def never(_entity_id: str) -> bool:
+    """Return False always — the default for a gate predicate that is disabled.
+
+    Shared and named so an omitted gate is a CLOSED gate by construction: a
+    caller hands :class:`StateChangeInputs` a real predicate or nothing at all,
+    and no reader downstream has to distinguish ``None`` from "returns False"
+    (issue #1274).
+    """
+    return False
+
+
+@dataclass(frozen=True, slots=True)
+class StateChangeInputs:
+    """Everything ``handle_state_change`` needs besides the state-change event.
+
+    One dataclass in place of ten loose parameters (issue #1274): a new
+    detection signal becomes a field with a default here plus a read in the
+    engine, instead of a signature change rippling through every call site
+    (CODING_GUIDELINES.md § "Prefer Dataclasses Over Multi-Field Tuples").
+    """
+
+    our_state: int  # commanded/expected primary-axis position
+    policy: Any  # CoverTypePolicy — routes the read to the right axis
+    allow_reset: bool  # whether a fresh touch re-arms the override window
+    is_waiting: Callable[[str], bool]  # cover is moving toward a commanded target
+    manual_threshold: int | None
+    # Whether ACP has a recorded command target for this entity. When False,
+    # ``our_state`` is the pipeline's theoretical default rather than a
+    # commanded position, so a numeric delta against it is meaningless and the
+    # detector suppresses detection (issue #546).
+    has_recorded_target: bool = True
+    # Supplied by a dual-axis cover-type policy. When present the secondary
+    # axis is evaluated up front and a manual match short-circuits the
+    # position-axis check (issue #591).
+    secondary_axis_check: SecondaryAxisCheck | None = None
+    # True while the post-command grace window is open, so ACP's own movement
+    # is not read back as a user touch.
+    is_in_command_grace: Callable[[str], bool] = never
+    # True when HA reports the cover as ``opening``/``closing``. The position
+    # it reports mid-move can lag the physical one, so detection waits for the
+    # event that lands when the cover stops (issue #271).
+    is_in_transit: Callable[[str], bool] = never
 
 
 @dataclass(frozen=True, slots=True)

@@ -1246,7 +1246,7 @@ class TestStartedAtProvenance:
 
         mgr.reset("cover.a")
 
-        assert mgr.overrides == {}
+        assert mgr.active_entities() == []
 
 
 def _build_manual_override_diagnostics(manager, options: dict) -> dict:

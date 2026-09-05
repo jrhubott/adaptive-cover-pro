@@ -41,6 +41,7 @@ from custom_components.adaptive_cover_pro.cover_types.day_night_shade.policy imp
 from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
     SecondaryAxisCheck,
+    StateChangeInputs,
 )
 from tests.test_issue_1329_tilt_only_publish_lag import _pin_elapsed
 
@@ -344,13 +345,15 @@ async def test_dns_position_axis_still_trips_manual_override_inside_blend_publis
     event.old_state = None
 
     mgr.handle_state_change(
-        states_data=event,
-        our_state=19,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=3,
-        secondary_axis_check=check,
+        event,
+        StateChangeInputs(
+            our_state=19,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=3,
+            secondary_axis_check=check,
+        ),
     )
 
     assert mgr.is_cover_manual(entity_id), (

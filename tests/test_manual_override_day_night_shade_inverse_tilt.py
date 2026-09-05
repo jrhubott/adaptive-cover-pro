@@ -32,6 +32,7 @@ from custom_components.adaptive_cover_pro.cover_types.day_night_shade.policy imp
 from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
     SecondaryAxisCheck,
+    StateChangeInputs,
 )
 
 # The venetian sequencer (reused by composition) otherwise waits on real-motor
@@ -119,13 +120,15 @@ def test_dns_inverse_tilt_wire_publish_of_verified_target_is_not_manual_override
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
-        our_state=2,
-        policy=get_policy("cover_day_night_shade"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=10,
-        secondary_axis_check=check,
+        _make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
+        StateChangeInputs(
+            our_state=2,
+            policy=get_policy("cover_day_night_shade"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=10,
+            secondary_axis_check=check,
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id), (
@@ -156,15 +159,15 @@ def test_dns_inverse_tilt_genuine_off_target_move_still_trips() -> None:
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(
-            entity_id, position=2, tilt=70
-        ),  # wire 70 -> logical 30
-        our_state=2,
-        policy=get_policy("cover_day_night_shade"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=10,
-        secondary_axis_check=check,
+        _make_event(entity_id, position=2, tilt=70),  # wire 70 -> logical 30
+        StateChangeInputs(
+            our_state=2,
+            policy=get_policy("cover_day_night_shade"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=10,
+            secondary_axis_check=check,
+        ),
     )
 
     assert mgr.is_cover_manual(
@@ -205,13 +208,15 @@ def test_dns_inverse_tilt_normalises_the_dispatched_anchor() -> None:
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
-        our_state=2,
-        policy=get_policy("cover_day_night_shade"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=10,
-        secondary_axis_check=check,
+        _make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
+        StateChangeInputs(
+            our_state=2,
+            policy=get_policy("cover_day_night_shade"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=10,
+            secondary_axis_check=check,
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id), (
