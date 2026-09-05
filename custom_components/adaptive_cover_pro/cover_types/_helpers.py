@@ -13,6 +13,7 @@ from ..const import (
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_HORIZONTAL_PERCENT,
+    CONF_TILT_MIN_REFLECTED_ELEVATION,
     CONF_TILT_MODE,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
@@ -99,7 +100,10 @@ def slat_geometry_parts(
     mid-point (issue #1222) — renders only on ``specify_angles``, because the
     presets carry their own scale and leave the stored values inert. The
     mid-point additionally hides at its ``0`` disabled sentinel: printing
-    "horizontal at 0%" would state the opposite of what it means.
+    "horizontal at 0%" would state the opposite of what it means. The
+    reflected-beam floor (issue #1282) hides at its own ``0`` sentinel for the
+    same reason but is NOT mode-scoped — it constrains the solved angle on
+    every tilt mode.
     """
     L = {**GEOMETRY_LABELS_EN, **(labels or {})}
     parts: list[str] = []
@@ -116,4 +120,11 @@ def slat_geometry_parts(
             parts.append(L["geometry.slat.angle_100"].format(v=v))
         if v := config.get(CONF_TILT_HORIZONTAL_PERCENT):
             parts.append(L["geometry.slat.horizontal_percent"].format(v=v))
+    # The reflected-beam floor (#1282) sits OUTSIDE the calibration block on
+    # purpose: it constrains the solved slat angle on every mode, not just the
+    # calibrated one. Like the mid-point it hides at its ``0`` sentinel —
+    # "reflected sun kept at least 0° up" would read as a constraint where
+    # there is none.
+    if v := config.get(CONF_TILT_MIN_REFLECTED_ELEVATION):
+        parts.append(L["geometry.slat.min_reflected_elevation"].format(v=v))
     return parts

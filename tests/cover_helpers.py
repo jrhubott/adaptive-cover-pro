@@ -193,6 +193,7 @@ _TILT_CONFIG_FIELDS = {
     "min_tilt",
     "min_tilt_sun_only",
     "max_tilt_sun_only",
+    "min_reflected_elevation",
     "tilt_transform",
 }
 
@@ -293,6 +294,7 @@ def build_louvered_roof_cover(
     fov_right: float = 90.0,
     max_slat_angle: float = 0.0,
     safety_margin: float = 0.0,
+    min_reflected_elevation: float = 0.0,
 ):
     """Build an AdaptiveLouveredRoofCover at an explicit sun/slat geometry.
 
@@ -314,6 +316,7 @@ def build_louvered_roof_cover(
             depth=depth,
             mode=mode,
             safety_margin=safety_margin,
+            min_reflected_elevation=min_reflected_elevation,
         ),
         roof_config=LouveredRoofConfig(
             roof_pitch=roof_pitch, max_slat_angle=max_slat_angle

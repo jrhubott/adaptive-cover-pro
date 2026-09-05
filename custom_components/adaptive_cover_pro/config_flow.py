@@ -197,6 +197,7 @@ from .const import (
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_HORIZONTAL_PERCENT,
+    CONF_TILT_MIN_REFLECTED_ELEVATION,
     CONF_TILT_MODE,
     CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_TRANSFORM,
@@ -3819,6 +3820,9 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MIN_TILT_SUN_ONLY,
             CONF_MAX_TILT_SUN_ONLY,
             CONF_TILT_SAFETY_MARGIN,
+            # The reflected-beam floor (#1282) is slat + room geometry, which is
+            # what a sibling window on the same facade shares.
+            CONF_TILT_MIN_REFLECTED_ELEVATION,
             CONF_VENETIAN_TILT_TRANSFORM,
             # Per-window aperture fields relocated from sun_tracking (#778). They
             # live on the geometry step and sync with the physical measurements.

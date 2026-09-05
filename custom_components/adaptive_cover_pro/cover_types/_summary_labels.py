@@ -84,6 +84,7 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.slat.angle_0": "0% angle {v}°",
     "geometry.slat.angle_100": "100% angle {v}°",
     "geometry.slat.horizontal_percent": "horizontal at {v}%",
+    "geometry.slat.min_reflected_elevation": "reflected sun kept at least {v}° up",
     # Oscillating awning.
     "geometry.oscillating.arm": "{v}m arm",
     "geometry.oscillating.sweep": "sweep {lo}°–{hi}°",

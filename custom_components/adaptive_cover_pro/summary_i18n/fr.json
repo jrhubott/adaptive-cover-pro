@@ -274,7 +274,8 @@
       "mode": "mode : {v}",
       "angle_0": "angle 0 % {v}°",
       "angle_100": "angle 100 % {v}°",
-      "horizontal_percent": "horizontale à {v}%"
+      "horizontal_percent": "horizontale à {v}%",
+      "min_reflected_elevation": "soleil réfléchi à au moins {v}° d'élévation"
     },
     "oscillating": {
       "arm": "bras {v}m",

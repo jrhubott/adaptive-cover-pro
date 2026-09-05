@@ -434,6 +434,24 @@ class TestFieldValidators:
         with pytest.raises(Exception):
             FIELD_VALIDATORS["tilt_horizontal_percent"](101)
 
+    def test_tilt_min_reflected_elevation_validates_range(self):
+        """0-90 degrees, with ``0`` the disabled sentinel (#1282)."""
+        FIELD_VALIDATORS["tilt_min_reflected_elevation"](0)
+        FIELD_VALIDATORS["tilt_min_reflected_elevation"](45)
+        FIELD_VALIDATORS["tilt_min_reflected_elevation"](90)
+        FIELD_VALIDATORS["tilt_min_reflected_elevation"](None)
+
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS["tilt_min_reflected_elevation"](-1)
+
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS["tilt_min_reflected_elevation"](91)
+
+    def test_tilt_min_reflected_elevation_is_settable_through_set_option(self):
+        """A FIELD_VALIDATORS entry with no service seat is dead code."""
+        assert "tilt_min_reflected_elevation" in FIELD_VALIDATORS
+        assert "tilt_min_reflected_elevation" not in IDENTITY_KEYS
+
     def test_tilt_horizontal_percent_accepted_on_a_straddling_calibration(self):
         """The reporter's blind: 0° → 0 %, horizontal → 50 %, 130° → 100 %."""
         validate_options_patch(

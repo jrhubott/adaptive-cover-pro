@@ -26,6 +26,7 @@ from ..const import (
     CONF_ROOF_PITCH,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_MIN_REFLECTED_ELEVATION,
     DEFAULT_LOUVERED_ROOF_PITCH,
     DEFAULT_LOUVERED_SLAT_DEPTH_CM,
     DEFAULT_LOUVERED_SLAT_DISTANCE_CM,
@@ -83,6 +84,13 @@ def geometry_louvered_roof_schema(hass: HomeAssistant | None = None) -> vol.Sche
         fields[vol.Required(slat_key, default=slat_default(default_cm, hass))] = (
             slat_selector
         )
+    # The reflected-beam floor (#1282) rides in on the shared tilt fragment but
+    # is meaningless here: ``AdaptiveLouveredRoofCover._min_reflected_elevation_deg``
+    # returns the disabled sentinel off vertical pitch, because the roof's
+    # ``90° ± i`` realization and roof-plane ``beta`` invalidate the
+    # ``phi = 90° − code_angle`` mapping the clamp is derived from. Popping it
+    # keeps the form from advertising a control the engine ignores.
+    fields.pop(vol.Optional(CONF_TILT_MIN_REFLECTED_ELEVATION))
     fields[vol.Required(CONF_ROOF_PITCH, default=DEFAULT_LOUVERED_ROOF_PITCH)] = (
         _roof_pitch_selector()
     )

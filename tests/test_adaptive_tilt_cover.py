@@ -6,6 +6,11 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock
 
+from custom_components.adaptive_cover_pro.engine.covers.tilt import (
+    constrain_reflected_beam,
+    reflected_beam_elevation,
+    slat_cutoff_angle,
+)
 from tests.cover_helpers import build_louvered_roof_cover, build_tilt_cover
 
 # Window azimuth every ``_tilt_at`` cover faces, so a test can place the sun by
@@ -13,12 +18,23 @@ from tests.cover_helpers import build_louvered_roof_cover, build_tilt_cover
 _WIN_AZI = 180
 
 
-def _tilt_at(*, sol_azi, sol_elev, slat_distance, depth, mode, safety_margin=0.0):
+def _tilt_at(
+    *,
+    sol_azi,
+    sol_elev,
+    slat_distance,
+    depth,
+    mode,
+    safety_margin=0.0,
+    min_reflected_elevation=0.0,
+):
     """Build an AdaptiveTiltCover at an explicit sun/slat geometry.
 
     Wide FOV so the sun is always "in front"; only the grazing-angle math is
     exercised. ``safety_margin`` threads the configurable venetian tilt margin
-    (issue #783) through to ``TiltConfig``.
+    (issue #783) through to ``TiltConfig``; ``min_reflected_elevation`` threads
+    the reflected-beam floor (issue #1282), whose ``0`` is the disabled
+    sentinel.
     """
     return build_tilt_cover(
         logger=MagicMock(),
@@ -46,6 +62,7 @@ def _tilt_at(*, sol_azi, sol_elev, slat_distance, depth, mode, safety_margin=0.0
         depth=depth,
         mode=mode,
         safety_margin=safety_margin,
+        min_reflected_elevation=min_reflected_elevation,
     )
 
 
@@ -738,6 +755,41 @@ def test_get_tilt_data_defaults_horizontal_percent_to_disabled():
     )
 
     assert result.horizontal_percent == DEFAULT_TILT_HORIZONTAL_PERCENT == 0
+
+
+def test_get_tilt_data_reads_min_reflected_elevation():
+    """The reflected-beam floor reaches the engine (#1282)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_TILT_MIN_REFLECTED_ELEVATION,
+    )
+
+    result = _tilt_config_service().get_tilt_data(
+        {
+            "slat_distance": 7.5,
+            "slat_depth": 8.0,
+            "tilt_mode": "mode2",
+            CONF_TILT_MIN_REFLECTED_ELEVATION: 30,
+        }
+    )
+
+    assert result.min_reflected_elevation == 30.0
+
+
+def test_get_tilt_data_defaults_min_reflected_elevation_to_disabled():
+    """An entry written before the option existed reads as the 0 sentinel."""
+    from custom_components.adaptive_cover_pro.const import (
+        DEFAULT_TILT_MIN_REFLECTED_ELEVATION,
+    )
+
+    result = _tilt_config_service().get_tilt_data(
+        {
+            "slat_distance": 7.5,
+            "slat_depth": 8.0,
+            "tilt_mode": "mode2",
+        }
+    )
+
+    assert result.min_reflected_elevation == DEFAULT_TILT_MIN_REFLECTED_ELEVATION == 0
 
 
 @pytest.mark.unit
@@ -1991,3 +2043,260 @@ class TestADriveShortOfTheTargetKeepsItsOwnEnd:
         raw = cover._percentage_from_angle(angle_deg)
         assert 0.0 <= raw <= 100.0
         assert cover.climate_tilt_percentage(angle_deg) == expected
+
+
+class TestReflectedBeamHelpers:
+    """Pure specular-reflection helpers beside the cut-off solve (issue #1282).
+
+    Writing ``phi = 90 - code_angle`` (positive = outer slat edge DOWN), a beam
+    arriving at profile angle ``beta`` leaves the slat's upper face at profile
+    elevation ``theta_r = beta + 2*phi``. Above ``beta = arctan(slat_distance /
+    depth)`` the cut-off solve asks for a past-horizontal, outer-edge-up slat,
+    and that pose aims the reflection INTO the room.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("beta_deg", "slat_angle_deg"),
+        [
+            (58.7, 119.55),  # the reporter's WAREMA row (#1282 / #1086)
+            (41.6, 87.1),
+            (0.0, 90.0),
+            (60.0, 122.0),
+            (20.0, 48.2),
+            (89.0, 178.0),
+        ],
+    )
+    def test_reflected_beam_elevation_matches_the_closed_form(
+        self, beta_deg: float, slat_angle_deg: float
+    ) -> None:
+        assert reflected_beam_elevation(beta_deg, slat_angle_deg) == pytest.approx(
+            beta_deg + 2 * (90.0 - slat_angle_deg)
+        )
+
+    @pytest.mark.unit
+    def test_reflected_beam_elevation_pins_the_reporters_row(self) -> None:
+        """The daylight-optimal pose fires the beam essentially horizontally in."""
+        assert reflected_beam_elevation(58.7, 119.55) == pytest.approx(-0.4, abs=0.05)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("min_elevation_deg", [0, 0.0, -1, -30.0])
+    def test_constrain_reflected_beam_is_identity_at_the_disabled_sentinel(
+        self, min_elevation_deg: float
+    ) -> None:
+        """0 (and anything below it) is the disabled state — no arithmetic at all."""
+        assert constrain_reflected_beam(119.55, 58.7, min_elevation_deg) == 119.55
+        assert constrain_reflected_beam(12.25, 4.5, min_elevation_deg) == 12.25
+
+    @pytest.mark.unit
+    def test_constrain_reflected_beam_caps_the_reporters_cutoff(self) -> None:
+        """30° of clearance turns the mirror away from eye level."""
+        capped = constrain_reflected_beam(119.55, 58.7, 30)
+        assert capped == pytest.approx(104.35, abs=0.01)
+        assert reflected_beam_elevation(58.7, capped) == pytest.approx(30.0)
+
+    @pytest.mark.unit
+    def test_constrain_reflected_beam_can_close_below_horizontal(self) -> None:
+        """A steep floor pulls the slat back PAST horizontal, not just to it."""
+        capped = constrain_reflected_beam(84.10, 40, 60)
+        assert capped == pytest.approx(80.0)
+        assert reflected_beam_elevation(40, capped) == pytest.approx(60.0)
+
+    @pytest.mark.unit
+    def test_constrain_reflected_beam_never_opens_a_slat(self) -> None:
+        """A floor the pose already clears leaves the angle untouched."""
+        assert constrain_reflected_beam(48.2, 20, 30) == 48.2
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(("slat_distance", "depth"), [(0.075, 0.08), (0.02, 0.03)])
+    def test_constrained_angle_never_opens_past_the_cutoff_and_still_blocks(
+        self, slat_distance: float, depth: float
+    ) -> None:
+        """The clamp only ever CLOSES, and stays inside the blocking band.
+
+        ``sin(phi + beta) >= r*cos(beta)`` is a BAND, not a half-line: the slat
+        can be turned back toward — and past — horizontal without ever leaking
+        direct sun. That is what makes a floor safe to apply on top of the
+        cut-off rather than a trade against it.
+        """
+        ratio = slat_distance / depth
+        for beta_deg in range(1, 90):
+            beta_rad = math.radians(beta_deg)
+            cutoff, _disc, negative = slat_cutoff_angle(beta_rad, slat_distance, depth)
+            assert negative is False
+            for min_elev in range(1, 91):
+                capped = constrain_reflected_beam(cutoff, beta_deg, min_elev)
+                assert capped <= cutoff + 1e-9
+                phi = 90.0 - capped
+                assert math.sin(math.radians(phi + beta_deg)) >= (
+                    ratio * math.cos(beta_rad) - 1e-9
+                ), f"beta={beta_deg} N={min_elev} leaks direct sun"
+
+
+class TestReflectedBeamFloor:
+    """The reflected-beam floor applied inside ``calculate_position`` (#1282).
+
+    The reporter's WAREMA geometry (``depth 8.0 cm`` / ``slat_distance 7.5 cm``,
+    ``r = 0.9375``) crosses ``beta = arctan(r) ~ 43.2`` for most of a south-facade
+    day, above which the daylight-optimal cut-off is a past-horizontal,
+    outer-edge-up slat whose upper face mirrors the beam into the room.
+    """
+
+    # The reporter's own diagnostics row from #1086, replayed through the engine.
+    _REPORTER = {
+        "sol_azi": 118.4,
+        "sol_elev": 38,
+        "slat_distance": 0.075,
+        "depth": 0.08,
+    }
+
+    _SWEEP_AZI = (120, 150, 180, 210, 240)
+    _SWEEP_ELEV = (5, 15, 25, 35, 45, 55, 65, 75, 85)
+    _SWEEP_SLATS = ((0.02, 0.03), (0.075, 0.08), (0.05, 0.03))
+    _SWEEP_MODES = ("mode1", "mode2", "specify_angles")
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("slat_distance,depth", _SWEEP_SLATS)
+    @pytest.mark.parametrize("mode", _SWEEP_MODES)
+    def test_disabled_option_is_byte_identical_at_every_geometry(
+        self, slat_distance: float, depth: float, mode: str
+    ) -> None:
+        """THE acceptance gate: the 0 sentinel changes nothing, anywhere.
+
+        Exact ``==`` rather than ``pytest.approx`` — the same standard
+        ``safety_margin = 0.0`` is held to. A rearrangement that is only
+        *approximately* a no-op still moves every existing install's slats.
+        """
+        for sol_azi in self._SWEEP_AZI:
+            for sol_elev in self._SWEEP_ELEV:
+                for safety_margin in (0.0, 1.0):
+                    params = {
+                        "sol_azi": sol_azi,
+                        "sol_elev": sol_elev,
+                        "slat_distance": slat_distance,
+                        "depth": depth,
+                        "mode": mode,
+                        "safety_margin": safety_margin,
+                    }
+                    baseline = _tilt_at(**params)
+                    sentinel = _tilt_at(**params, min_reflected_elevation=0)
+                    assert (
+                        sentinel.calculate_position() == baseline.calculate_position()
+                    ), f"position moved at {params}"
+                    assert (
+                        sentinel.calculate_percentage()
+                        == baseline.calculate_percentage()
+                    ), f"percentage moved at {params}"
+
+    @pytest.mark.unit
+    def test_reporters_geometry_no_longer_mirrors_the_sun_into_the_room(self) -> None:
+        """The headline case: -0.3° into the room becomes 30° above horizontal."""
+        unconstrained = _tilt_at(**self._REPORTER, mode="mode2")
+        angle = unconstrained.calculate_position()
+        trace = unconstrained._last_calc_details
+        assert angle == pytest.approx(119.49, abs=0.05)
+        assert trace["reflected_beam_elevation_deg"] == pytest.approx(-0.32, abs=0.05)
+        assert trace["reflected_beam_constrained"] is False
+
+        floored = _tilt_at(**self._REPORTER, mode="mode2", min_reflected_elevation=30)
+        angle = floored.calculate_position()
+        trace = floored._last_calc_details
+        assert angle == pytest.approx(104.33, abs=0.05)
+        assert trace["reflected_beam_elevation_deg"] == pytest.approx(30.0)
+        assert trace["reflected_beam_min_elevation_deg"] == 30.0
+        assert trace["reflected_beam_constrained"] is True
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("min_elevation", [15, 30, 60, 90])
+    @pytest.mark.parametrize("mode", _SWEEP_MODES)
+    def test_floor_only_ever_closes(self, min_elevation: int, mode: str) -> None:
+        """The floor is a cap: it can lower the slat angle, never raise it."""
+        for slat_distance, depth in self._SWEEP_SLATS:
+            for sol_azi in self._SWEEP_AZI:
+                for sol_elev in self._SWEEP_ELEV:
+                    params = {
+                        "sol_azi": sol_azi,
+                        "sol_elev": sol_elev,
+                        "slat_distance": slat_distance,
+                        "depth": depth,
+                        "mode": mode,
+                    }
+                    open_angle = _tilt_at(**params).calculate_position()
+                    floored = _tilt_at(
+                        **params, min_reflected_elevation=min_elevation
+                    ).calculate_position()
+                    assert floored <= open_angle + 1e-9, f"{params} N={min_elevation}"
+
+    @pytest.mark.unit
+    def test_floor_runs_after_the_safety_margin(self) -> None:
+        """Ordering is load-bearing, not incidental.
+
+        The margin's ``result > 90`` branch scales the slat FURTHER past
+        horizontal, so a floor applied before it would simply be undone (30°
+        floor -> 104.35°, then eff_margin -> ~107°, reflection back down to
+        ~24°). Applied after, the cap is idempotent and the floor is a true
+        invariant.
+        """
+        floored = _tilt_at(
+            **self._REPORTER,
+            mode="mode2",
+            safety_margin=1.0,
+            min_reflected_elevation=30,
+        )
+        angle = floored.calculate_position()
+        trace = floored._last_calc_details
+        assert trace["safety_margin"] > 1.0  # the margin really did run
+        assert angle == pytest.approx(104.33, abs=0.05)
+        assert trace["reflected_beam_elevation_deg"] >= 30.0 - 1e-9
+
+    @pytest.mark.unit
+    def test_floor_acts_on_mode1_below_horizontal(self) -> None:
+        """A steep floor pulls a MODE1 slat back below horizontal, not just to it."""
+        cover = _tilt_at(
+            sol_azi=180,
+            sol_elev=40,
+            slat_distance=0.075,
+            depth=0.08,
+            mode="mode1",
+            min_reflected_elevation=60,
+        )
+        angle = cover.calculate_position()
+        assert angle == pytest.approx(80.0, abs=0.05)
+        assert cover._last_calc_details[
+            "reflected_beam_elevation_deg"
+        ] == pytest.approx(60.0)
+
+    @pytest.mark.unit
+    def test_floor_can_lower_a_horizontal_slat(self) -> None:
+        """At beta ~ arctan(r) the cut-off is horizontal, and the floor still bites."""
+        cover = _tilt_at(
+            sol_azi=180,
+            sol_elev=43.15,
+            slat_distance=0.075,
+            depth=0.08,
+            mode="mode2",
+            min_reflected_elevation=60,
+        )
+        assert cover.calculate_position() == pytest.approx(81.6, abs=0.05)
+
+    @pytest.mark.unit
+    def test_trace_publishes_reflected_beam_keys_at_the_sentinel(self) -> None:
+        """A stable key set: the card reads it without probing (as for #1222)."""
+        cover = _tilt_at(**self._REPORTER, mode="mode2")
+        cover.calculate_position()
+        trace = cover._last_calc_details
+        assert trace["reflected_beam_min_elevation_deg"] == 0.0
+        assert trace["reflected_beam_constrained"] is False
+        assert trace["reflected_beam_elevation_deg"] is not None
+
+        # Negative discriminant (slat_distance >> depth at a low sun) returns
+        # 0° closed before any slat angle exists — so does the reflection.
+        closed = _tilt_at(
+            sol_azi=180, sol_elev=20, slat_distance=0.05, depth=0.03, mode="mode2"
+        )
+        assert closed.calculate_position() == 0.0
+        closed_trace = closed._last_calc_details
+        assert closed_trace["negative_discriminant"] is True
+        assert closed_trace["reflected_beam_elevation_deg"] is None
+        assert closed_trace["reflected_beam_min_elevation_deg"] == 0.0
+        assert closed_trace["reflected_beam_constrained"] is False

@@ -10,6 +10,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ROOF_PITCH,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_MIN_REFLECTED_ELEVATION,
     CONF_TILT_MODE,
     DEFAULT_MAX_SLAT_ANGLE,
 )
@@ -146,6 +147,16 @@ class TestLouveredRoofPolicy:
     def test_max_slat_angle_defaults_to_zero(self) -> None:
         schema = get_policy(COVER_TYPE).geometry_schema()
         assert _schema_default(schema, CONF_MAX_SLAT_ANGLE) == DEFAULT_MAX_SLAT_ANGLE
+
+    def test_geometry_schema_omits_min_reflected_elevation(self) -> None:
+        """The reflected-beam floor (#1282) is not offered on a roof plane.
+
+        ``AdaptiveLouveredRoofCover._min_reflected_elevation_deg`` already
+        disables the constraint off vertical pitch — this keeps the form from
+        advertising a control that would do nothing.
+        """
+        keys = _schema_keys(get_policy(COVER_TYPE).geometry_schema())
+        assert CONF_TILT_MIN_REFLECTED_ELEVATION not in keys
 
     def test_disallows_vertical_and_awning_geometry(self) -> None:
         policy = get_policy(COVER_TYPE)

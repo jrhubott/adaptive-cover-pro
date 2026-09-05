@@ -862,3 +862,27 @@ def test_weather_override_tilt_is_live_option_key_for_venetian_only(
 
     live = get_policy(cover_type).live_option_keys()
     assert (CONF_WEATHER_OVERRIDE_TILT in live) is expected
+
+
+@pytest.mark.parametrize("cover_type", [CoverType.TILT, CoverType.VENETIAN])
+def test_min_reflected_elevation_on_tilt_and_venetian_geometry_steps(
+    cover_type,
+) -> None:
+    """The reflected-beam floor (#1282) is slat geometry, so it rides with it.
+
+    Venetian composes the tilt geometry fragment, so both types reach it from
+    one declaration; the louvered roof pops it back off (its engine hook
+    disables the constraint off vertical pitch).
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_TILT_MIN_REFLECTED_ELEVATION,
+        DEFAULT_TILT_MIN_REFLECTED_ELEVATION,
+    )
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    schema = get_policy(cover_type).geometry_schema()
+    assert CONF_TILT_MIN_REFLECTED_ELEVATION in _schema_keys(schema)
+    marker = next(
+        k for k in schema.schema if str(k) == CONF_TILT_MIN_REFLECTED_ELEVATION
+    )
+    assert marker.default() == DEFAULT_TILT_MIN_REFLECTED_ELEVATION == 0

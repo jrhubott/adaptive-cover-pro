@@ -194,6 +194,22 @@ def test_tilt_safety_margin_in_option_ranges() -> None:
     assert OPTION_RANGES[CONF_TILT_SAFETY_MARGIN] == (0.0, 1.0)
 
 
+@pytest.mark.unit
+def test_tilt_min_reflected_elevation_in_option_ranges() -> None:
+    """The reflected-beam floor (#1282) is registry-declared, 0-90 degrees.
+
+    ``0`` is the disabled sentinel and therefore a legal value, so the range
+    starts at it rather than at the smallest meaningful angle.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_TILT_MIN_REFLECTED_ELEVATION,
+    )
+
+    assert CONF_TILT_MIN_REFLECTED_ELEVATION in OPTION_RANGES
+    assert OPTION_RANGES[CONF_TILT_MIN_REFLECTED_ELEVATION] == (0, 90)
+    assert CONF_TILT_MIN_REFLECTED_ELEVATION in FIELD_VALIDATORS
+
+
 # ---------------------------------------------------------------------------
 # Solar transmittance (#1236) — both g-value sliders are registry-declared.
 # ---------------------------------------------------------------------------
