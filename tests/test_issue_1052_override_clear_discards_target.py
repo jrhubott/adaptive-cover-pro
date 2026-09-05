@@ -98,7 +98,7 @@ async def test_clearing_override_discards_latched_target(
     # The override's own command target: set_axes asked for 0, ACP sent
     # close_cover and latched it.
     cmd_svc.set_target(ENTITY_ID, 0)
-    manager.manual_control[ENTITY_ID] = True
+    manager.mark_user_command(ENTITY_ID, reason="test setup")
 
     manager.reset(ENTITY_ID)
 
@@ -129,7 +129,7 @@ async def test_reconcile_does_not_resend_after_override_cleared(
     cmd_svc.in_time_window = True
 
     cmd_svc.set_target(ENTITY_ID, 0)
-    manager.manual_control[ENTITY_ID] = True
+    manager.mark_user_command(ENTITY_ID, reason="test setup")
     cmd_svc.manual_override_entities = {ENTITY_ID}
 
     # User stops the cover at 99, then cancels the override.

@@ -20,6 +20,7 @@ Three things are pinned here, each of which the shipped suite let through:
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import logging
 from unittest.mock import MagicMock
@@ -29,9 +30,13 @@ import pytest
 from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
     DetectionContext,
+    OverrideState,
     PositionDeltaDetector,
     SecondaryAxisCheck,
     effective_manual_threshold,
+)
+from custom_components.adaptive_cover_pro.managers.manual_override.expiry import (
+    expiry_for_started_at,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -284,7 +289,8 @@ class TestLivenessHasOneDefinition:
 
     It gated only on ``manual_control_time`` and never consulted
     ``manual_control``, so the end-time sensor (which iterates the former) and
-    the diagnostics block (which reads the latter) could disagree.
+    the diagnostics block (which reads the latter) could disagree. Since #1274
+    there is no second store to consult.
     """
 
     def _manager(self) -> AdaptiveCoverManager:
@@ -310,17 +316,40 @@ class TestLivenessHasOneDefinition:
         mgr.reset("cover.x")
         assert mgr.expiry_for("cover.x") is None
 
-    def test_expiry_for_honours_the_manual_control_flag(self):
-        """A start time without a live flag is not a held override.
+    def test_the_flag_store_no_longer_exists(self):
+        """#1274: presence in the single store IS the armed flag.
 
-        Nothing in production can produce that split today, which is exactly
-        why it went unnoticed: the guarantee rests on ``reset`` popping both
-        stores rather than on ``expiry_for`` checking the one it documents.
+        Retires ``test_expiry_for_honours_the_manual_control_flag``, which
+        manufactured "start time live, flag False" — a split the one-store
+        model cannot express and, as that test's own docstring conceded,
+        nothing in production could produce.
         """
         mgr = self._manager()
+        assert not hasattr(mgr, "manual_control")
+
         mgr.mark_user_command("cover.x", reason="test")
-        mgr.manual_control["cover.x"] = False
+        assert mgr.override_for("cover.x") is not None
+        assert mgr.is_cover_manual("cover.x") is True
+
+        mgr.reset("cover.x")
+        assert mgr.override_for("cover.x") is None
+        assert mgr.is_cover_manual("cover.x") is False
         assert mgr.expiry_for("cover.x") is None
+
+    def test_override_state_is_immutable(self):
+        """Re-arming replaces the stored state; it never mutates one in place."""
+        mgr = self._manager()
+        mgr.mark_user_command("cover.x", reason="test")
+
+        state = mgr.override_for("cover.x")
+        assert isinstance(state, OverrideState)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            state.started_at = dt.datetime.now(dt.UTC)
+
+        assert state.expiry is None
+        assert mgr.expiry_for("cover.x") == expiry_for_started_at(
+            state.started_at, mgr.reset_duration
+        )
 
     def test_active_entities_matches_expiry_for(self):
         """The accessor both consumers should share agrees with ``expiry_for``."""
@@ -333,15 +362,14 @@ class TestLivenessHasOneDefinition:
 
 
 @pytest.mark.unit
-class TestArmIsTheOnlyFlagWriter:
-    """``_arm`` writes ``manual_control`` alongside the timestamp (issue #1273).
+class TestArmIsTheOnlyWriter:
+    """``_arm`` is the only path that puts a cover into the override store.
 
-    The flag used to be set by each arming caller separately, so
+    The armed flag used to be a separate dict written by each arming caller, so
     ``set_last_updated`` could record a start time on a cover the flag said was
-    not overridden. That never bit in production only because every real path
-    happened to call ``mark_manual_control`` first, which is a convention rather
-    than a guarantee. Pinned here because the whole point of #1273's liveness fix
-    is that the two stores move together.
+    not overridden — a convention rather than a guarantee (#1273). Since #1274
+    there is one store and one writer: being in it IS being overridden, so the
+    two can no longer disagree.
     """
 
     def _manager(self) -> AdaptiveCoverManager:
@@ -370,15 +398,13 @@ class TestArmIsTheOnlyFlagWriter:
         assert mgr.is_cover_manual("cover.x") is True
         assert mgr.active_entities() == ["cover.x"]
 
-    def test_every_store_is_cleared_together_on_reset(self):
+    def test_reset_removes_the_override_state(self):
         mgr = self._manager()
         mgr.mark_user_command("cover.x", reason="test")
 
         mgr.reset("cover.x")
 
         assert mgr.is_cover_manual("cover.x") is False
-        assert "cover.x" not in mgr.manual_control_time
-        assert "cover.x" not in mgr.manual_control_expiry
-        assert "cover.x" not in mgr.manual_control_start_source
+        assert mgr.override_for("cover.x") is None
         assert mgr.active_entities() == []
         assert mgr.expiry_for("cover.x") is None

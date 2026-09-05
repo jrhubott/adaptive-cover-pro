@@ -312,7 +312,7 @@ class TestExpiryFor:
 
         assert seen == [start, start]
 
-    def test_reset_clears_both_dicts(self):
+    def test_reset_clears_the_pin_with_the_override(self):
         """Expiry bookkeeping must not outlive the override it describes."""
         mgr = _manager()
         mgr.engage_override(
@@ -321,12 +321,11 @@ class TestExpiryFor:
             duration=None,
             reason="service",
         )
-        assert mgr.manual_control_expiry.get("cover.x") is not None
+        assert mgr.override_for("cover.x").expiry is not None
 
         mgr.reset("cover.x")
 
-        assert "cover.x" not in mgr.manual_control_time
-        assert "cover.x" not in mgr.manual_control_expiry
+        assert mgr.override_for("cover.x") is None
         assert mgr.expiry_for("cover.x") is None
 
     def test_naive_anchor_is_normalised_to_utc(self):
@@ -352,10 +351,10 @@ class TestExpiryFor:
         start = dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)
         mgr.set_last_updated("cover.x", _state(start), allow_reset=True)
 
-        assert "cover.x" not in mgr.manual_control_expiry
+        assert mgr.override_for("cover.x").expiry is None
         assert mgr.expiry_for("cover.x") == start + dt.timedelta(hours=2)
 
-    def test_allow_reset_false_does_not_extend_either_dict(self):
+    def test_allow_reset_false_does_not_extend_start_or_end(self):
         """``allow_reset=False`` keeps the original start AND the original end."""
         mgr = _manager(reset_duration={"hours": 2})
         start = dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)
@@ -365,25 +364,25 @@ class TestExpiryFor:
         later = start + dt.timedelta(minutes=45)
         mgr.set_last_updated("cover.x", _state(later), allow_reset=False)
 
-        assert mgr.manual_control_time["cover.x"] == start
+        assert mgr.override_for("cover.x").started_at == start
         assert mgr.expiry_for("cover.x") == first_expiry
 
     def test_mark_user_command_does_not_extend_the_window(self):
-        """Successive proxy drags keep the first start (``setdefault`` semantics)."""
+        """Successive proxy drags keep the first start (do-not-extend semantics)."""
         mgr = _manager(reset_duration={"hours": 2})
         start = dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)
         mgr.set_last_updated("cover.x", _state(start), allow_reset=True)
 
         mgr.mark_user_command("cover.x", reason="proxy_managed")
 
-        assert mgr.manual_control_time["cover.x"] == start
+        assert mgr.override_for("cover.x").started_at == start
         assert mgr.expiry_for("cover.x") == start + dt.timedelta(hours=2)
 
 
 class TestResetIfNeeded:
     """The expiry poll compares ``now`` against ``expiry_for()``, strictly."""
 
-    async def test_fixed_mode_boundary_is_strictly_greater_not_gte(self):
+    def test_fixed_mode_boundary_is_strictly_greater_not_gte(self):
         """At exactly ``start + duration`` the override still holds.
 
         The byte-identical translation of the legacy
@@ -392,17 +391,16 @@ class TestResetIfNeeded:
         mgr = _manager(reset_duration={"hours": 2})
         start = dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)
         mgr.set_last_updated("cover.x", _state(start), allow_reset=True)
-        mgr.mark_manual_control("cover.x")
 
         with freeze_time("2026-07-02 14:00:00"):
-            assert await mgr.reset_if_needed() == set()
+            assert mgr.reset_if_needed() == set()
         assert mgr.is_cover_manual("cover.x") is True
 
         with freeze_time("2026-07-02 14:00:01"):
-            assert await mgr.reset_if_needed() == {"cover.x"}
+            assert mgr.reset_if_needed() == {"cover.x"}
         assert mgr.is_cover_manual("cover.x") is False
 
-    async def test_sun_mode_does_not_expire_before_the_deadline(self):
+    def test_sun_mode_does_not_expire_before_the_deadline(self):
         """A sun deadline outlives the numeric duration it replaces."""
         mgr = _manager(reset_duration={"hours": 2})
         sunset = dt.datetime(2026, 7, 2, 21, 0, tzinfo=dt.UTC)
@@ -410,17 +408,16 @@ class TestResetIfNeeded:
         mgr.set_last_updated(
             "cover.x", _state(dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)), True
         )
-        mgr.mark_manual_control("cover.x")
 
         # 6 h in — three times the fixed duration, still held.
         with freeze_time("2026-07-02 18:00:00"):
-            assert await mgr.reset_if_needed() == set()
+            assert mgr.reset_if_needed() == set()
         # And at the deadline itself, still held (strictly-after rule).
         with freeze_time("2026-07-02 21:00:00"):
-            assert await mgr.reset_if_needed() == set()
+            assert mgr.reset_if_needed() == set()
         assert mgr.is_cover_manual("cover.x") is True
 
-    async def test_sun_mode_expires_at_the_resolved_deadline(self):
+    def test_sun_mode_expires_at_the_resolved_deadline(self):
         """Past the resolved deadline the override clears like any other."""
         mgr = _manager(reset_duration={"hours": 2})
         sunset = dt.datetime(2026, 7, 2, 21, 0, tzinfo=dt.UTC)
@@ -428,13 +425,12 @@ class TestResetIfNeeded:
         mgr.set_last_updated(
             "cover.x", _state(dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)), True
         )
-        mgr.mark_manual_control("cover.x")
 
         with freeze_time("2026-07-02 21:00:01"):
-            assert await mgr.reset_if_needed() == {"cover.x"}
+            assert mgr.reset_if_needed() == {"cover.x"}
 
         assert mgr.is_cover_manual("cover.x") is False
-        assert "cover.x" not in mgr.manual_control_time
+        assert mgr.override_for("cover.x") is None
 
 
 # ---------------------------------------------------------------------------
@@ -842,7 +838,7 @@ class TestBlankWindowEnd:
 
         assert deadline == dt.datetime(2026, 7, 2, 19, 0, tzinfo=dt.UTC)
 
-    async def test_blank_end_override_expires_after_the_numeric_duration(self):
+    def test_blank_end_override_expires_after_the_numeric_duration(self):
         """The ship-blocker: the hold must not suspend auto-control forever."""
         coord = _blank_end_coordinator()
         mgr = _manager(["cover.x"], reset_duration={"hours": 2})
@@ -850,17 +846,16 @@ class TestBlankWindowEnd:
         mgr.set_last_updated(
             "cover.x", _state(dt.datetime(2026, 7, 2, 10, 0, tzinfo=dt.UTC)), True
         )
-        mgr.mark_manual_control("cover.x")
 
         with (
             patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
             freeze_time("2026-07-02 12:00:01"),
         ):
-            assert await mgr.reset_if_needed() == {"cover.x"}
+            assert mgr.reset_if_needed() == {"cover.x"}
 
         assert mgr.is_cover_manual("cover.x") is False
 
-    async def test_blank_end_override_holds_until_the_numeric_duration(self):
+    def test_blank_end_override_holds_until_the_numeric_duration(self):
         """Falling back to ``fixed`` must not shorten the hold either."""
         coord = _blank_end_coordinator()
         mgr = _manager(["cover.x"], reset_duration={"hours": 2})
@@ -868,13 +863,12 @@ class TestBlankWindowEnd:
         mgr.set_last_updated(
             "cover.x", _state(dt.datetime(2026, 7, 2, 10, 0, tzinfo=dt.UTC)), True
         )
-        mgr.mark_manual_control("cover.x")
 
         with (
             patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
             freeze_time("2026-07-02 11:59:59"),
         ):
-            assert await mgr.reset_if_needed() == set()
+            assert mgr.reset_if_needed() == set()
 
         assert mgr.is_cover_manual("cover.x") is True
 
@@ -1049,7 +1043,6 @@ class TestSliceIsTheSingleModeSource:
         mgr.set_last_updated(
             "cover.a", _state(dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)), True
         )
-        mgr.mark_manual_control("cover.a")
 
         coord = MagicMock()
         coord.manager = mgr
@@ -1127,7 +1120,7 @@ class TestSurfaces:
         assert mgr.is_cover_manual("cover.a") is True
         assert mgr.expiry_for("cover.a") == expiry
         # The derived start is still written for the diagnostics display.
-        assert mgr.manual_control_time["cover.a"] == expiry - mgr.reset_duration
+        assert mgr.override_for("cover.a").started_at == expiry - mgr.reset_duration
 
     def test_diagnostics_remaining_seconds_uses_resolved_deadline(self):
         mgr = _manager(["cover.a"], reset_duration={"hours": 2})
@@ -1136,7 +1129,6 @@ class TestSurfaces:
         mgr.set_last_updated(
             "cover.a", _state(dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)), True
         )
-        mgr.mark_manual_control("cover.a")
 
         with freeze_time("2026-07-02 20:00:00"):
             state = _build_manual_override_diagnostics(mgr, {})
@@ -1151,7 +1143,6 @@ class TestSurfaces:
         mgr.set_last_updated(
             "cover.a", _state(dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)), True
         )
-        mgr.mark_manual_control("cover.a")
 
         with freeze_time("2026-07-02 20:00:00"):
             state = _build_manual_override_diagnostics(
@@ -1224,7 +1215,6 @@ class TestStartedAtProvenance:
         mgr.set_last_updated(
             "cover.a", _state(dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)), True
         )
-        mgr.mark_manual_control("cover.a")
 
         with freeze_time("2026-07-02 12:30:00"):
             state = _build_manual_override_diagnostics(mgr, {})
@@ -1256,7 +1246,7 @@ class TestStartedAtProvenance:
 
         mgr.reset("cover.a")
 
-        assert mgr.manual_control_start_source == {}
+        assert mgr.overrides == {}
 
 
 def _build_manual_override_diagnostics(manager, options: dict) -> dict:

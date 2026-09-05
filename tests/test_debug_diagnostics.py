@@ -230,7 +230,7 @@ class TestRingBufferEvents:
     def test_reset_records_reset_event(self):
         """reset() records a 'manual_override_reset' event in the buffer."""
         mgr, event_buffer = _make_manager()
-        mgr.manual_control["cover.test"] = True
+        mgr.mark_user_command("cover.test", reason="test setup")
         mgr.reset("cover.test")
         buf = event_buffer.snapshot()
         reset_events = [e for e in buf if e["event"] == "manual_override_reset"]

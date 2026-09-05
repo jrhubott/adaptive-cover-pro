@@ -1557,9 +1557,9 @@ def test_an_off_cycle_reference_cannot_fold_a_computed_winner() -> None:
     The stash is a side channel between two calls on the live policy, and the two
     are NOT the only pair that can use it. ``async_apply_user_position`` evaluates
     the pipeline off-cycle on that same policy with no ``sync_runtime_options``
-    ahead of it, and ``_async_update_data`` suspends twice — on the
-    ``prime_cache`` executor job and on ``manager.reset_if_needed`` — between
-    clearing the stash and consuming it, with no lock serialising a service call
+    ahead of it, and ``_async_update_data`` suspends once — on the
+    ``prime_cache`` executor job — between clearing the stash and consuming it,
+    with no lock serialising a service call
     against the cycle. So a ``set_position`` tap landing on one of those awaits
     can leave a fabric behind that this cycle never asked for.
 

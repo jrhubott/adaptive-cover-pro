@@ -22,6 +22,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from .expiry import STARTED_AT_SOURCE_ENGAGED
+
 
 @dataclass(frozen=True, slots=True)
 class DetectionContext:
@@ -104,6 +106,39 @@ class StopToMy:
     context_user_id: str | None = None
     context_id: str | None = None
     context_parent_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OverrideState:
+    """One cover's live manual override — the value type of the single store.
+
+    Since #1274 the manager keeps one ``dict[str, OverrideState]`` instead of
+    four parallel dicts keyed by the same entity_id: key presence IS "this
+    cover is overridden", so the armed flag can no longer disagree with the
+    start time. Frozen, so re-arming replaces the entry rather than mutating
+    one in place.
+
+    Attributes:
+        started_at: When the user touched the cover — the honest override
+            start, and the anchor every non-pinned deadline is resolved from.
+        expiry: A PINNED absolute end (issue #1044): the
+            ``engage_manual_override`` service's explicit ``end_time`` /
+            ``duration``, and the expiry restored after a reboot. A pin
+            outranks the configured duration mode. ``None`` — the common case
+            — leaves the end to ``AdaptiveCoverManager.expiry_for``.
+        start_source: How ``started_at`` was obtained — see
+            ``expiry.STARTED_AT_SOURCE_*``. Display/diagnostics only: nothing
+            branches on it. It exists because the engage paths record the
+            honest engage moment while the restore path can only reconstruct
+            one, so the same override reports a different ``started_at``
+            across a restart and a consumer needs to be told which it is
+            looking at.
+
+    """
+
+    started_at: dt.datetime
+    expiry: dt.datetime | None = None
+    start_source: str = STARTED_AT_SOURCE_ENGAGED
 
 
 @dataclass(frozen=True, slots=True)

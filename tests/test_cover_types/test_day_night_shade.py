@@ -861,8 +861,8 @@ class TestSplitRangeHoldFabricLifecycle:
     ``coordinator.async_apply_user_position`` evaluates the pipeline off-cycle
     with no ``sync_runtime_options`` ahead of it, that evaluate can reach
     ``hold_reference_position`` and set the stash, and ``_async_update_data``
-    suspends twice — ``prime_cache`` and ``manager.reset_if_needed`` — between the
-    clear and the consume with nothing serialising the two. A write really can
+    suspends once — on ``prime_cache`` — between the clear and the consume with
+    nothing serialising the two. A write really can
     land in that window.
 
     What keeps it out of the fold is the consume side. ``post_pipeline_resolve``

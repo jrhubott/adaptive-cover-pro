@@ -152,7 +152,6 @@ from .managers.cover_command.queue import (
 )
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import (
-    STARTED_AT_SOURCE_ENGAGED,
     AdaptiveCoverManager,
     DetectorConfig,
     get_detector,
@@ -2702,7 +2701,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Reset expired manual overrides BEFORE running the pipeline so the
         # pipeline sees the cleared state and computes the correct position.
-        auto_expired = await self.manager.reset_if_needed()
+        auto_expired = self.manager.reset_if_needed()
 
         # On first refresh after HA restart, restore the weather override flag BEFORE
         # the pipeline runs so the weather handler sees the correct state on cycle 1.
@@ -5990,10 +5989,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # already implies ``expiry_for`` is non-None; the guard below stays as
         # the belt-and-braces read.
         for eid in self.manager.active_entities():
-            started_at = self.manager.manual_control_time.get(eid)
+            state = self.manager.override_for(eid)
             expires_at = self.manager.expiry_for(eid)
-            if started_at is None or expires_at is None:
+            if state is None or expires_at is None:
                 continue
+            started_at = state.started_at
             if started_at.tzinfo is None:
                 started_at = started_at.replace(tzinfo=dt.UTC)
             entries[eid] = {
@@ -6003,9 +6003,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 # reader (or a saved diagnostics file) already knows is unchanged.
                 "active": True,
                 "started_at": started_at.isoformat(),
-                "started_at_source": self.manager.manual_control_start_source.get(
-                    eid, STARTED_AT_SOURCE_ENGAGED
-                ),
+                "started_at_source": state.start_source,
                 "expires_at": expires_at.isoformat(),
                 "remaining_seconds": int(max(0, (expires_at - now).total_seconds())),
             }
