@@ -921,6 +921,37 @@ def test_blank_start_with_no_end_does_not_show_from_sunrise():
     assert "Active during daylight" in summary
 
 
+def test_sunrise_gates_start_renders_line_with_start_time():
+    """The opt-in changes when the day starts, so the summary must say so (#1340).
+
+    CODING_GUIDELINES § "Configuration Summary Must Track Every Behavior-Affecting
+    Option": a gate on the operating window is exactly that.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_SUNRISE_GATES_START
+
+    cfg = {CONF_START_TIME: "05:30:00", CONF_SUNRISE_GATES_START: True}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "from 05:30:00" in summary
+    assert "whichever is later" in summary
+
+
+def test_sunrise_gates_start_absent_renders_nothing():
+    """OFF (the default) must not add a line — every existing install reads this way."""
+    cfg = {CONF_START_TIME: "05:30:00"}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "from 05:30:00" in summary
+    assert "whichever is later" not in summary
+
+
+def test_sunrise_gates_start_without_start_renders_nothing():
+    """A blank start already waits for sunrise (#1256) — the line would be a lie."""
+    from custom_components.adaptive_cover_pro.const import CONF_SUNRISE_GATES_START
+
+    cfg = {CONF_SUNRISE_GATES_START: True, CONF_END_TIME: "21:00"}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "whichever is later" not in summary
+
+
 def test_sunset_position_shown():
     """Sunset/end-of-day position appears in timing bullet."""
     cfg = {CONF_SUNSET_POS: 0}

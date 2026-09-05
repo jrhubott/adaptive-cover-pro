@@ -56,15 +56,15 @@ from .engine.solar_transmittance import (
 )
 from .helpers import (
     _read_current_effective_default,
-    _read_sun_boundary_options,
+    _utc_naive_to_local_naive,
     check_cover_features,
     custom_position_slot_delivers_fixed_position,
     custom_position_slot_name,
     custom_position_slot_sensors,
     has_configured_window_end,
+    read_sun_boundaries,
     read_sunset_window_open,
     resolve_override_deadline,
-    resolve_sun_boundaries,
     state_attr,
 )
 from .config_context_adapter import ConfigContextAdapter
@@ -625,22 +625,35 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Cover entity state provider
         self._cover_provider = CoverProvider(hass=self.hass, logger=self.logger)
 
-        def _resolve_blank_start_sunrise() -> dt.datetime | None:
-            """Astronomical sunrise, as naive-local wall-clock time (issue #1256).
+        def _resolve_window_sunrise() -> dt.datetime | None:
+            """Return this instance's sunrise boundary as naive-local wall-clock time.
 
-            Feeds ``TimeWindowManager.after_start_time`` so a blank start
-            time anchors the window's lower bound to sunrise instead of
-            midnight, once an end bound is configured. Resolved lazily on
-            each call — a fresh ``SunData`` read at evaluation time, not a
-            value captured once at startup — and fails open to ``None`` on
-            any error, which ``after_start_time`` treats identically to "no
-            sunrise available" (stays True, the pre-#1256 behaviour).
+            The window's single reading of "sunrise", feeding both
+            ``TimeWindowManager`` consumers: the blank-start anchor so a blank
+            start time bounds the window at sunrise rather than midnight once
+            an end bound is configured (issue #1256), and the opt-in
+            ``sunrise_gates_start`` floor on a real start (issue #1340).
+
+            It routes through ``read_sun_boundaries`` — the same definition
+            ``compute_effective_default`` and the manual-override deadline use
+            — so a configured ``sunrise_time_entity`` / ``sunrise_offset``
+            governs the window too. Reading pure astral here (the pre-#1340
+            shape) made those two options silent no-ops for the gate, the same
+            class of bug as #1048.
+
+            Resolved lazily on each call — a fresh ``SunData`` read at
+            evaluation time, not a value captured once at startup — and fails
+            open to ``None`` on any error, which both consumers treat as "no
+            sunrise available" (the pre-#1256 behaviour).
             """
             try:
                 sun_data = self._sun_provider.create_sun_data(
                     self.hass.config.time_zone
                 )
-                return dt_util.as_local(sun_data.sunrise()).replace(tzinfo=None)
+                boundaries = read_sun_boundaries(
+                    self.hass, self.config_entry.options, sun_data
+                )
+                return _utc_naive_to_local_naive(boundaries.sunrise)
             except Exception:  # noqa: BLE001 — fail open to pre-#1256 behaviour
                 return None
 
@@ -652,7 +665,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             logger=self.logger,
             event_buffer=self._event_buffer,
             template_variables=self._template_variables,
-            sunrise_provider=_resolve_blank_start_sunrise,
+            sunrise_provider=_resolve_window_sunrise,
         )
 
         # Pipeline snapshot builder — owns the HA reads + assembly for each
@@ -4281,6 +4294,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             gate_sensors=rc.time_window.gate_sensors,
             gate_template=rc.time_window.gate_template,
             gate_template_mode=rc.time_window.gate_template_mode,
+            sunrise_gates_start=rc.time_window.sunrise_gates_start,
         )
         self._motion_mgr.update_config(
             sensors=rc.motion.sensors,
@@ -6020,9 +6034,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         The HA-side half of the rule, injected into ``AdaptiveCoverManager`` via
         ``set_deadline_resolver`` so the manager itself stays HA-free: it takes
-        the duration mode from the per-cycle ``RuntimeConfig`` mirror, reads the
-        sunset/sunrise override entities and offsets and the operating window's
-        resolved end, then hands the arithmetic to the pure
+        the duration mode from the per-cycle ``RuntimeConfig`` mirror, resolves
+        the sunset/sunrise boundaries through :func:`.helpers.read_sun_boundaries`
+        — the same definition the day/night position and the time window's
+        sunrise provider use — reads the operating window's resolved end, then
+        hands the arithmetic to the pure
         :func:`.helpers.resolve_override_deadline`.
 
         ``fixed`` — the default, and what an install that never touched the
@@ -6048,14 +6064,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         boundaries = None
         cover_data = self._cover_data
         if cover_data is not None:
-            bounds = _read_sun_boundary_options(self.hass, options)
-            boundaries = resolve_sun_boundaries(
-                cover_data.sun_data,
-                sunset_time=bounds.sunset_time,
-                sunrise_time=bounds.sunrise_time,
-                sunset_off=bounds.sunset_off,
-                sunrise_off=bounds.sunrise_off,
-            )
+            boundaries = read_sun_boundaries(self.hass, options, cover_data.sun_data)
 
         # An unset window end is NO anchor. ``TimeWindowManager.end_time``
         # normalises the ``BLANK_TIME`` sentinel onto tomorrow's midnight by

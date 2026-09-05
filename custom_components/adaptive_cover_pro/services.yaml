@@ -349,6 +349,11 @@ set_sunset_sunrise:
           max: 120
           mode: box
           unit_of_measurement: minutes
+    sunrise_gates_start:
+      name: Wait for sunrise before starting
+      description: "If true, the operating window opens at the later of start time and sunrise (entity/astral + offset)."
+      selector:
+        boolean:
     sunset_use_my:
       name: Use Somfy My position at sunset
       description: "If true, use my_position_value instead of sunset_position at end of window."
