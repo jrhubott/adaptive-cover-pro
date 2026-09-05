@@ -77,7 +77,7 @@ from .managers.cover_command.state_store import PositionContext
 from .managers.grace_period import GracePeriodManager
 from .pipeline.types import GroupIntent
 from .position_utils import flip_if
-from .state.area_resolver import device_area_id
+from .state.area_resolver import area_device_ids, device_area_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -155,14 +155,41 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         return device_area_id(self.hass, reg_entry.device_id)
 
     def _cover_entities_in_area(self, area_id: str) -> list[str]:
-        """Every ``cover.`` entity in the area (own or device-inherited)."""
+        """Every ``cover.`` entity in the area (own or device-inherited).
+
+        Two passes over the registries' own indexes, replacing a scan of every
+        entity in the install — deprecated, and removed in HA 2027.9.0
+        (issue #1339). Three things about it are load-bearing:
+
+        - ``include_disabled_entities=True`` on the per-device pass is
+          deliberate and *not* the default. The two accessors are asymmetric:
+          ``async_entries_for_area`` applies no ``disabled_by`` filter, while
+          ``async_entries_for_device`` drops disabled entries unless told
+          otherwise. Omitting the flag would silently strip disabled covers
+          from area rosters.
+        - ``reg_entry.area_id is None`` on the device pass preserves
+          :meth:`_entity_area_id`'s entity-over-device precedence: a cover
+          whose own area names a *different* area must not be collected via
+          its device.
+        - The passes are disjoint by construction — pass 1 requires a non-None
+          own area, pass 2 requires ``None`` — and an entity has exactly one
+          device, so no dedup is needed.
+        """
         ent_reg = er.async_get(self.hass)
-        return [
+        entity_ids = [
             reg_entry.entity_id
-            for reg_entry in ent_reg.entities.values()
+            for reg_entry in er.async_entries_for_area(ent_reg, area_id)
             if reg_entry.domain == Platform.COVER
-            and self._entity_area_id(reg_entry.entity_id) == area_id
         ]
+        for device_id in area_device_ids(self.hass, area_id):
+            entity_ids.extend(
+                reg_entry.entity_id
+                for reg_entry in er.async_entries_for_device(
+                    ent_reg, device_id, include_disabled_entities=True
+                )
+                if reg_entry.domain == Platform.COVER and reg_entry.area_id is None
+            )
+        return entity_ids
 
     def member_entry_ids(self) -> list[str]:
         """Effective ACP member entry ids: static roster ∪ area members.

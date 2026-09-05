@@ -97,13 +97,14 @@ def resolve_group_targets(
     if not entity_ids and not device_ids and not area_ids:
         return list(groups.values())
 
+    # Expand area_ids → device_ids via the registry's own area index. Scanning
+    # every device in the install is deprecated and stops working in HA
+    # 2027.9.0 (issue #1339); the index also makes an area_id re-check redundant.
     if area_ids:
         dev_reg = dr.async_get(hass)
         for area_id in area_ids:
             device_ids.extend(
-                device.id
-                for device in dev_reg.devices.values()
-                if device.area_id == area_id
+                device.id for device in dr.async_entries_for_area(dev_reg, area_id)
             )
 
     resolved: dict[str, GroupCoordinator] = {}

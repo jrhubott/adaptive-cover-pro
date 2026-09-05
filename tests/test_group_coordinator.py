@@ -1078,6 +1078,195 @@ async def test_area_membership_via_device_area(hass) -> None:
     assert coordinator.generic_cover_ids() == [reg_entry.entity_id]
 
 
+def _area_group(hass, area_id: str, entry_id: str) -> GroupCoordinator:
+    """Build an area-scoped group with empty static rosters."""
+    from custom_components.adaptive_cover_pro.const import CONF_GROUP_AREA
+
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={
+            CONF_MEMBER_ENTRIES: [],
+            CONF_MEMBER_COVERS: [],
+            CONF_GROUP_AREA: area_id,
+        },
+        entry_id=entry_id,
+        title="G",
+    )
+    group_entry.add_to_hass(hass)
+    return GroupCoordinator(hass, group_entry)
+
+
+def _device_in_area(hass, area_id: str, *, unique: str) -> str:
+    """Register a device that belongs to ``area_id`` and return its id."""
+    from homeassistant.helpers import device_registry as dr
+
+    helper_entry = MockConfigEntry(domain="test", entry_id=f"helper_{unique}")
+    helper_entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=helper_entry.entry_id,
+        identifiers={("test", unique)},
+    )
+    dr.async_get(hass).async_update_device(device.id, area_id=area_id)
+    return device.id
+
+
+async def test_area_roster_includes_disabled_cover_inheriting_device_area(
+    hass,
+) -> None:
+    """A DISABLED cover that inherits its device's area still joins the roster.
+
+    The registry's per-device index defaults to excluding disabled entities,
+    so this is the semantic a naive rewrite of ``_cover_entities_in_area``
+    drops silently.
+    """
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+
+    area = ar.async_get(hass).async_get_or_create("Disabled Device Area")
+    device_id = _device_in_area(hass, area.id, unique="disabled_dev")
+
+    reg = er.async_get(hass)
+    reg_entry = reg.async_get_or_create(
+        "cover",
+        "test",
+        "disabled_dev_cover",
+        suggested_object_id="disabled_dev_cover",
+        device_id=device_id,
+    )
+    reg.async_update_entity(
+        reg_entry.entity_id, disabled_by=er.RegistryEntryDisabler.USER
+    )
+
+    coordinator = _area_group(hass, area.id, "group_disabled_dev")
+
+    assert coordinator.generic_cover_ids() == [reg_entry.entity_id]
+
+
+async def test_area_roster_includes_disabled_cover_with_own_area(hass) -> None:
+    """The own-area twin: a DISABLED cover with its own area also joins.
+
+    The entity registry's area index carries disabled entries, so this holds
+    with no extra flag — it is here so a rewrite cannot start filtering them.
+    """
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+
+    area = ar.async_get(hass).async_get_or_create("Disabled Own Area")
+
+    reg = er.async_get(hass)
+    reg_entry = reg.async_get_or_create(
+        "cover",
+        "test",
+        "disabled_own_cover",
+        suggested_object_id="disabled_own_cover",
+    )
+    reg.async_update_entity(
+        reg_entry.entity_id,
+        area_id=area.id,
+        disabled_by=er.RegistryEntryDisabler.USER,
+    )
+
+    coordinator = _area_group(hass, area.id, "group_disabled_own")
+
+    assert coordinator.generic_cover_ids() == [reg_entry.entity_id]
+
+
+async def test_entity_own_area_overrides_device_area_in_roster(hass) -> None:
+    """An entity's own area wins over its device's — for the roster too.
+
+    The device sits in area A, the entity names area B. It belongs to B only.
+    A device-derived roster that skipped this check would over-collect into A.
+    """
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+
+    area_a = ar.async_get(hass).async_get_or_create("Override Area A")
+    area_b = ar.async_get(hass).async_get_or_create("Override Area B")
+    device_id = _device_in_area(hass, area_a.id, unique="override_dev")
+
+    reg = er.async_get(hass)
+    reg_entry = reg.async_get_or_create(
+        "cover",
+        "test",
+        "override_cover",
+        suggested_object_id="override_cover",
+        device_id=device_id,
+    )
+    reg.async_update_entity(reg_entry.entity_id, area_id=area_b.id)
+
+    scoped_to_a = _area_group(hass, area_a.id, "group_override_a")
+    scoped_to_b = _area_group(hass, area_b.id, "group_override_b")
+
+    assert reg_entry.entity_id not in scoped_to_a.generic_cover_ids()
+    assert scoped_to_b.generic_cover_ids() == [reg_entry.entity_id]
+
+
+async def test_member_entry_joins_area_via_device_area(hass) -> None:
+    """An ACP member joins the area when its cover only inherits the device's.
+
+    ``member_entry_ids`` walks each candidate entry's configured covers through
+    :meth:`_entity_area_id`, whose device fallback is the hop under test here.
+    """
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+
+    area = ar.async_get(hass).async_get_or_create("Member Device Area")
+    device_id = _device_in_area(hass, area.id, unique="member_dev")
+
+    reg_entry = er.async_get(hass).async_get_or_create(
+        "cover",
+        "test",
+        "member_dev_cover",
+        suggested_object_id="member_dev_cover",
+        device_id=device_id,
+    )
+    member = _member_entry(
+        hass, "dev_area_member", CoverType.BLIND, [reg_entry.entity_id]
+    )
+    member.runtime_data = _mock_member_coordinator()
+
+    coordinator = _area_group(hass, area.id, "group_member_dev_area")
+
+    assert coordinator.member_entry_ids() == ["dev_area_member"]
+
+
+async def test_area_roster_mixes_own_area_and_device_area_covers(hass) -> None:
+    """Both membership paths contribute to one roster.
+
+    Asserted on set membership plus length rather than exact list order: the
+    roster is a union of an own-area pass and a device-inherited pass, so the
+    ordering is own-area-first, not registry-insertion order.
+    """
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+
+    area = ar.async_get(hass).async_get_or_create("Mixed Area")
+    device_id = _device_in_area(hass, area.id, unique="mixed_dev")
+
+    reg = er.async_get(hass)
+    device_cover = reg.async_get_or_create(
+        "cover",
+        "test",
+        "mixed_device_cover",
+        suggested_object_id="mixed_device_cover",
+        device_id=device_id,
+    )
+    own_cover = reg.async_get_or_create(
+        "cover",
+        "test",
+        "mixed_own_cover",
+        suggested_object_id="mixed_own_cover",
+    )
+    reg.async_update_entity(own_cover.entity_id, area_id=area.id)
+
+    coordinator = _area_group(hass, area.id, "group_mixed")
+
+    roster = coordinator.generic_cover_ids()
+    assert set(roster) == {own_cover.entity_id, device_cover.entity_id}
+    assert len(roster) == 2
+
+
 async def test_no_area_behaves_statically(group_setup) -> None:
     """Without an area, the effective rosters equal the stored rosters."""
     coordinator, _, _ = group_setup

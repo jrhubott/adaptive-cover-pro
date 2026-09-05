@@ -15,6 +15,7 @@ from custom_components.adaptive_cover_pro.state.area_resolver import (
     SENSOR_SOURCE_AREA,
     SENSOR_SOURCE_EXPLICIT,
     SENSOR_SOURCE_NONE,
+    area_device_ids,
 )
 
 _MOD = "custom_components.adaptive_cover_pro.state.area_resolver"
@@ -136,3 +137,58 @@ class TestResolveTemperatureEntity:
         )
         dev.assert_not_called()
         area.assert_not_called()
+
+
+class TestAreaDeviceIds:
+    """The inverse hop: area → the ids of the devices in it (issue #1339)."""
+
+    @pytest.mark.unit
+    def test_returns_device_ids_in_area(self, hass):
+        """Every device the area index holds contributes its id, in index order."""
+        first = MagicMock()
+        first.id = "dev1"
+        second = MagicMock()
+        second.id = "dev2"
+        registry = MagicMock()
+        registry.devices.get_devices_for_area_id.return_value = [first, second]
+
+        with patch(f"{_MOD}.dr.async_get", return_value=registry):
+            assert area_device_ids(hass, "area_x") == ["dev1", "dev2"]
+
+    @pytest.mark.unit
+    def test_uses_the_indexed_accessor_not_a_mapping_scan(self, hass):
+        """The area index is read directly — never a scan over every device.
+
+        This is the API-shape pin that outlives the AST guard in
+        ``test_registry_index_guard.py``: the registry's ``devices`` container
+        is spec'd without ``values``/``items``/``keys``/``get``, so a mapping
+        scan raises ``AttributeError`` instead of quietly working.
+        """
+        device = MagicMock()
+        device.id = "dev1"
+        registry = MagicMock()
+        registry.devices = MagicMock(spec=["get_devices_for_area_id"])
+        registry.devices.get_devices_for_area_id.return_value = [device]
+
+        with patch(f"{_MOD}.dr.async_get", return_value=registry):
+            assert area_device_ids(hass, "area_x") == ["dev1"]
+
+        registry.devices.get_devices_for_area_id.assert_called_once_with("area_x")
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("area_id", [None, ""], ids=["none", "empty_string"])
+    def test_empty_area_returns_empty_list(self, hass, area_id):
+        """No area → no devices, and the registry is never touched (fail-open)."""
+        with patch(f"{_MOD}.dr.async_get") as async_get:
+            assert area_device_ids(hass, area_id) == []
+
+        async_get.assert_not_called()
+
+    @pytest.mark.unit
+    def test_unknown_area_returns_empty_list(self, hass):
+        """An area the index does not know resolves to no devices."""
+        registry = MagicMock()
+        registry.devices.get_devices_for_area_id.return_value = []
+
+        with patch(f"{_MOD}.dr.async_get", return_value=registry):
+            assert area_device_ids(hass, "area_missing") == []

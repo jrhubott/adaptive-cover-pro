@@ -1,10 +1,12 @@
 """Area-based sensor resolution — cover area → configured sensor entity.
 
-Part of the ``state/`` boundary: this is the only place the device and area
-registries are read to derive a cover's indoor temperature sensor from its
-Home Assistant area (issue #786). Home Assistant's area registry stores a
-per-area ``temperature_entity_id`` (added HA 2024.11); when a cover has no
-explicit temp sensor configured, we fall back to its area's configured one.
+Part of the ``state/`` boundary: this module owns the device<->area registry
+hop in both directions — :func:`device_area_id` for the temperature resolver
+below (issue #786), :func:`area_device_ids` for the cover-group coordinator's
+area rosters (issue #1339) — so no caller outside ``state/`` needs a device
+registry import of its own. Home Assistant's area registry stores a per-area
+``temperature_entity_id`` (added HA 2024.11); when a cover has no explicit
+temp sensor configured, we fall back to its area's configured one.
 
 The resolver is named generically (``resolve_temperature_entity``) so a future
 device-class-scan resolver for motion/wind can be a sibling method — but only
@@ -64,6 +66,23 @@ def device_area_id(hass: HomeAssistant, device_id: str | None) -> str | None:
     if device is None:
         return None
     return device.area_id
+
+
+def area_device_ids(hass: HomeAssistant, area_id: str | None) -> list[str]:
+    """Return the ids of every device in an area, or ``[]``.
+
+    The inverse of :func:`device_area_id`, kept beside it so the whole
+    device<->area registry hop lives in exactly one place (issue #786) and the
+    cover-group coordinator needs no device registry import of its own.
+    Reads the registry's own area index rather than scanning
+    ``registry.devices`` as a mapping - that scan is deprecated and stops
+    working in HA 2027.9.0 (issue #1339). Fail-open: no area yields ``[]``.
+    """
+    if not area_id:
+        return []
+    return [
+        device.id for device in dr.async_entries_for_area(dr.async_get(hass), area_id)
+    ]
 
 
 class AreaSensorResolver:

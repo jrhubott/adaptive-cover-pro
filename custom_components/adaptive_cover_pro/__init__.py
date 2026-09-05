@@ -631,11 +631,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     else:
         # No device association — remove our config entry from any physical device that
         # still has it (left over from a previous association that was cleared).
-        for device in list(device_reg.devices.values()):
-            if (
-                entry.entry_id in device.config_entries
-                and (DOMAIN, entry.entry_id) not in device.identifiers
-            ):
+        # The registry's own config-entry index replaces a full scan of every device
+        # in the install (deprecated, removed in HA 2027.9.0 — issue #1339); it also
+        # makes the old "entry.entry_id in device.config_entries" test redundant, and
+        # it returns a fresh list, so the body may mutate the registry as it goes.
+        for device in dr.async_entries_for_config_entry(device_reg, entry.entry_id):
+            if (DOMAIN, entry.entry_id) not in device.identifiers:
                 _LOGGER.debug(
                     "Removing stale config entry link from physical device %s",
                     device.id,
