@@ -26,6 +26,7 @@ from ..const import (
     CONF_ROOF_PITCH,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_MIN_REFLECTED_ELEVATION,
     DEFAULT_LOUVERED_ROOF_PITCH,
     DEFAULT_LOUVERED_SLAT_DEPTH_CM,
     DEFAULT_LOUVERED_SLAT_DISTANCE_CM,
@@ -67,6 +68,18 @@ def _max_slat_angle_selector() -> selector.NumberSelector:
     )
 
 
+# Keys the shared tilt fragment contributes that a louvered roof never honours,
+# because ``AdaptiveLouveredRoofCover._min_reflected_elevation_deg`` returns the
+# disabled sentinel off vertical pitch: the roof's ``90° ± i`` realization and
+# roof-plane ``beta`` invalidate the ``phi = 90° − code_angle`` mapping the
+# reflected-beam clamp (#1282) is derived from. One tuple owns both consequences
+# — the schema does not offer the control, and the config summary does not claim
+# it — so a third surface only has to be added here.
+_TILT_KEYS_NOT_HONOURED_ON_A_ROOF: tuple[str, ...] = (
+    CONF_TILT_MIN_REFLECTED_ELEVATION,
+)
+
+
 def geometry_louvered_roof_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     """Slat geometry (shared with tilt) plus the roof-plane pitch. ``hass=None`` → metric."""
     fields = dict(geometry_tilt_schema(hass).schema)
@@ -83,6 +96,10 @@ def geometry_louvered_roof_schema(hass: HomeAssistant | None = None) -> vol.Sche
         fields[vol.Required(slat_key, default=slat_default(default_cm, hass))] = (
             slat_selector
         )
+    # Drop the controls the roof engine ignores, so the form never advertises
+    # one — see ``_TILT_KEYS_NOT_HONOURED_ON_A_ROOF``.
+    for key in _TILT_KEYS_NOT_HONOURED_ON_A_ROOF:
+        fields.pop(vol.Optional(key))
     fields[vol.Required(CONF_ROOF_PITCH, default=DEFAULT_LOUVERED_ROOF_PITCH)] = (
         _roof_pitch_selector()
     )
@@ -164,7 +181,21 @@ class LouveredRoofPolicy(CoverTypePolicy, register=True):
     ) -> list[str]:
         """Render the shared slat block, then the roof pitch and (if set) max angle."""
         L = {**GEOMETRY_LABELS_EN, **(labels or {})}
-        lines = TiltPolicy().summary_geometry_lines(config, labels)
+        # Delegate to the tilt renderer — but hide the keys the roof engine
+        # ignores first (#1282 audit). The schema pops them, so a fresh entry
+        # cannot acquire one through the UI; ``set_geometry`` and a hand-edited
+        # entry still can, and the summary would then promise a constraint that
+        # ``_min_reflected_elevation_deg`` has already disabled. Filtering the
+        # config rather than branching on the cover-type string keeps this the
+        # same one fact the schema pop expresses.
+        lines = TiltPolicy().summary_geometry_lines(
+            {
+                k: v
+                for k, v in config.items()
+                if k not in _TILT_KEYS_NOT_HONOURED_ON_A_ROOF
+            },
+            labels,
+        )
         parts: list[str] = []
         if (v := config.get(CONF_ROOF_PITCH)) is not None:
             parts.append(L["geometry.roof.pitch"].format(v=v))

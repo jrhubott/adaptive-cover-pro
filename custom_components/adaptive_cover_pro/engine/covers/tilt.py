@@ -155,6 +155,88 @@ def slat_cutoff_angle(
     return float(np.rad2deg(slat)), float(discriminant), False
 
 
+def reflected_beam_elevation(beta_deg: float, slat_angle_deg: float) -> float:
+    """Profile elevation the direct beam leaves the slat's upper face at (#1282).
+
+    Companion to :func:`slat_cutoff_angle` and its exact counterpart: the
+    cut-off solve says which slat still BLOCKS the beam, this says where the
+    blocked beam goes. Writing ``phi = TILT_HORIZONTAL_DEG - slat_angle_deg``
+    (``phi > 0`` = outer slat edge DOWN, ``phi < 0`` = outer edge UP), specular
+    reflection off the upper face leaves at
+
+        ``theta_r = beta + 2*phi``
+
+    measured up from the inward horizontal, so ``theta_r > 90`` points back
+    outdoors, ``0 < theta_r < 90`` points up into the room, and
+    ``theta_r <= 0`` is a beam fired at or below slat height across the room —
+    the reporter's WAREMA geometry (``r = 0.9375``, ``beta = 58.67``) lands at
+    ``-0.32``, i.e. horizontally into the room at slat height.
+
+    FRAME (issues #1030 / #1290) — this is deliberately a PROFILE-PLANE angle,
+    not a true 3-D elevation, because ``beta`` is (it comes from
+    ``foreshortened_slope``). That is the correct frame rather than an
+    approximation of the right one: a beam leaving at profile elevation
+    ``theta_r`` reaches height ``z`` at PERPENDICULAR depth ``(z - h)/tan
+    theta_r`` from the glass whatever ``gamma`` is — #1290's perpendicular-offset
+    rule. Converting to a true elevation would measure along the ray path, make
+    the beam look steeper than it reaches, and so UNDER-state the glare: the
+    exact direction of error that shipped three times as #304, #358 and #1290.
+    """
+    return beta_deg + 2 * (TILT_HORIZONTAL_DEG - slat_angle_deg)
+
+
+def constrain_reflected_beam(
+    slat_angle_deg: float, beta_deg: float, min_elevation_deg: float
+) -> float:
+    """Cap a slat angle so its reflected beam clears ``min_elevation_deg`` (#1282).
+
+    Sole owner of the inversion of :func:`reflected_beam_elevation` AND of the
+    ``>=`` boundary it enforces — callers pass the three numbers and get an
+    angle back, they never re-derive the threshold:
+
+        ``theta_r >= N  <=>  beta + 2*phi >= N  <=>  code <= 90 + (beta - N)/2``
+
+    ``min_elevation_deg <= 0`` is the DISABLED sentinel and returns the input
+    value itself, untouched by any arithmetic, so an install that never set the
+    option is byte-identical to one built before this existed.
+
+    A cap can only ever LOWER the code angle — the closing direction — so the
+    direct-sun cut-off stays an invariant rather than a trade: the blocking
+    condition ``sin(phi + beta) >= r*cos(beta)`` is a BAND
+    ``[phi_c, 180 - arcsin(r*cos beta) - beta]``, so turning the slat back
+    toward (and past) horizontal stays inside it. With ``N <= 90`` AND
+    ``beta >= 0`` the cap never falls below 45°, comfortably inside that band.
+    ``beta`` is ``arctan(foreshortened_slope(...))`` and so goes negative below
+    the horizon, where the cap does fall further (at ``beta = -60``, ``N = 90``
+    it is 15°) — harmless today because the solar handler only reaches this
+    code on a lit face, but the 45° figure is a bound on ``beta >= 0``, not a
+    universal one.
+
+    All three arguments are DEGREES. The engine's ``beta`` is radians, so the
+    caller converts once; a mixed-unit signature here is how a radian gets
+    compared against a degree threshold.
+    """
+    if min_elevation_deg <= 0:
+        return slat_angle_deg
+    return min(
+        slat_angle_deg,
+        TILT_HORIZONTAL_DEG + (beta_deg - min_elevation_deg) / 2,
+    )
+
+
+def _clamp_to_travel(slat_angle_deg: float, max_degrees: float) -> float:
+    """Pin a slat angle into the drive's physical ``[0, max_degrees]`` travel.
+
+    Named rather than inlined because ``calculate_position`` needs it twice —
+    once on the commanded angle and once on the same angle computed WITHOUT the
+    reflected-beam floor, so ``reflected_beam_constrained`` compares two values
+    at the same stage of the pipeline (#1282). Two copies of the expression
+    could drift apart, and a drifted copy would report exactly the false
+    positive the comparison exists to rule out.
+    """
+    return max(0.0, min(float(max_degrees), float(slat_angle_deg)))
+
+
 @dataclass
 class AdaptiveTiltCover(AdaptiveGeneralCover):
     """Calculate state for tilted blinds."""
@@ -435,6 +517,17 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         """
         return self.depth
 
+    def _min_reflected_elevation_deg(self) -> float:
+        """Reflected-beam floor in degrees, ``0`` = disabled (#1282).
+
+        Polymorphic hook. Base: the configured value — the vertical-facade
+        venetian/tilt angle IS the physical slat angle, so ``phi = 90 - angle``
+        holds and the constraint is well defined. The louvered-roof engine
+        overrides this to ``0`` off vertical pitch, where its ``90 +/- i``
+        realization and roof-plane ``beta`` break that mapping.
+        """
+        return self.tilt_config.min_reflected_elevation
+
     def _resolve_slat_angle(self, cutoff_angle: float) -> float:
         """Map the magnitude cut-off angle to the physical slat angle.
 
@@ -455,6 +548,9 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         max_degrees: float,
         result: float,
         safety_margin: float = 1.0,
+        reflected_beam_elevation_deg: float | None = None,
+        reflected_beam_min_elevation_deg: float = 0.0,
+        reflected_beam_constrained: bool = False,
     ) -> dict:
         """Assemble the raw tilt solar-calculation trace (issue #682).
 
@@ -479,6 +575,18 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             "max_degrees": float(max_degrees),
             "tilt_mode": str(mode_value),
             "safety_margin": float(safety_margin),
+            # Reflected-beam floor (#1282). Published on every branch — a
+            # stable key set is what lets the companion card and the
+            # diagnostics reader take it without probing (same rule as the
+            # #1222 calibration keys). ``None`` on the two closed early
+            # returns, where no slat angle was ever solved to reflect off.
+            "reflected_beam_elevation_deg": (
+                None
+                if reflected_beam_elevation_deg is None
+                else float(reflected_beam_elevation_deg)
+            ),
+            "reflected_beam_min_elevation_deg": float(reflected_beam_min_elevation_deg),
+            "reflected_beam_constrained": bool(reflected_beam_constrained),
         }
 
     def calculate_position(self) -> float:
@@ -501,6 +609,9 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         """
         beta = self.beta
         max_degrees = self._effective_max_degrees()
+        # Read once, here, so all three return paths publish the same value —
+        # including the two closed early returns, which never reach the clamp.
+        min_reflected = self._min_reflected_elevation_deg()
 
         # Guard: discriminant can be negative when slat_distance/depth ratio is
         # large relative to tan(beta), making sqrt of a negative.  NumPy returns
@@ -524,6 +635,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 nan_result=False,
                 max_degrees=max_degrees,
                 result=0.0,
+                reflected_beam_min_elevation_deg=min_reflected,
             )
             return 0.0
 
@@ -543,6 +655,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 nan_result=True,
                 max_degrees=max_degrees,
                 result=0.0,
+                reflected_beam_min_elevation_deg=min_reflected,
             )
             return 0.0
 
@@ -579,6 +692,24 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         if self.tilt_config.safety_margin != 0.0:
             result = TILT_HORIZONTAL_DEG - (TILT_HORIZONTAL_DEG - result) * eff_margin
 
+        # Reflected-beam floor (issue #1282), applied AFTER the safety margin
+        # and BEFORE the travel clamp — the ordering is load-bearing in both
+        # directions. The margin's ``result > 90`` branch scales the slat
+        # FURTHER past horizontal, which is exactly the outer-edge-up pose that
+        # mirrors the beam into the room; a floor applied before it would simply
+        # be undone (a 30° floor lands 104.33°, the margin reopens it to ~107°,
+        # and the reflection drops back to ~24°). A ``min()`` cap placed after
+        # it is idempotent, so the floor becomes a true invariant. It has to
+        # stay before the travel clamp for the same reason the margin does: the
+        # clamp is what re-pins anything the cap pushes past a rail.
+        #
+        # The cap only ever CLOSES the slat, so the direct-sun cut-off survives
+        # it — see ``constrain_reflected_beam`` for why the blocking condition
+        # is a band rather than a half-line.
+        beta_deg = float(np.rad2deg(beta))
+        unfloored = result
+        result = constrain_reflected_beam(result, beta_deg, min_reflected)
+
         # Clamp to the drive's physical travel. On MODE1 (90°) this fires
         # whenever the cut-off runs past horizontal, and reads at first glance
         # like it commands maximum openness at the worst moment of the day —
@@ -596,7 +727,17 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         # away. Pinned by
         # ``tests/test_adaptive_tilt_cover.py::TestMode1ClampCrossover`` so the
         # identity is checked rather than asserted here (#1222 audit).
-        result = max(0.0, min(float(max_degrees), float(result)))
+        result = _clamp_to_travel(result, max_degrees)
+
+        # ``constrained`` means the floor CHANGED THE COMMANDED ANGLE — not
+        # merely that it moved an intermediate value the travel clamp then
+        # discarded. On MODE1 the reporter's 119.49° solve caps to 104.33°, and
+        # both sides of that cap clamp to the same 90°: the slats do not move,
+        # so diagnostics and the companion card must not show the floor
+        # engaging. Evaluated post-clamp against the same input run WITHOUT the
+        # floor, which puts it at the identical pipeline stage as
+        # ``reflected_beam_elevation_deg`` below (#1282 audit).
+        reflected_beam_constrained = result < _clamp_to_travel(unfloored, max_degrees)
 
         self.logger.debug(
             "Tilt calc: elev=%.1f°, gamma=%.1f°, beta=%.4f rad, slat_angle=%.1f°",
@@ -614,6 +755,9 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             max_degrees=max_degrees,
             result=result,
             safety_margin=eff_margin,
+            reflected_beam_elevation_deg=reflected_beam_elevation(beta_deg, result),
+            reflected_beam_min_elevation_deg=min_reflected,
+            reflected_beam_constrained=reflected_beam_constrained,
         )
         return result
 

@@ -636,6 +636,14 @@ class TiltConfig:
     # the slat on a travel limit and there is no closure left to scale — see
     # ``engine/covers/tilt.py``.
     safety_margin: float = 0.0
+    # Minimum elevation (degrees, profile plane) the beam reflected off the
+    # slats' upper face may leave at (issue #1282). ``0.0`` (the default,
+    # mirroring const.DEFAULT_TILT_MIN_REFLECTED_ELEVATION) is the DISABLED
+    # sentinel — the solved slat angle is then returned untouched, byte-for-byte.
+    # A positive value caps the angle at ``90 + (beta - N)/2``, which only ever
+    # CLOSES the slat, so the direct-sun cut-off stays an invariant. See
+    # ``engine/covers/tilt.constrain_reflected_beam``.
+    min_reflected_elevation: float = 0.0
     # Output transform for the sun-tracking tilt demand (issue #957). "clamp"
     # (default) flat-caps at the [min_tilt, max_tilt] band edges — today's exact
     # behaviour; "proportional" linearly remaps the full 0–100% demand into the

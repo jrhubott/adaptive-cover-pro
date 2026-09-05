@@ -434,6 +434,42 @@ class TestFieldValidators:
         with pytest.raises(Exception):
             FIELD_VALIDATORS["tilt_horizontal_percent"](101)
 
+    def test_tilt_min_reflected_elevation_validates_range(self):
+        """0-90 degrees, with ``0`` the disabled sentinel (#1282)."""
+        FIELD_VALIDATORS["tilt_min_reflected_elevation"](0)
+        FIELD_VALIDATORS["tilt_min_reflected_elevation"](45)
+        FIELD_VALIDATORS["tilt_min_reflected_elevation"](90)
+        FIELD_VALIDATORS["tilt_min_reflected_elevation"](None)
+
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS["tilt_min_reflected_elevation"](-1)
+
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS["tilt_min_reflected_elevation"](91)
+
+    def test_tilt_min_reflected_elevation_is_settable_through_set_option(self):
+        """A FIELD_VALIDATORS entry with no service seat is dead code.
+
+        ``_handle_set_option`` gates on exactly three things — not in
+        ``IDENTITY_KEYS``, present in ``FIELD_VALIDATORS``, and surviving
+        ``validate_options_patch`` — so the last of those is run here for real
+        rather than inferred from the first two (#1282 audit). Like
+        ``tilt_safety_margin``, the key is in no ``_SECTION_*`` frozenset, so
+        the generic ``set_option`` is its only service seat; that is what this
+        pins.
+        """
+        assert "tilt_min_reflected_elevation" in FIELD_VALIDATORS
+        assert "tilt_min_reflected_elevation" not in IDENTITY_KEYS
+
+        # The real gate, on every cover type whose geometry offers the field.
+        for sensor_type in ("cover_tilt", "cover_venetian"):
+            assert validate_options_patch(
+                {"tilt_min_reflected_elevation": 30}, {}, sensor_type
+            ) == {"tilt_min_reflected_elevation": 30}
+        # And it is a genuine gate: an out-of-range value is rejected there.
+        with pytest.raises(ServiceValidationError):
+            validate_options_patch({"tilt_min_reflected_elevation": 91}, {})
+
     def test_tilt_horizontal_percent_accepted_on_a_straddling_calibration(self):
         """The reporter's blind: 0° → 0 %, horizontal → 50 %, 130° → 100 %."""
         validate_options_patch(

@@ -17,6 +17,7 @@ from ..const import (
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_HORIZONTAL_PERCENT,
+    CONF_TILT_MIN_REFLECTED_ELEVATION,
     CONF_TILT_MODE,
     CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_TRANSFORM,
@@ -27,6 +28,7 @@ from ..const import (
     DEFAULT_TILT_ANGLE_0,
     DEFAULT_TILT_ANGLE_100,
     DEFAULT_TILT_HORIZONTAL_PERCENT,
+    DEFAULT_TILT_MIN_REFLECTED_ELEVATION,
     DEFAULT_TILT_SAFETY_MARGIN,
     DEFAULT_VENETIAN_TILT_TRANSFORM,
     MAX_TILT_SAFETY_MARGIN,
@@ -133,12 +135,14 @@ def tilt_limits_schema() -> dict:
 
     Cover-type-agnostic controls that clamp and shape the sun-derived slat tilt:
     the ``[min_tilt, max_tilt]`` band, the two ``*_sun_only`` enforcement flags,
-    the tilt safety margin, and the clamp/proportional output transform. Every
+    the tilt safety margin, the reflected-beam floor, and the clamp/proportional
+    output transform. Every
     tilt-axis cover reaches them — ``geometry_tilt_schema`` composes this
     fragment (so tilt-only and, via it, louvered-roof get them), and the
     venetian geometry schema composes ``geometry_tilt_schema`` too. Kept as a
     plain dict so both schemas can spread it inline.
     """
+    reflected_lo, reflected_hi = OPTION_RANGES[CONF_TILT_MIN_REFLECTED_ELEVATION]
     return {
         vol.Optional(CONF_MIN_TILT, default=DEFAULT_MIN_TILT): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=100)
@@ -160,6 +164,23 @@ def tilt_limits_schema() -> dict:
                 max=MAX_TILT_SAFETY_MARGIN,
                 step=0.05,
                 mode=selector.NumberSelectorMode.SLIDER,
+            )
+        ),
+        # Reflected-beam floor (#1282). BOX rather than SLIDER for the same
+        # reason ``tilt_horizontal_percent`` is: the optional-numeric guideline
+        # prefers SLIDER because BOX cannot express "cleared" and saves 0
+        # instead — and 0 is precisely this field's disabled state, so BOX's
+        # failure mode is the wanted behaviour rather than a trap.
+        vol.Optional(
+            CONF_TILT_MIN_REFLECTED_ELEVATION,
+            default=DEFAULT_TILT_MIN_REFLECTED_ELEVATION,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=reflected_lo,
+                max=reflected_hi,
+                step=1,
+                unit_of_measurement="°",
+                mode=selector.NumberSelectorMode.BOX,
             )
         ),
         vol.Optional(

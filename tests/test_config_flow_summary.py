@@ -432,6 +432,37 @@ def test_geometry_tilt_shows_the_three_point_midpoint():
         assert "horizontal at" not in preset
 
 
+def test_geometry_tilt_shows_the_reflected_sun_floor():
+    """The reflected-beam floor (#1282) renders whenever it is switched on.
+
+    Unlike the three-point mid-point it is NOT scoped to ``specify_angles`` —
+    the constraint applies on every preset — so it renders on both, and on both
+    the tilt-only and the venetian summary, which are separate renderers over
+    the one shared geometry fragment.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_TILT_MIN_REFLECTED_ELEVATION,
+    )
+
+    base = {
+        CONF_TILT_DEPTH: 8.0,
+        CONF_TILT_DISTANCE: 7.5,
+    }
+    for cover_type in (CoverType.TILT, CoverType.VENETIAN):
+        for mode in ("mode2", "specify_angles"):
+            cfg = {**base, CONF_TILT_MODE: mode}
+            enabled = _build_config_summary(
+                {**cfg, CONF_TILT_MIN_REFLECTED_ELEVATION: 30}, cover_type
+            )
+            assert "reflected sun kept at least 30° up" in enabled, (cover_type, mode)
+
+            # The 0 sentinel is the disabled state — nothing to report.
+            disabled = _build_config_summary(
+                {**cfg, CONF_TILT_MIN_REFLECTED_ELEVATION: 0}, cover_type
+            )
+            assert "reflected sun kept at least" not in disabled, (cover_type, mode)
+
+
 def test_geometry_louvered_roof_shows_slat_and_pitch_fields():
     """Louvered roof renders the shared slat block plus the roof-plane pitch."""
     from custom_components.adaptive_cover_pro.const import CONF_ROOF_PITCH

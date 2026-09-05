@@ -36,6 +36,7 @@ from ..const import (
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_HORIZONTAL_PERCENT,
+    CONF_TILT_MIN_REFLECTED_ELEVATION,
     CONF_TILT_MODE,
     CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_SAFETY_MARGIN,
@@ -50,6 +51,7 @@ from ..const import (
     DEFAULT_MAX_TILT_SUN_ONLY,
     DEFAULT_MIN_TILT,
     DEFAULT_MIN_TILT_SUN_ONLY,
+    DEFAULT_TILT_MIN_REFLECTED_ELEVATION,
     DEFAULT_TILT_SAFETY_MARGIN,
     DEFAULT_VENETIAN_TILT_TRANSFORM,
     DEFAULT_TILT_ANGLE_0,
@@ -193,6 +195,16 @@ class ConfigurationService:
                         CONF_VENETIAN_TILT_SAFETY_MARGIN,
                         DEFAULT_TILT_SAFETY_MARGIN,
                     ),
+                )
+            ),
+            # Reflected-beam floor (issue #1282). Absent and 0 are the same
+            # disabled state, the same sentinel shape as horizontal_percent
+            # above — which is what lets this option ship with no migration
+            # block at all.
+            min_reflected_elevation=float(
+                options.get(
+                    CONF_TILT_MIN_REFLECTED_ELEVATION,
+                    DEFAULT_TILT_MIN_REFLECTED_ELEVATION,
                 )
             ),
             tilt_transform=options.get(
