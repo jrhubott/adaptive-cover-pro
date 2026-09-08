@@ -120,19 +120,33 @@ async def test_return_to_default_fires_when_auto_control_toggled_off():
 
 
 @pytest.mark.asyncio
-async def test_return_to_default_sends_tilt_service_on_tilt_primary_cover():
-    """Issue #1349 — the dispatch mechanism is already axis-polymorphic.
+@pytest.mark.parametrize(
+    ("cover_type", "expected_service", "expected_attr"),
+    [
+        ("cover_blind", "set_cover_position", "position"),
+        ("cover_tilt", "set_cover_tilt_position", "tilt_position"),
+    ],
+)
+async def test_return_to_default_sends_axis_correct_service(
+    cover_type: str, expected_service: str, expected_attr: str
+) -> None:
+    """Issue #1349 — the dispatch mechanism is axis-polymorphic per policy.
 
-    A tilt-primary policy (``cover_tilt``) has no position axis at all, yet
-    the return-to-default loop must route ``default_percentage`` through
-    ``select_default_axis`` to the tilt axis rather than silently doing
-    nothing. This documents the mechanism the #1349 fix relies on: the
-    switch itself needs no change, only the policy gate that decides
-    whether the entity exists.
+    Both caps are True here — ``has_set_position=True`` AND
+    ``has_set_tilt_position=True`` — which is the realistic install shape
+    for a tilt-capable cover (most report both features) and, critically,
+    is the one configuration where capability-based fallback
+    (``should_use_tilt``) cannot explain the routing: with both features
+    present, a position-primary policy (``cover_blind``) still routes
+    through the position axis while a tilt-primary policy (``cover_tilt``)
+    still routes through the tilt axis. Parametrizing over both proves the
+    two policies actively diverge under identical capabilities — the axis
+    choice is driven by ``select_default_axis``'s policy-declared primary
+    axis, not by which services the entity happens to expose.
     """
     hass = MagicMock()
     hass.services.async_call = AsyncMock()
-    coord = _make_coord_with_real_cmd_svc(hass, cover_type="cover_tilt")
+    coord = _make_coord_with_real_cmd_svc(hass, cover_type=cover_type)
 
     switch = object.__new__(AdaptiveCoverSwitch)
     switch.coordinator = coord
@@ -142,18 +156,18 @@ async def test_return_to_default_sends_tilt_service_on_tilt_primary_cover():
     switch.schedule_update_ha_state = MagicMock()
 
     with _patch_caps(
-        has_set_position=False,
+        has_set_position=True,
         has_set_tilt_position=True,
-        has_open=False,
-        has_close=False,
+        has_open=True,
+        has_close=True,
         has_stop=True,
     ):
         await switch.async_turn_off()
 
     hass.services.async_call.assert_awaited()
     call_args = hass.services.async_call.await_args
-    assert call_args.args[1] == "set_cover_tilt_position"
-    assert call_args.args[2] == {"entity_id": "cover.test", "tilt_position": 60}
+    assert call_args.args[1] == expected_service
+    assert call_args.args[2] == {"entity_id": "cover.test", expected_attr: 60}
 
 
 @pytest.mark.asyncio
