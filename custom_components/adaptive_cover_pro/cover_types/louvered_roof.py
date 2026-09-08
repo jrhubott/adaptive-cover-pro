@@ -104,6 +104,9 @@ class LouveredRoofPolicy(CoverTypePolicy, register=True):
     # Tilt is this type's only axis, so it carries primary-axis config
     # semantics (``inverse_state`` + interpolation) — see ``TILT_AXIS_PRIMARY``.
     axes: ClassVar[tuple[CoverAxis, ...]] = (TILT_AXIS_PRIMARY,)
+    # Single-axis policy: the switch's one ``default_percentage`` number fully
+    # expresses this cover's rest state via ``select_default_axis`` (#1349).
+    supports_return_to_default_switch: ClassVar[bool] = True
 
     def wiki_anchor(self) -> str:
         """Louvered-roof geometry page."""
