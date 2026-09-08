@@ -1648,6 +1648,9 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "headers.your_cover": "**Your Cover**",
     "cover.type_with_entities": "{type_label} controlling {entity_str}",
     "cover.building_profile": "🏢 Linked to building profile: {name}",
+    "building_profile.no_local_overrides": "No local overrides — every linked cover matches this profile.",
+    "queue_overview.gap": "{gap}s gap",
+    "queue_overview.no_covers": "_No covers are assigned to this queue._",
     "headers.cover_warnings": "**Cover Warnings**",
     "headers.how_it_decides": "**How It Decides** (first matching rule wins)",
     # --- singular/plural words ---
@@ -5165,7 +5168,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 f"{ADAPTIVE_NAME_PREFIX} {_cover_type_label(self.type_blind)}"
             )
 
-        if self.config.pop("_title_is_device_name", False):
+        if self.config.pop("_title_is_device_name", False) or not get_policy(
+            self.type_blind
+        ).controls_cover:
             title = self.config["name"]
         else:
             title = f"{_cover_type_label(self.type_blind)} {self.config['name']}"
@@ -5595,7 +5600,12 @@ class OptionsFlowHandler(OptionsFlow):
                 _linked_profile_id
             )
             if _profile_entry is not None:
-                _profile_line = f"\n🏢 Building Profile: **{_profile_entry.title}**"
+                _profile_labels = await _load_summary_labels(
+                    self.hass, _resolve_summary_language(self.hass, self.context)
+                )
+                _profile_line = _profile_labels["cover.building_profile"].format(
+                    name=_profile_entry.title
+                )
 
         return self.async_show_menu(  # type: ignore[return-value]
             step_id="init",
@@ -6706,7 +6716,11 @@ class OptionsFlowHandler(OptionsFlow):
         if profile is None:
             return ""
         return profile_value_breakdown(
-            profile.options or {}, self.options, keys, profile_title=profile.title
+            profile.options or {},
+            self.options,
+            keys,
+            profile_title=profile.title,
+            hass=self.hass,
         )
 
     async def async_step_building_profile(
@@ -7028,11 +7042,18 @@ class OptionsFlowHandler(OptionsFlow):
             return await self.async_step_init()
         members = _covers_on_command_queue(self.hass, self._config_entry)
         gap = self.options.get(CONF_COMMAND_QUEUE_GAP, DEFAULT_COMMAND_QUEUE_GAP)
-        lines = [f"**{self._config_entry.data.get('name')}** — {gap}s gap", ""]
+        labels = await _load_summary_labels(
+            self.hass, _resolve_summary_language(self.hass, self.context)
+        )
+        lines = [
+            f"**{self._config_entry.data.get('name')}** — "
+            f"{labels['queue_overview.gap'].format(gap=gap)}",
+            "",
+        ]
         if members:
             lines.extend(f"- 🪟 {entry.title}" for entry in members)
         else:
-            lines.append("_No covers are assigned to this queue._")
+            lines.append(labels["queue_overview.no_covers"])
         return self.async_show_form(
             step_id="queue_overview",
             data_schema=vol.Schema({}),
@@ -7051,7 +7072,7 @@ class OptionsFlowHandler(OptionsFlow):
         from .building_overview import build_override_records
 
         linked = _covers_linked_to(self.hass, self._config_entry)
-        records = build_override_records(self._config_entry, linked)
+        records = build_override_records(self._config_entry, linked, self.hass)
         by_token = {f"{r.entry_id}|{r.key}": r for r in records}
 
         if user_input is not None:
@@ -7065,10 +7086,15 @@ class OptionsFlowHandler(OptionsFlow):
             return await self.async_step_init()
 
         if not records:
+            labels = await _load_summary_labels(
+                self.hass, _resolve_summary_language(self.hass, self.context)
+            )
             return self.async_show_form(
                 step_id="profile_overrides",
                 data_schema=vol.Schema({}),
-                description_placeholders={"overrides": _LABELS_NO_OVERRIDES},
+                description_placeholders={
+                    "overrides": labels["building_profile.no_local_overrides"]
+                },
             )
 
         options = [
@@ -7235,35 +7261,12 @@ class OptionsFlowHandler(OptionsFlow):
                 target_titles.append(f"• {target.title}")
 
         # Build summary of selected categories using friendly names
-        _category_labels = {
-            "geometry": "Window Dimensions",
-            "sun_tracking": "Sun Tracking",
-            "blind_spot": "Blind Spot Configuration",
-            "position": "Position Settings",
-            "interp": "Position Calibration",
-            "automation": "Schedule & Timing",
-            "manual_override": "Manual Override",
-            "custom_position_values": "Custom Positions — Values & Priorities",
-            "custom_position_sensors": "Custom Positions — Trigger Sensors",
-            "motion_override_values": "Occupancy Detection — Timeout",
-            "motion_override_sensors": "Occupancy Detection — Sensors",
-            "weather_override_values": "Weather Override — Thresholds & Position",
-            "weather_override_sensors": "Weather Override — Sensors",
-            "light_cloud_values": "Light & Cloud — Thresholds",
-            "light_cloud_sensors": "Light & Cloud — Sensors",
-            "temperature_climate_values": "Climate Mode — Thresholds & Settings",
-            "temperature_climate_sensors": "Climate Mode — Room Sensors",
-            "glare_zones": "Glare Zones",
-            # Legacy aliases (kept for back-compat; not shown in UI)
-            "force_override": "Force Override",
-            "custom_position": "Custom Positions",
-            "motion_override": "Occupancy Detection",
-            "weather_override": "Weather Override",
-            "light_cloud": "Light Sensors & Cloud Suppression",
-            "temperature_climate": "Temperature & Climate Mode",
-        }
+        _summary_labels = await _load_summary_labels(
+            self.hass, _resolve_summary_language(self.hass, self.context)
+        )
         category_lines = [
-            f"• {_category_labels.get(c, c)}" for c in self.selected_sync_categories
+            f"• {_summary_labels.get(f'sync_categories.{c}', c)}"
+            for c in self.selected_sync_categories
         ]
 
         return self.async_show_form(  # type: ignore[return-value]

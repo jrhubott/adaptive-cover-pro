@@ -117,15 +117,9 @@ class AdaptiveCoverBinarySensor(AdaptiveCoverBaseEntity, BinarySensorEntity):
         )
         self._key = key
         self._attr_translation_key = key
-        self._binary_name = binary_name
         self._attr_unique_id = f"{unique_id}_{key}"
         self._state = state
         self._attr_device_class = device_class
-
-    @property
-    def name(self):
-        """Name of the entity."""
-        return self._binary_name
 
     @property
     def is_on(self) -> bool:
@@ -160,11 +154,6 @@ class AdaptiveCoverPositionMismatchSensor(AdaptiveCoverBaseEntity, BinarySensorE
             coordinator,
         )
         self._attr_unique_id = f"{unique_id}_position_mismatch"
-
-    @property
-    def name(self) -> str:
-        """Name of the entity."""
-        return "Position Mismatch"
 
     @property
     def is_on(self) -> bool:

@@ -77,13 +77,7 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
         """Initialize the button."""
         super().__init__(entry_id, hass, config_entry, coordinator)
         self._attr_unique_id = f"{entry_id}_Reset Manual Override"
-        self._button_name = "Reset Manual Override"
         self._entities = config_entry.options.get(CONF_ENTITIES, [])
-
-    @property
-    def name(self):
-        """Name of the entity."""
-        return self._button_name
 
     async def async_press(self) -> None:
         """Handle the button press.
