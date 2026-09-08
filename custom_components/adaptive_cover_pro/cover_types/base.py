@@ -462,11 +462,24 @@ class CoverTypePolicy(ABC):
     supports_glare_zones: ClassVar[bool] = False
 
     # Whether the "Return to default when disabled" switch is exposed for this
-    # cover type. Currently only single-axis position covers (blind, awning)
-    # have a meaningful "default height" semantic; tilt-only covers don't, and
-    # venetian's default is driven through the dual-axis sequencer rather than
-    # a fire-and-forget position. Replaces the legacy string list at
-    # ``switch.py`` that hardcoded ``("cover_blind", "cover_awning")``.
+    # cover type. Exposed for policies that drive exactly one axis: the switch
+    # sends a single ``CONF_DEFAULT_HEIGHT`` value through ``apply_position``,
+    # which ``select_default_axis`` routes to that one axis — on a
+    # tilt-primary type (``cover_tilt``, ``cover_louvered_roof``) that is the
+    # slat angle, exactly as ``DefaultHandler`` already does every cycle with
+    # the same value (issue #1349).
+    #
+    # Dual-axis types (venetian, day/night shade) stay excluded: their second
+    # axis has no value supplied by this switch, so
+    # ``position_context_overrides`` would hand ``after_position_command`` the
+    # *stale previous-cycle* pipeline tilt instead — issue #684's exact defect
+    # class, on a new seam. Re-enabling a dual-axis type requires threading a
+    # real default tilt through ``CoverTypePolicy.apply_user_tilt`` (the hook
+    # #684 added), not a bool flip — see
+    # ``test_return_to_default_switch_never_on_multi_axis_policies``.
+    #
+    # Replaces the legacy string list at ``switch.py`` that hardcoded
+    # ``("cover_blind", "cover_awning")``.
     supports_return_to_default_switch: ClassVar[bool] = False
 
     # Whether the diagnostic surface exposes a dual-axis target sensor (the

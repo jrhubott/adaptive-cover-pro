@@ -46,6 +46,7 @@ from custom_components.adaptive_cover_pro.state.snapshot import CoverCapabilitie
 ALL_COVER_TYPES = [
     "cover_blind",
     "cover_awning",
+    "cover_oscillating_awning",
     "cover_tilt",
     "cover_venetian",
     "cover_roof_window",
@@ -300,6 +301,10 @@ class TestForecastSecondaryAxesHook:
             {
                 "cover_blind": AXIS_NAME_POSITION,
                 "cover_awning": AXIS_NAME_POSITION,
+                # Same position axis semantics as cover_awning (its axis only
+                # differs by ``open_blocks_sun``, which select_default_axis
+                # doesn't consult).
+                "cover_oscillating_awning": AXIS_NAME_POSITION,
                 "cover_tilt": AXIS_NAME_TILT,
                 "cover_venetian": AXIS_NAME_POSITION,
                 "cover_roof_window": AXIS_NAME_POSITION,
@@ -315,6 +320,7 @@ class TestForecastSecondaryAxesHook:
             {
                 "cover_blind": AXIS_NAME_POSITION,
                 "cover_awning": AXIS_NAME_POSITION,
+                "cover_oscillating_awning": AXIS_NAME_POSITION,
                 "cover_tilt": AXIS_NAME_TILT,  # cover_tilt always routes tilt
                 "cover_venetian": AXIS_NAME_POSITION,
                 "cover_roof_window": AXIS_NAME_POSITION,
@@ -335,6 +341,7 @@ class TestForecastSecondaryAxesHook:
                 # blind/awning/venetian get routed to TILT_AXIS too.
                 "cover_blind": AXIS_NAME_TILT,
                 "cover_awning": AXIS_NAME_TILT,
+                "cover_oscillating_awning": AXIS_NAME_TILT,
                 "cover_tilt": AXIS_NAME_TILT,
                 "cover_venetian": AXIS_NAME_TILT,
                 "cover_roof_window": AXIS_NAME_TILT,
@@ -666,27 +673,70 @@ def test_is_in_tilt_suppression_uniform_signature(cover_type: str) -> None:
     assert policy.is_in_tilt_suppression("cover.x", delta=10.0) is False
 
 
+# Expected ``supports_return_to_default_switch`` value per cover type. Keyed
+# on ``ALL_COVER_TYPES`` (not iterated separately) so a new cover type added
+# to that list without a row here fails the ``[cover_type]`` dict lookup
+# below at parametrize-collection time — loudly, as a collection error —
+# rather than being silently skipped by the parametrize.
+_RETURN_TO_DEFAULT_SWITCH_EXPECTED: dict[str, bool] = {
+    "cover_blind": True,
+    "cover_awning": True,
+    "cover_oscillating_awning": True,
+    "cover_tilt": True,
+    "cover_venetian": False,
+    "cover_roof_window": True,
+    "cover_sliding_curtain": True,
+    "cover_louvered_roof": True,
+    "cover_day_night_shade": False,
+    "cover_dual_panel": True,
+}
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("cover_type", "expected"),
     [
-        ("cover_blind", True),
-        ("cover_awning", True),
-        ("cover_tilt", False),
-        ("cover_venetian", False),
-        ("cover_louvered_roof", False),
-        ("cover_day_night_shade", False),
-        ("cover_dual_panel", True),
+        (cover_type, _RETURN_TO_DEFAULT_SWITCH_EXPECTED[cover_type])
+        for cover_type in ALL_COVER_TYPES
     ],
 )
 def test_supports_return_to_default_switch(cover_type: str, expected: bool) -> None:
-    """The Return-to-default switch is exposed for position-axis covers only.
+    """The Return-to-default switch is exposed for single-axis covers only.
 
     Pins the ClassVar that replaced the legacy ``switch.py`` string-list gate.
-    Adding a fifth cover type must add a row here, not branch on the type
-    string in ``switch.py``.
+    Adding a new cover type to ``ALL_COVER_TYPES`` without a row in
+    ``_RETURN_TO_DEFAULT_SWITCH_EXPECTED`` raises ``KeyError`` at collection
+    time, rather than branching on the type string in ``switch.py``.
     """
     assert get_policy(cover_type).supports_return_to_default_switch is expected
+
+
+@pytest.mark.unit
+def test_return_to_default_switch_never_on_multi_axis_policies() -> None:
+    """Guard against re-flipping a dual-axis policy's return-to-default switch.
+
+    ``supports_return_to_default_switch`` may only be True for a policy that
+    drives exactly one axis: the switch sends a single ``default_percentage``
+    number through ``apply_position``. A dual-axis (or zero-axis) policy
+    cannot safely expose it — on venetian, ``position_context_overrides``
+    would hand ``after_position_command`` a *stale previous-cycle* pipeline
+    tilt, reintroducing issue #684's exact defect class on this new seam.
+    Re-enabling a dual-axis type requires threading a real default tilt
+    through ``CoverTypePolicy.apply_user_tilt`` (the hook #684 added) first —
+    not a bool flip.
+    """
+    for cover_type, policy_cls in POLICY_REGISTRY.items():
+        if len(policy_cls.axes) != 1:
+            assert policy_cls.supports_return_to_default_switch is False, (
+                f"{cover_type!r} drives {len(policy_cls.axes)} axes but sets "
+                "supports_return_to_default_switch=True. A dual-axis (or "
+                "zero-axis) policy cannot safely expose the return-to-default "
+                "switch: position_context_overrides would hand "
+                "after_position_command a stale previous-cycle pipeline tilt, "
+                "reintroducing issue #684's exact defect class. Re-enabling "
+                "this requires threading a real default tilt through "
+                "CoverTypePolicy.apply_user_tilt (the #684 hook) first."
+            )
 
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
