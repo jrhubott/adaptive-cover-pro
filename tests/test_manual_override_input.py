@@ -51,8 +51,8 @@ def test_engage_from_external_marks_all_covers() -> None:
     assert manager.binary_cover_manual is True
     for cover in covers:
         assert manager.is_cover_manual(cover) is True
-        assert cover in manager.manual_control_time
-        assert manager.manual_control_time[cover] >= before
+        assert manager.override_for(cover) is not None
+        assert manager.override_for(cover).started_at >= before
     # on_engaged fires once per cover so the command service discards each
     # latched target.
     assert on_engaged.call_count == len(covers)
@@ -76,13 +76,13 @@ def test_engage_from_external_rearms_timer() -> None:
     manager.set_transition_callbacks(on_engaged=on_engaged)
 
     manager.engage_manual_override_from_external(reason="input_sensor")
-    first_ts = manager.manual_control_time[cover]
+    first_ts = manager.override_for(cover).started_at
     assert on_engaged.call_count == 1
 
     time.sleep(0.01)  # guarantee a measurable clock advance
 
     manager.engage_manual_override_from_external(reason="input_sensor")
-    second_ts = manager.manual_control_time[cover]
+    second_ts = manager.override_for(cover).started_at
 
     assert second_ts > first_ts
     # Already manual → edge does not re-fire.

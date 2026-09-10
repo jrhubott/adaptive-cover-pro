@@ -167,6 +167,34 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
             return self.depth
         return self.depth + max(0.0, self.depth - self.slat_distance)
 
+    def _min_reflected_elevation_deg(self) -> float:
+        """Reflected-beam floor — vertical pitch only (#1282).
+
+        The base clamp is derived from the vertical-facade identity ``phi = 90°
+        − code_angle``, and both of #830's departures break it: the pose here is
+        realized as ``90° ± i`` from an inclination, not as the raw cut-off, so
+        the code angle no longer reads as a slat inclination the same way; and
+        ``beta`` is measured against the ROOF plane, so ``theta_r = beta + 2phi``
+        would answer a question about the roof plane rather than about the room.
+        On a flat or pitched roof there is also no facade for the reflection to
+        be fired across in the first place.
+
+        Returning the sentinel disables it there rather than computing a
+        confident number about nothing. The ``roof_pitch = 90°`` case is the
+        SAME gate ``_resolve_slat_angle`` and ``_blocking_depth`` use — at
+        vertical pitch this engine reduces to the venetian anchor exactly, so
+        the option means what it means everywhere else and is honoured.
+
+        A polymorphic hook rather than a cover-type check on purpose: code
+        outside ``cover_types/`` must never branch on the cover-type string
+        (guarded by ``tests/test_cover_types/test_axes.py``), and "the roof's
+        geometry form doesn't offer the field" is not a guard at all —
+        ``set_geometry`` can write the key onto any entry.
+        """
+        if self.roof_pitch == VERTICAL_GLASS_PITCH_DEG:
+            return super()._min_reflected_elevation_deg()
+        return 0.0
+
     def _effective_max_degrees(self) -> float:
         """Honour a configured physical ``max_slat_angle`` over the tilt-mode max.
 

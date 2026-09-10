@@ -147,6 +147,7 @@ from ..const import (
     CONF_SOLAR_PROPERTIES_ENABLED,
     CONF_START_ENTITY,
     CONF_START_TIME,
+    CONF_SUNRISE_GATES_START,
     CONF_SUNRISE_OFFSET,
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
@@ -170,6 +171,7 @@ from ..const import (
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_HORIZONTAL_PERCENT,
+    CONF_TILT_MIN_REFLECTED_ELEVATION,
     CONF_TILT_MODE,
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
@@ -500,6 +502,8 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_MIN_TILT_SUN_ONLY: _bool_v(),
     # Shared tilt-axis safety margin (neutral key since #964)
     CONF_TILT_SAFETY_MARGIN: _range(CONF_TILT_SAFETY_MARGIN),
+    # Reflected-beam floor (#1282), shared by every vertical-facade slat cover
+    CONF_TILT_MIN_REFLECTED_ELEVATION: _range(CONF_TILT_MIN_REFLECTED_ELEVATION),
     # Venetian-specific options
     CONF_VENETIAN_POST_SETTLE_HOLD: _range(CONF_VENETIAN_POST_SETTLE_HOLD),
     CONF_VENETIAN_POST_SETTLE_MODE: _select_v(*VENETIAN_POST_SETTLE_MODES),
@@ -551,6 +555,8 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_SUNSET_USE_MY: _bool_v(),
     CONF_SUNSET_OFFSET: _range(CONF_SUNSET_OFFSET),
     CONF_SUNRISE_OFFSET: _range(CONF_SUNRISE_OFFSET),
+    # Whether that sunrise boundary also gates the operating window (#1340).
+    CONF_SUNRISE_GATES_START: _bool_v(),
     CONF_SUNSET_TIME_ENTITY: _entity_v(),
     CONF_SUNRISE_TIME_ENTITY: _entity_v(),
     CONF_OPEN_CLOSE_THRESHOLD: _range(CONF_OPEN_CLOSE_THRESHOLD),
@@ -786,6 +792,7 @@ _SECTION_SUNSET_SUNRISE = frozenset(
         CONF_SUNSET_POS,
         CONF_SUNSET_OFFSET,
         CONF_SUNRISE_OFFSET,
+        CONF_SUNRISE_GATES_START,
         CONF_SUNSET_USE_MY,
         CONF_MY_POSITION_VALUE,
         CONF_SUNSET_TIME_ENTITY,

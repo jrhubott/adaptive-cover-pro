@@ -24,6 +24,9 @@ from custom_components.adaptive_cover_pro.const import (
     CoverType,
 )
 from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+from custom_components.adaptive_cover_pro.managers.manual_override import (
+    StateChangeInputs,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -207,11 +210,13 @@ async def test_assumed_cleared_on_real_state_change(hass: HomeAssistant) -> None
 
     coordinator.manager.handle_state_change(
         event,
-        100,
-        coordinator._policy,
-        False,
-        lambda _e: False,
-        5,
+        StateChangeInputs(
+            our_state=100,
+            policy=coordinator._policy,
+            allow_reset=False,
+            is_waiting=lambda _e: False,
+            manual_threshold=5,
+        ),
     )
 
     assert coordinator._cmd_svc.get_assumed_position("cover.test_blind") is None
@@ -246,11 +251,13 @@ async def test_assumed_survives_same_state_re_report(hass: HomeAssistant) -> Non
     # our_state matches the raw open read (100) so no manual override engages.
     coordinator.manager.handle_state_change(
         event,
-        100,
-        coordinator._policy,
-        False,
-        lambda _e: False,
-        5,
+        StateChangeInputs(
+            our_state=100,
+            policy=coordinator._policy,
+            allow_reset=False,
+            is_waiting=lambda _e: False,
+            manual_threshold=5,
+        ),
     )
 
     assert coordinator._cmd_svc.get_assumed_position("cover.test_blind") == 50
@@ -278,11 +285,13 @@ async def test_assumed_cleared_on_open_close_transition(hass: HomeAssistant) -> 
 
     coordinator.manager.handle_state_change(
         event,
-        0,
-        coordinator._policy,
-        False,
-        lambda _e: False,
-        5,
+        StateChangeInputs(
+            our_state=0,
+            policy=coordinator._policy,
+            allow_reset=False,
+            is_waiting=lambda _e: False,
+            manual_threshold=5,
+        ),
     )
 
     assert coordinator._cmd_svc.get_assumed_position("cover.test_blind") is None

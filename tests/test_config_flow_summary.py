@@ -432,6 +432,37 @@ def test_geometry_tilt_shows_the_three_point_midpoint():
         assert "horizontal at" not in preset
 
 
+def test_geometry_tilt_shows_the_reflected_sun_floor():
+    """The reflected-beam floor (#1282) renders whenever it is switched on.
+
+    Unlike the three-point mid-point it is NOT scoped to ``specify_angles`` —
+    the constraint applies on every preset — so it renders on both, and on both
+    the tilt-only and the venetian summary, which are separate renderers over
+    the one shared geometry fragment.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_TILT_MIN_REFLECTED_ELEVATION,
+    )
+
+    base = {
+        CONF_TILT_DEPTH: 8.0,
+        CONF_TILT_DISTANCE: 7.5,
+    }
+    for cover_type in (CoverType.TILT, CoverType.VENETIAN):
+        for mode in ("mode2", "specify_angles"):
+            cfg = {**base, CONF_TILT_MODE: mode}
+            enabled = _build_config_summary(
+                {**cfg, CONF_TILT_MIN_REFLECTED_ELEVATION: 30}, cover_type
+            )
+            assert "reflected sun kept at least 30° up" in enabled, (cover_type, mode)
+
+            # The 0 sentinel is the disabled state — nothing to report.
+            disabled = _build_config_summary(
+                {**cfg, CONF_TILT_MIN_REFLECTED_ELEVATION: 0}, cover_type
+            )
+            assert "reflected sun kept at least" not in disabled, (cover_type, mode)
+
+
 def test_geometry_louvered_roof_shows_slat_and_pitch_fields():
     """Louvered roof renders the shared slat block plus the roof-plane pitch."""
     from custom_components.adaptive_cover_pro.const import CONF_ROOF_PITCH
@@ -919,6 +950,37 @@ def test_blank_start_with_no_end_does_not_show_from_sunrise():
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "from sunrise" not in summary
     assert "Active during daylight" in summary
+
+
+def test_sunrise_gates_start_renders_line_with_start_time():
+    """The opt-in changes when the day starts, so the summary must say so (#1340).
+
+    CODING_GUIDELINES § "Configuration Summary Must Track Every Behavior-Affecting
+    Option": a gate on the operating window is exactly that.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_SUNRISE_GATES_START
+
+    cfg = {CONF_START_TIME: "05:30:00", CONF_SUNRISE_GATES_START: True}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "from 05:30:00" in summary
+    assert "whichever is later" in summary
+
+
+def test_sunrise_gates_start_absent_renders_nothing():
+    """OFF (the default) must not add a line — every existing install reads this way."""
+    cfg = {CONF_START_TIME: "05:30:00"}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "from 05:30:00" in summary
+    assert "whichever is later" not in summary
+
+
+def test_sunrise_gates_start_without_start_renders_nothing():
+    """A blank start already waits for sunrise (#1256) — the line would be a lie."""
+    from custom_components.adaptive_cover_pro.const import CONF_SUNRISE_GATES_START
+
+    cfg = {CONF_SUNRISE_GATES_START: True, CONF_END_TIME: "21:00"}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "whichever is later" not in summary
 
 
 def test_sunset_position_shown():

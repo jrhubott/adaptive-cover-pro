@@ -6,7 +6,7 @@ state classifier carried five copies. With the publish-lag fix coming in
 behind a new policy hook, both axes consult the same predicate — so the
 in-transit literal needs to live in one place too. This file pins the
 agreement between the new helper and the existing
-``CoverCommandService._is_cover_in_transit`` method that other tests
+``CoverCommandService.is_cover_in_transit`` method that other tests
 already lock down indirectly.
 """
 
@@ -26,7 +26,7 @@ from custom_components.adaptive_cover_pro.managers.cover_command.transit import 
     ["opening", "closing", "open", "closed", "unknown", "unavailable", None, ""],
 )
 def test_is_state_in_transit_helper_agrees_with_command_service(state) -> None:
-    """The free helper and ``CoverCommandService._is_cover_in_transit`` agree everywhere.
+    """The free helper and ``CoverCommandService.is_cover_in_transit`` agree everywhere.
 
     Drives both predicates against the same set of HA cover states. The
     helper is pure (string → bool); the service goes through ``hass.states``
@@ -47,12 +47,12 @@ def test_is_state_in_transit_helper_agrees_with_command_service(state) -> None:
         state_obj.state = state
         hass.states.get.return_value = state_obj
 
-    # We only need ``_is_cover_in_transit`` to be callable — bypass the full
+    # We only need ``is_cover_in_transit`` to be callable — bypass the full
     # __init__ by binding via ``object.__new__`` and stamping ``_hass``.
     svc = object.__new__(CoverCommandService)
     svc._hass = hass
 
     expected = state in ("opening", "closing")
     assert is_state_in_transit(state) is expected
-    assert svc._is_cover_in_transit(eid) is expected
-    assert is_state_in_transit(state) == svc._is_cover_in_transit(eid)
+    assert svc.is_cover_in_transit(eid) is expected
+    assert is_state_in_transit(state) == svc.is_cover_in_transit(eid)

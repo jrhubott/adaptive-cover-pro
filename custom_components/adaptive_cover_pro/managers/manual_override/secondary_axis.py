@@ -158,9 +158,9 @@ class SecondaryAxisResult:
     """Outcome of evaluating a non-primary axis for manual-override drift.
 
     ``consumed`` short-circuits the position-axis check (caller returns
-    immediately). ``is_manual`` triggers ``mark_manual_control`` +
-    ``set_last_updated``. ``event_name`` (with ``event_kwargs``) appends a
-    record to the diagnostics ring buffer.
+    immediately). ``is_manual`` arms the override via ``set_last_updated``.
+    ``event_name`` (with ``event_kwargs``) appends a record to the diagnostics
+    ring buffer.
     """
 
     consumed: bool = False

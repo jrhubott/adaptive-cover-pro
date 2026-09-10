@@ -165,6 +165,11 @@ class TestTiltTrace:
         "max_degrees",
         "tilt_mode",
         "safety_margin",
+        # Reflected-beam floor (#1282) — published on every branch so the key
+        # set is stable, ``None`` where no slat angle was ever solved.
+        "reflected_beam_elevation_deg",
+        "reflected_beam_min_elevation_deg",
+        "reflected_beam_constrained",
     }
 
     def test_normal_branch_keys(self, tilt_cover_instance):

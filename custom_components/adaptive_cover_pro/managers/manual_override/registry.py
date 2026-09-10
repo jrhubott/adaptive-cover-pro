@@ -4,6 +4,12 @@ Adding a new detection pattern is a drop-in: create one new detector module
 and add one line to ``DETECTOR_REGISTRY`` keyed by the detector's
 ``strategy_id`` class attribute. Selection is data-driven (the engine reads
 ``CONF_MANUAL_OVERRIDE_STRATEGY``), mirroring ``cover_types.get_policy``.
+
+``CONF_MANUAL_OVERRIDE_STRATEGY`` has no config-flow selector, service field,
+or translation; the strategy is selectable only by hand-editing the entry's
+options. The seam is kept because ``PositionDeltaDetector`` is tested in
+isolation through it and a future pattern drops in without coordinator
+changes — it is internal-only and must not be documented as a user option.
 """
 
 from __future__ import annotations

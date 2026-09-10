@@ -28,6 +28,9 @@ from custom_components.adaptive_cover_pro.managers.cover_command import (
     PositionContext,
     build_special_positions,
 )
+from custom_components.adaptive_cover_pro.managers.manual_override import (
+    StateChangeInputs,
+)
 
 pytestmark = pytest.mark.usefixtures("neutralize_venetian_delays")
 
@@ -554,17 +557,19 @@ async def test_tilt_on_target_plus_position_back_drive_does_not_trip_manual_over
     event.new_state.last_updated = dt.datetime.now(dt.UTC)
 
     mgr.handle_state_change(
-        states_data=event,
-        our_state=34,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=3,
-        secondary_axis_check=SecondaryAxisCheck(
-            expected=70,
-            attribute="current_tilt_position",
-            label="tilt",
-            suppression=attached_policy.is_in_tilt_suppression,
+        event,
+        StateChangeInputs(
+            our_state=34,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=3,
+            secondary_axis_check=SecondaryAxisCheck(
+                expected=70,
+                attribute="current_tilt_position",
+                label="tilt",
+                suppression=attached_policy.is_in_tilt_suppression,
+            ),
         ),
     )
 
@@ -656,17 +661,19 @@ async def test_tilt_only_small_mid_settle_drift_does_not_trip_manual_override(
     event.new_state.last_updated = dt.datetime.now(dt.UTC)
 
     mgr.handle_state_change(
-        states_data=event,
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=SecondaryAxisCheck(
-            expected=70,
-            attribute="current_tilt_position",
-            label="tilt",
-            suppression=attached_policy.is_in_tilt_suppression,
+        event,
+        StateChangeInputs(
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            secondary_axis_check=SecondaryAxisCheck(
+                expected=70,
+                attribute="current_tilt_position",
+                label="tilt",
+                suppression=attached_policy.is_in_tilt_suppression,
+            ),
         ),
     )
 

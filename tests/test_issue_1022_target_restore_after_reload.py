@@ -431,12 +431,13 @@ async def test_async_added_to_hass_tolerates_non_mapping_per_entity():
 def test_target_restore_composes_with_active_override_restore(override_first):
     """#1022 target restore and #1019 override restore never clobber each other.
 
-    They write to disjoint stores — the override restore populates
-    ``manager.manual_control`` / ``manual_control_time`` (#1019/#1021), the target
-    restore seeds ``CoverCommandService._state[eid].target`` (#1022). Running both
-    for the SAME entity in EITHER order must leave both intact: the active
-    manual-override (manual_control True + a future expiry) survives AND the
-    command target is set.
+    They write to disjoint stores — the override restore arms the manual
+    override the manager reports through ``override_for`` (#1019/#1021), the
+    target restore seeds
+    ``CoverCommandService._state[eid].target`` (#1022). Running both for the
+    SAME entity in EITHER order must leave both intact: the active
+    manual-override (a live ``OverrideState`` with a future expiry) survives AND
+    the command target is set.
     """
     from custom_components.adaptive_cover_pro.managers.manual_override import (
         AdaptiveCoverManager,
@@ -486,8 +487,7 @@ def test_target_restore_composes_with_active_override_restore(override_first):
 
     # Manual-override state survives intact.
     assert manager.is_cover_manual(eid) is True
-    assert manager.manual_control.get(eid) is True
-    assert eid in manager.manual_control_time
+    assert manager.override_for(eid) is not None
     # Command target is set on the disjoint store.
     assert svc.get_target(eid) == 0
 

@@ -109,6 +109,47 @@ async def test_cover_target_resolution_excludes_groups(hass, loaded_pair) -> Non
     assert group_coord not in targets
 
 
+async def test_cover_target_resolution_by_area(hass, loaded_pair) -> None:
+    """An area target expands through the real device registry to the cover entry.
+
+    The behavioural witness for ``_resolve_targets``' area expansion. The only
+    other coverage is mock-based, so without this the expansion could be
+    rewritten against any registry API at all and nothing would notice.
+    """
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import device_registry as dr
+
+    cover_coord, group_coord = loaded_pair
+    area = ar.async_get(hass).async_get_or_create("Cover Service Area")
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id="cover_entry",
+        identifiers={(DOMAIN, "cover_entry_device")},
+    )
+    dr.async_get(hass).async_update_device(device.id, area_id=area.id)
+
+    call = MagicMock()
+    call.data = {"area_id": [area.id]}
+    targets = _resolve_targets(hass, call)
+
+    assert cover_coord in targets
+    assert group_coord not in targets
+
+
+async def test_cover_target_resolution_by_empty_area(hass, loaded_pair) -> None:
+    """An area holding no devices resolves to no coordinators."""
+    from homeassistant.helpers import area_registry as ar
+
+    cover_coord, group_coord = loaded_pair
+    area = ar.async_get(hass).async_get_or_create("Empty Service Area")
+
+    call = MagicMock()
+    call.data = {"area_id": [area.id]}
+    targets = _resolve_targets(hass, call)
+
+    assert cover_coord not in targets
+    assert group_coord not in targets
+
+
 async def test_group_target_resolution_no_target_all_groups(hass, loaded_pair) -> None:
     cover_coord, group_coord = loaded_pair
 

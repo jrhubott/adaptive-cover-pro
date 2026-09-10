@@ -21,6 +21,9 @@ import datetime as dt
 from unittest.mock import MagicMock
 
 import pytest
+from custom_components.adaptive_cover_pro.managers.manual_override import (
+    StateChangeInputs,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers (mirrors test_issue_172_false_manual_override helpers, extended)
@@ -580,13 +583,15 @@ class TestInTransitGuard:
         event = self._make_event(entity_id, current_position=100, state_str="closing")
 
         manager.handle_state_change(
-            states_data=event,
-            our_state=96,
-            policy=get_policy("cover_blind"),
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=0,
-            is_in_transit=manager._test_is_in_transit,
+            event,
+            StateChangeInputs(
+                our_state=96,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=0,
+                is_in_transit=manager._test_is_in_transit,
+            ),
         )
 
         assert not manager.is_cover_manual(entity_id), (
@@ -611,13 +616,15 @@ class TestInTransitGuard:
         event = self._make_event(entity_id, current_position=0, state_str="opening")
 
         manager.handle_state_change(
-            states_data=event,
-            our_state=80,
-            policy=get_policy("cover_blind"),
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=0,
-            is_in_transit=manager._test_is_in_transit,
+            event,
+            StateChangeInputs(
+                our_state=80,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=0,
+                is_in_transit=manager._test_is_in_transit,
+            ),
         )
 
         assert not manager.is_cover_manual(entity_id)
@@ -639,13 +646,15 @@ class TestInTransitGuard:
             entity_id, current_position=100, state_str="closing"
         )
         manager.handle_state_change(
-            states_data=in_transit,
-            our_state=30,
-            policy=policy,
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=5,
-            is_in_transit=manager._test_is_in_transit,
+            in_transit,
+            StateChangeInputs(
+                our_state=30,
+                policy=policy,
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=5,
+                is_in_transit=manager._test_is_in_transit,
+            ),
         )
         assert not manager.is_cover_manual(
             entity_id
@@ -655,13 +664,15 @@ class TestInTransitGuard:
         manager._hass_state_holder.state = "open"
         settled = self._make_event(entity_id, current_position=95, state_str="open")
         manager.handle_state_change(
-            states_data=settled,
-            our_state=30,
-            policy=policy,
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=5,
-            is_in_transit=manager._test_is_in_transit,
+            settled,
+            StateChangeInputs(
+                our_state=30,
+                policy=policy,
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=5,
+                is_in_transit=manager._test_is_in_transit,
+            ),
         )
         assert manager.is_cover_manual(entity_id), (
             "Settled event with current_position far from target must still "
@@ -679,13 +690,15 @@ class TestInTransitGuard:
         event = self._make_event(entity_id, current_position=96, state_str="open")
 
         manager.handle_state_change(
-            states_data=event,
-            our_state=96,
-            policy=get_policy("cover_blind"),
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=0,
-            is_in_transit=manager._test_is_in_transit,
+            event,
+            StateChangeInputs(
+                our_state=96,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=0,
+                is_in_transit=manager._test_is_in_transit,
+            ),
         )
 
         assert not manager.is_cover_manual(entity_id)

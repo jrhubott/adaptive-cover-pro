@@ -21,6 +21,7 @@ from .detector import (
     DetectorConfig,
     OverrideDecision,
     OverrideDetector,
+    position_unavailable_decision,
 )
 
 
@@ -47,14 +48,7 @@ class TimeWindowDetector(OverrideDetector):
     def detect(self, context: DetectionContext) -> OverrideDecision:
         """Decide manual override purely from time since the last ACP command."""
         if context.new_position is None:
-            return OverrideDecision(
-                event_name="manual_override_rejected_position_unavailable",
-                event_kwargs={
-                    "our_state": context.our_state,
-                    "new_position": None,
-                    "reason": "position unavailable (transient state)",
-                },
-            )
+            return position_unavailable_decision(context)
 
         elapsed = context.seconds_since_command
         if elapsed is not None and elapsed < self._window_seconds:

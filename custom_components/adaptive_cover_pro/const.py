@@ -545,6 +545,20 @@ DEFAULT_VENETIAN_TILT_SAFETY_MARGIN = DEFAULT_TILT_SAFETY_MARGIN
 MIN_VENETIAN_TILT_SAFETY_MARGIN = MIN_TILT_SAFETY_MARGIN
 MAX_VENETIAN_TILT_SAFETY_MARGIN = MAX_TILT_SAFETY_MARGIN
 
+# Minimum elevation (degrees, profile plane) the beam reflected off the slats'
+# upper face may leave at (issue #1282). Above beta = arctan(slat_distance /
+# depth) the daylight-optimal cut-off pose tilts the outer slat edge UP, turning
+# the slats into a mirror aimed into the room — at the reporting WAREMA geometry
+# the reflection leaves at -0.32°, i.e. horizontally across the room at slat
+# height. Raising the floor turns the slats back toward (and past) horizontal
+# until the reflection clears it; it never opens them past the direct-sun
+# cut-off, because the blocking condition is a band rather than a half-line.
+# 0 = DISABLED (the same "absent and 0 are the same state" sentinel
+# CONF_TILT_HORIZONTAL_PERCENT uses, which is what lets this ship with no
+# migration block and makes a BOX selector safe).
+CONF_TILT_MIN_REFLECTED_ELEVATION = "tilt_min_reflected_elevation"
+DEFAULT_TILT_MIN_REFLECTED_ELEVATION = 0  # degrees — 0 = no reflection floor
+
 # Proportional tilt output transform (issue #957). Chooses how the sun-tracking
 # tilt demand is fitted into the ``[min_tilt, max_tilt]`` band. ``clamp``
 # (default, back-compat) flat-caps the value at the band edges — today's exact
@@ -660,6 +674,12 @@ CONF_TRANSPARENT_BLIND = "transparent_blind"
 CONF_SUNSET_POS = "sunset_position"  # post-sunset position 0-100; None=default
 CONF_SUNSET_OFFSET = "sunset_offset"  # minutes ±120 from sunset to switch
 CONF_SUNRISE_OFFSET = "sunrise_offset"  # minutes ±120 from sunrise to resume
+# Opt-in (issue #1340): the operating window may not open before the resolved
+# sunrise boundary (sunrise entity/astral + sunrise_offset) — the start becomes
+# max(configured start, sunrise). Off preserves #438: a start earlier than
+# sunrise opens the window (and ends the night position) at the start time.
+CONF_SUNRISE_GATES_START = "sunrise_gates_start"
+DEFAULT_SUNRISE_GATES_START = False
 CONF_RETURN_SUNSET = "return_sunset"  # True: force-send default at end_time
 # Optional end-of-window position 0-100 (issue #625); None=disabled. Applied at the
 # operating-window end time (gated by CONF_RETURN_SUNSET) regardless of astral sunset.
@@ -2637,6 +2657,13 @@ _RANGE_TILT_SAFETY_MARGIN = (
 )  # CONF_TILT_SAFETY_MARGIN, 0.0-1.0 fraction of the slat-closing slack budget
 # Legacy alias (#964) so any name-based lookup of the old range still resolves.
 _RANGE_VENETIAN_TILT_SAFETY_MARGIN = _RANGE_TILT_SAFETY_MARGIN
+# CONF_TILT_MIN_REFLECTED_ELEVATION, degrees above the inward horizontal
+# (0 = disabled). Capped at 90°: a floor beyond straight up is unreachable, and
+# at 90 the derived cap ``90 + (beta - N)/2`` still cannot fall below 45° for
+# any above-horizon beta, well inside the slat's direct-sun blocking band. (The
+# 45° figure is a bound on beta >= 0; beta goes negative below the horizon,
+# where the solar handler's valid_elevation gate keeps this code unreachable.)
+_RANGE_TILT_MIN_REFLECTED_ELEVATION = (0, 90)
 
 # Sun tracking.
 _RANGE_AZIMUTH = (0, 359)  # CONF_AZIMUTH, degrees

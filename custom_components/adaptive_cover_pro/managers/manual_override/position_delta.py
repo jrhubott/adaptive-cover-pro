@@ -13,7 +13,12 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from .detector import DetectionContext, OverrideDecision, OverrideDetector
+from .detector import (
+    DetectionContext,
+    OverrideDecision,
+    OverrideDetector,
+    position_unavailable_decision,
+)
 from .secondary_axis import effective_manual_threshold
 
 
@@ -84,14 +89,7 @@ class PositionDeltaDetector(OverrideDetector):
         # Position still unavailable (entity in transient state like "opening")
         # — nothing to compare against, skip override detection.
         if new_position is None:
-            return OverrideDecision(
-                event_name="manual_override_rejected_position_unavailable",
-                event_kwargs={
-                    "our_state": our_state,
-                    "new_position": None,
-                    "reason": "position unavailable (transient state)",
-                },
-            )
+            return position_unavailable_decision(context)
 
         # Cover's own state attribute says it's still in transit. The
         # current_position it just reported can lag the actual physical

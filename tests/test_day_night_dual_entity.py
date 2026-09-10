@@ -39,8 +39,11 @@ from custom_components.adaptive_cover_pro.coordinator import (
 from custom_components.adaptive_cover_pro.cover_types.day_night_shade import (
     DayNightShadePolicy,
 )
-from custom_components.adaptive_cover_pro.managers.manual_override import inverse_state
+from custom_components.adaptive_cover_pro.position_utils import inverse_state
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+from custom_components.adaptive_cover_pro.managers.manual_override import (
+    StateChangeInputs,
+)
 
 _BOTTOM = "cover.bottom_rail"
 _MIDDLE = "cover.middle_rail"
@@ -213,21 +216,25 @@ async def test_manual_override_per_rail() -> None:
     # the per-entity target distinction makes this a manual override; a shared
     # target would misread the middle rail as "already at target".
     manager.handle_state_change(
-        states_data=_state_event(_MIDDLE, 40),
-        our_state=cmd.get_target(_MIDDLE),
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
+        _state_event(_MIDDLE, 40),
+        StateChangeInputs(
+            our_state=cmd.get_target(_MIDDLE),
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+        ),
     )
     # The bottom rail is sitting exactly at its own recorded target of 40.
     manager.handle_state_change(
-        states_data=_state_event(_BOTTOM, 40),
-        our_state=cmd.get_target(_BOTTOM),
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
+        _state_event(_BOTTOM, 40),
+        StateChangeInputs(
+            our_state=cmd.get_target(_BOTTOM),
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+        ),
     )
 
     assert manager.is_cover_manual(_MIDDLE) is True

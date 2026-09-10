@@ -65,6 +65,7 @@ def _tilt(
     mode: str = "mode2",
     win_azi: float = 180.0,
     safety_margin: float = 0.0,
+    min_reflected_elevation: float = 0.0,
 ) -> AdaptiveTiltCover:
     """Build a plain venetian/tilt engine (the pitch=90 reduction target)."""
     return AdaptiveTiltCover(
@@ -78,6 +79,7 @@ def _tilt(
             depth=depth,
             mode=mode,
             safety_margin=safety_margin,
+            min_reflected_elevation=min_reflected_elevation,
         ),
     )
 
@@ -765,3 +767,67 @@ class TestSafetyMarginOnLouveredRoof:
         )
         tilt = _tilt(sol_azi=205, sol_elev=35, mode="mode2", safety_margin=1.0)
         assert louvered.calculate_position() == tilt.calculate_position()
+
+
+class TestReflectedBeamFloorOnLouveredRoof:
+    """The reflected-beam floor is inert on a real roof plane (#1282 x #830).
+
+    ``AdaptiveLouveredRoofCover`` inherits ``calculate_position`` wholesale, so a
+    constraint added to the base engine reaches it whether or not the roof's
+    geometry step offers the option — the ``set_geometry`` service can write the
+    key onto any entry. But two of #830's changes break the mapping the
+    constraint is derived from: ``_resolve_slat_angle`` realizes the pose as
+    ``90 +/- i`` rather than the raw cut-off, so ``phi = 90 - code_angle`` is
+    false, and ``beta`` is measured against the ROOF plane rather than the
+    facade. Applying the vertical-facade clamp there would compute a confident
+    number about nothing. It is closed with a polymorphic hook rather than a
+    cover-type string check, which the repo bans outside ``cover_types/``.
+
+    Each case below is chosen so the floor WOULD move the angle if the base hook
+    were inherited — a geometry where it happens to be inert proves nothing.
+    """
+
+    @pytest.mark.parametrize(("sol_azi", "sol_elev"), [(180.0, 70.0), (20.0, 70.0)])
+    def test_flat_roof_ignores_the_floor(self, sol_azi: float, sol_elev: float) -> None:
+        """Near side (``90 + i``) and far side (``90 - i``) alike."""
+        params = {
+            "sol_azi": sol_azi,
+            "sol_elev": sol_elev,
+            "roof_pitch": 0.0,
+            "mode": "mode2",
+        }
+        floored = _louvered(**params, min_reflected_elevation=60)
+        assert floored.calculate_position() == _louvered(**params).calculate_position()
+        trace = floored._last_calc_details
+        assert trace["reflected_beam_min_elevation_deg"] == 0.0
+        assert trace["reflected_beam_constrained"] is False
+
+    @pytest.mark.parametrize(("sol_azi", "sol_elev"), [(180.0, 50.0), (20.0, 70.0)])
+    def test_pitched_roof_ignores_the_floor(
+        self, sol_azi: float, sol_elev: float
+    ) -> None:
+        """A pitched plane is no more the facade plane than a flat one is."""
+        params = {
+            "sol_azi": sol_azi,
+            "sol_elev": sol_elev,
+            "roof_pitch": 30.0,
+            "mode": "mode2",
+        }
+        floored = _louvered(**params, min_reflected_elevation=60)
+        assert floored.calculate_position() == _louvered(**params).calculate_position()
+        trace = floored._last_calc_details
+        assert trace["reflected_beam_min_elevation_deg"] == 0.0
+        assert trace["reflected_beam_constrained"] is False
+
+    def test_pitch_90_still_matches_the_tilt_engine_with_the_floor_on(self) -> None:
+        """The vertical reduction keeps the floor — it IS the venetian case."""
+        sun = {"sol_azi": 205, "sol_elev": 35}
+        louvered = _louvered(**sun, roof_pitch=90, mode="mode2")
+        floored = _louvered(
+            **sun, roof_pitch=90, mode="mode2", min_reflected_elevation=30
+        )
+        # The floor must actually bite here, or the equality below is vacuous.
+        assert floored.calculate_position() < louvered.calculate_position()
+        assert floored.calculate_position() == pytest.approx(
+            _tilt(**sun, mode="mode2", min_reflected_elevation=30).calculate_position()
+        )

@@ -469,7 +469,7 @@ class TestResolveInverseState:
     """
 
     def test_cached_inverse_swaps_open_closed(self) -> None:
-        from custom_components.adaptive_cover_pro.managers.manual_override import (
+        from custom_components.adaptive_cover_pro.position_utils import (
             inverse_state,
         )
 
@@ -513,11 +513,9 @@ class TestResolveInverseState:
             CONF_INTERP_END,
             CONF_INTERP_START,
         )
-        from custom_components.adaptive_cover_pro.managers.manual_override import (
-            inverse_state,
-        )
         from custom_components.adaptive_cover_pro.position_utils import (
             interpolate_position,
+            inverse_state,
         )
 
         # 1. Cache non-inverse — a caller asking for inversion cannot impose it.
@@ -568,7 +566,7 @@ class TestResolveInverseIndependentOfClamp:
     """
 
     def test_deploy_inverse_on_floor_clamp_stays_inverted(self) -> None:
-        from custom_components.adaptive_cover_pro.managers.manual_override import (
+        from custom_components.adaptive_cover_pro.position_utils import (
             inverse_state,
         )
 
@@ -585,7 +583,7 @@ class TestResolveInverseIndependentOfClamp:
         assert policy.resolve_entity_target(_BACK, 40) == inverse_state(POSITION_CLOSED)
 
     def test_retract_inverse_on_floor_clamp_stays_inverted(self) -> None:
-        from custom_components.adaptive_cover_pro.managers.manual_override import (
+        from custom_components.adaptive_cover_pro.position_utils import (
             inverse_state,
         )
 

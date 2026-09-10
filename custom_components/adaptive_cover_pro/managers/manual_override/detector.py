@@ -22,6 +22,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from .expiry import STARTED_AT_SOURCE_ENGAGED
+from .secondary_axis import SecondaryAxisCheck
+
 
 @dataclass(frozen=True, slots=True)
 class DetectionContext:
@@ -106,20 +109,95 @@ class StopToMy:
     context_parent_id: str | None = None
 
 
+def never(_entity_id: str) -> bool:
+    """Return False always — the default for a gate predicate that is disabled.
+
+    Shared and named so an omitted gate is a CLOSED gate by construction: a
+    caller hands :class:`StateChangeInputs` a real predicate or nothing at all,
+    and no reader downstream has to distinguish ``None`` from "returns False"
+    (issue #1274).
+    """
+    return False
+
+
+@dataclass(frozen=True, slots=True)
+class StateChangeInputs:
+    """Everything ``handle_state_change`` needs besides the state-change event.
+
+    One dataclass in place of ten loose parameters (issue #1274): a new
+    detection signal becomes a field with a default here plus a read in the
+    engine, instead of a signature change rippling through every call site
+    (CODING_GUIDELINES.md § "Prefer Dataclasses Over Multi-Field Tuples").
+    """
+
+    our_state: int  # commanded/expected primary-axis position
+    policy: Any  # CoverTypePolicy — routes the read to the right axis
+    allow_reset: bool  # whether a fresh touch re-arms the override window
+    is_waiting: Callable[[str], bool]  # cover is moving toward a commanded target
+    manual_threshold: int | None
+    # Whether ACP has a recorded command target for this entity. When False,
+    # ``our_state`` is the pipeline's theoretical default rather than a
+    # commanded position, so a numeric delta against it is meaningless and the
+    # detector suppresses detection (issue #546).
+    has_recorded_target: bool = True
+    # Supplied by a dual-axis cover-type policy. When present the secondary
+    # axis is evaluated up front and a manual match short-circuits the
+    # position-axis check (issue #591).
+    secondary_axis_check: SecondaryAxisCheck | None = None
+    # True while the post-command grace window is open, so ACP's own movement
+    # is not read back as a user touch.
+    is_in_command_grace: Callable[[str], bool] = never
+    # True when HA reports the cover as ``opening``/``closing``. The position
+    # it reports mid-move can lag the physical one, so detection waits for the
+    # event that lands when the cover stops (issue #271).
+    is_in_transit: Callable[[str], bool] = never
+
+
+@dataclass(frozen=True, slots=True)
+class OverrideState:
+    """One cover's live manual override — the value type of the single store.
+
+    Since #1274 the manager keeps one ``dict[str, OverrideState]`` instead of
+    four parallel dicts keyed by the same entity_id: key presence IS "this
+    cover is overridden", so the armed flag can no longer disagree with the
+    start time. Frozen, so re-arming replaces the entry rather than mutating
+    one in place.
+
+    Attributes:
+        started_at: When the user touched the cover — the honest override
+            start, and the anchor every non-pinned deadline is resolved from.
+        expiry: A PINNED absolute end (issue #1044): the
+            ``engage_manual_override`` service's explicit ``end_time`` /
+            ``duration``, and the expiry restored after a reboot. A pin
+            outranks the configured duration mode. ``None`` — the common case
+            — leaves the end to ``AdaptiveCoverManager.expiry_for``.
+        start_source: How ``started_at`` was obtained — see
+            ``expiry.STARTED_AT_SOURCE_*``. Display/diagnostics only: nothing
+            branches on it. It exists because the engage paths record the
+            honest engage moment while the restore path can only reconstruct
+            one, so the same override reports a different ``started_at``
+            across a restart and a consumer needs to be told which it is
+            looking at.
+
+    """
+
+    started_at: dt.datetime
+    expiry: dt.datetime | None = None
+    start_source: str = STARTED_AT_SOURCE_ENGAGED
+
+
 @dataclass(frozen=True, slots=True)
 class DetectorConfig:
     """Config bundle handed to a detector at construction and on option changes.
 
-    ``command_window_seconds`` comes from ``CONF_TRANSIT_TIMEOUT``. The
-    manual-override slice fields (``reset``/``duration``/``ignore_external``)
-    are engine-level but exposed so a detector MAY use them.
+    ``command_window_seconds`` comes from ``CONF_TRANSIT_TIMEOUT`` (read by
+    ``TimeWindowDetector``); ``duration`` is the manual-override hold the engine
+    applies in ``AdaptiveCoverManager.update_config``. Add a field only when a
+    reader exists — three unread slice fields were pruned in #1274.
     """
 
-    manual_threshold: int | None
     command_window_seconds: float
-    reset: bool
     duration: dict
-    ignore_external: bool
 
 
 def _format_context_suffix(
@@ -182,6 +260,23 @@ def default_stop_to_my_decision(stop: StopToMy) -> OverrideDecision | None:
     )
 
 
+def position_unavailable_decision(context: DetectionContext) -> OverrideDecision:
+    """Return the verdict every detector gives for an unreadable position.
+
+    Transient states ("opening"/"closing"/unavailable) give nothing to compare
+    against, so detection is skipped and the rejection recorded. Shared so a
+    third detector cannot drift from the two shipped ones.
+    """
+    return OverrideDecision(
+        event_name="manual_override_rejected_position_unavailable",
+        event_kwargs={
+            "our_state": context.our_state,
+            "new_position": None,
+            "reason": "position unavailable (transient state)",
+        },
+    )
+
+
 class OverrideDetector(ABC):
     """Pluggable manual-override detection strategy.
 
@@ -227,13 +322,6 @@ class OverrideDetector(ABC):
     def on_covers_added(self, entities) -> None:
         """Covers were registered for tracking."""
 
-    # --- runtime config + persistence (defaults: no-op / stateless) ---
+    # --- runtime config (default: no-op) ---
     def update_config(self, config: DetectorConfig) -> None:
         """Apply an options change without a reload."""
-
-    def serialize_state(self) -> dict:
-        """Return detector-specific state to persist across restart (default: none)."""
-        return {}
-
-    def restore_state(self, data: dict) -> None:
-        """Rehydrate detector-specific state from :meth:`serialize_state`."""

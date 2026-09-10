@@ -150,7 +150,7 @@ async def test_transit_cleared_on_wait_timeout(svc):
 
     # Isolate the timeout-clear branch from the position-read machinery.
     svc._get_current_position = MagicMock(return_value=None)
-    svc._is_cover_in_transit = MagicMock(return_value=False)
+    svc.is_cover_in_transit = MagicMock(return_value=False)
 
     await svc.run_reconciliation_pass(now)
 

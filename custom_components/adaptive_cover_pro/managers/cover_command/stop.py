@@ -52,7 +52,7 @@ class StopTracker:
             is_in_transit_fn: Optional callable ``(entity_id) -> bool`` that
                 returns True when HA reports the cover as opening or closing.
                 Defaults to an inline check when omitted (standalone use).
-                ``CoverCommandService`` supplies ``self._is_cover_in_transit``
+                ``CoverCommandService`` supplies ``self.is_cover_in_transit``
                 so the transit predicate lives in exactly one place.
             queue_fn: Optional zero-arg callable returning the entry's
                 :class:`CommandQueue`, or ``None`` when the cover is unqueued
@@ -112,7 +112,7 @@ class StopTracker:
         triggers the My preset). This gate applies to shutdown paths only.
 
         Delegates to the injected ``is_in_transit_fn`` (supplied by
-        ``CoverCommandService`` as ``self._is_cover_in_transit``) so the
+        ``CoverCommandService`` as ``self.is_cover_in_transit``) so the
         transit predicate lives in one place.
         """
         return self._is_in_transit_fn(entity_id)

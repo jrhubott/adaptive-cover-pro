@@ -375,7 +375,7 @@ async def test_force_true_does_not_engage_manual_override() -> None:
 async def test_snapshot_passed_to_pipeline_has_manual_override_false() -> None:
     """Meta-bug guard: preemption snapshot must force manual_override_active=False.
 
-    Otherwise a stale manual_control flag would self-claim priority 80 and
+    Otherwise a stale manual override would self-claim priority 80 and
     let the cover move anyway.
     """
     coord, _ctx = _make_coord([], winner_name="solar", winner_priority=40)

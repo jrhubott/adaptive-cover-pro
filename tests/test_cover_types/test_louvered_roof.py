@@ -10,6 +10,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ROOF_PITCH,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_MIN_REFLECTED_ELEVATION,
     CONF_TILT_MODE,
     DEFAULT_MAX_SLAT_ANGLE,
 )
@@ -147,6 +148,16 @@ class TestLouveredRoofPolicy:
         schema = get_policy(COVER_TYPE).geometry_schema()
         assert _schema_default(schema, CONF_MAX_SLAT_ANGLE) == DEFAULT_MAX_SLAT_ANGLE
 
+    def test_geometry_schema_omits_min_reflected_elevation(self) -> None:
+        """The reflected-beam floor (#1282) is not offered on a roof plane.
+
+        ``AdaptiveLouveredRoofCover._min_reflected_elevation_deg`` already
+        disables the constraint off vertical pitch — this keeps the form from
+        advertising a control that would do nothing.
+        """
+        keys = _schema_keys(get_policy(COVER_TYPE).geometry_schema())
+        assert CONF_TILT_MIN_REFLECTED_ELEVATION not in keys
+
     def test_disallows_vertical_and_awning_geometry(self) -> None:
         policy = get_policy(COVER_TYPE)
         vertical_only = {"distance_shaded_area"}
@@ -189,6 +200,36 @@ class TestLouveredRoofPolicy:
         assert "slat depth 3.0cm" in joined
         assert "spacing 2.0cm" in joined
         assert "roof pitch 15° from horizontal" in joined
+
+    def test_summary_omits_min_reflected_elevation_even_when_stored(self) -> None:
+        """A roof entry that acquired the key must not claim the constraint.
+
+        The schema pops the field, so the UI cannot set it — but ``set_geometry``
+        and a hand-edited entry still can, and the shared tilt renderer keys
+        purely on the option's presence. Since
+        ``AdaptiveLouveredRoofCover._min_reflected_elevation_deg`` returns the
+        disabled sentinel off vertical pitch, printing the line would promise a
+        constraint the engine has already switched off (#1282 audit).
+        """
+        policy = get_policy(COVER_TYPE)
+        config = {
+            CONF_TILT_DEPTH: 3.0,
+            CONF_TILT_DISTANCE: 2.0,
+            CONF_TILT_MODE: "mode2",
+            CONF_ROOF_PITCH: 15,
+            CONF_TILT_MIN_REFLECTED_ELEVATION: 30,
+        }
+        joined = " ".join(policy.summary_geometry_lines(config))
+        assert "reflected sun kept at least" not in joined
+        # The rest of the shared block still renders — this suppresses one part,
+        # not the delegation.
+        assert "slat depth 3.0cm" in joined
+        assert "roof pitch 15° from horizontal" in joined
+        # And the tilt policy over the same config still DOES render it, so the
+        # test would catch the label simply being renamed out of existence.
+        assert "reflected sun kept at least 30° up" in " ".join(
+            get_policy("cover_tilt").summary_geometry_lines(config)
+        )
 
     def test_geometry_slat_keys(self) -> None:
         keys = get_policy(COVER_TYPE).geometry_slat_keys()

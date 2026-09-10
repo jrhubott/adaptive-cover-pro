@@ -1867,7 +1867,7 @@ async def test_reconciliation_withholds_the_middle_rail_until_the_bottom_clears(
     Both rails hold recorded targets and the bottom rail has drifted back up to
     95, dragging the middle rail with it. Resending the middle rail's 65 while
     the bottom is still stacked above drives the motor into a mechanical block —
-    and ``_is_cover_in_transit`` cannot save it, because a mechanically-dragged
+    and ``is_cover_in_transit`` cannot save it, because a mechanically-dragged
     rail reports ``open``, never ``closing``.
     """
     monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)

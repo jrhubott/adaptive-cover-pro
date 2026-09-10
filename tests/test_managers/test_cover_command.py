@@ -19,6 +19,9 @@ from custom_components.adaptive_cover_pro.managers.cover_command import (
 from custom_components.adaptive_cover_pro.managers.cover_command.gates import (
     check_position_delta,
 )
+from custom_components.adaptive_cover_pro.managers.manual_override import (
+    StateChangeInputs,
+)
 
 
 @pytest.fixture
@@ -2725,13 +2728,15 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_does_not_tri
     event.new_state.last_updated = dt.datetime.now(dt.UTC)
 
     mgr.handle_state_change(
-        states_data=event,
-        our_state=recorded_target,
-        policy=get_policy("cover_blind"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        has_recorded_target=recorded_target is not None,
+        event,
+        StateChangeInputs(
+            our_state=recorded_target,
+            policy=get_policy("cover_blind"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            has_recorded_target=recorded_target is not None,
+        ),
     )
 
     assert not mgr.is_cover_manual("cover.test")

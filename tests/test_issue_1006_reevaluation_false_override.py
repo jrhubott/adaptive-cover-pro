@@ -58,6 +58,7 @@ from custom_components.adaptive_cover_pro.managers.grace_period import (
 )
 from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
+    StateChangeInputs,
 )
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
@@ -207,16 +208,18 @@ async def test_endpoint_tilt_arrival_after_reevaluation_is_not_manual() -> None:
 
     mgr = _make_manager(entity_id)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=60, tilt=45),
-        our_state=expected_position,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        has_recorded_target=recorded_target is not None,
-        secondary_axis_check=check,
-        is_in_command_grace=lambda _eid: False,
-        is_in_transit=lambda _eid: False,
+        _make_event(entity_id, position=60, tilt=45),
+        StateChangeInputs(
+            our_state=expected_position,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            has_recorded_target=recorded_target is not None,
+            secondary_axis_check=check,
+            is_in_command_grace=lambda _eid: False,
+            is_in_transit=lambda _eid: False,
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id), (
@@ -280,16 +283,18 @@ def test_mid_transit_rebase_does_not_orphan_dispatched_position_endpoint() -> No
     recorded_target = cmd_svc.get_target(entity_id)
     mgr = _make_manager(entity_id)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=100, tilt=None),
-        our_state=recorded_target,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        has_recorded_target=recorded_target is not None,
-        secondary_axis_check=None,
-        is_in_command_grace=lambda _eid: False,
-        is_in_transit=lambda _eid: False,
+        _make_event(entity_id, position=100, tilt=None),
+        StateChangeInputs(
+            our_state=recorded_target,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            has_recorded_target=recorded_target is not None,
+            secondary_axis_check=None,
+            is_in_command_grace=lambda _eid: False,
+            is_in_transit=lambda _eid: False,
+        ),
     )
     assert not mgr.is_cover_manual(entity_id)
 
@@ -327,16 +332,18 @@ async def test_combined_position_and_tilt_endpoint_after_reevaluation_is_not_man
 
     mgr = _make_manager(entity_id)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=60, tilt=45),
-        our_state=expected_position,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        has_recorded_target=recorded_target is not None,
-        secondary_axis_check=check,
-        is_in_command_grace=lambda _eid: False,
-        is_in_transit=lambda _eid: False,
+        _make_event(entity_id, position=60, tilt=45),
+        StateChangeInputs(
+            our_state=expected_position,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            has_recorded_target=recorded_target is not None,
+            secondary_axis_check=check,
+            is_in_command_grace=lambda _eid: False,
+            is_in_transit=lambda _eid: False,
+        ),
     )
 
     assert not mgr.is_cover_manual(
@@ -469,16 +476,18 @@ async def test_dns_model_a_tilt_expected_is_dispatched_not_reevaluated() -> None
     recorded_target = cmd_svc.get_target(entity_id)
     mgr = _make_manager(entity_id)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=60, tilt=45),
-        our_state=recorded_target,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        has_recorded_target=recorded_target is not None,
-        secondary_axis_check=check,
-        is_in_command_grace=lambda _eid: False,
-        is_in_transit=lambda _eid: False,
+        _make_event(entity_id, position=60, tilt=45),
+        StateChangeInputs(
+            our_state=recorded_target,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            has_recorded_target=recorded_target is not None,
+            secondary_axis_check=check,
+            is_in_command_grace=lambda _eid: False,
+            is_in_transit=lambda _eid: False,
+        ),
     )
     assert not mgr.is_cover_manual(entity_id), (
         "DNS Model A settle at the dispatched blend after a reevaluation must "
@@ -522,16 +531,18 @@ def test_empty_tilt_anchor_yields_no_tilt_manual_detection() -> None:
     mgr = _make_manager(entity_id)
     mgr.handle_state_change(
         # Coupled open endpoint: position reached (100), tilt follows to ≈100.
-        states_data=_make_event(entity_id, position=100, tilt=100),
-        our_state=recorded_target,
-        policy=policy,
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        has_recorded_target=recorded_target is not None,
-        secondary_axis_check=check,
-        is_in_command_grace=lambda _eid: False,
-        is_in_transit=lambda _eid: False,
+        _make_event(entity_id, position=100, tilt=100),
+        StateChangeInputs(
+            our_state=recorded_target,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=5,
+            has_recorded_target=recorded_target is not None,
+            secondary_axis_check=check,
+            is_in_command_grace=lambda _eid: False,
+            is_in_transit=lambda _eid: False,
+        ),
     )
 
     assert not mgr.is_cover_manual(entity_id), (

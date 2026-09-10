@@ -67,16 +67,17 @@ class TimeWindowManager:
                 daytime-gate template — the ``acp`` self-reference namespace
                 built once by the coordinator (issue #1159).
             sunrise_provider: Optional zero-arg closure returning today's
-                astronomical sunrise as naive-local wall-clock time (or
-                ``None`` when unresolvable). Consulted only by
-                :pyattr:`after_start_time`, only when no start time is
-                configured AND an end bound is configured, so a blank start
-                anchors the window's lower bound to sunrise instead of
-                midnight (issue #1256) rather than leaving the window open
-                all night. Injected — like the ``ConditionGate`` readers
-                below — so tests drive it deterministically; omitting it
-                (the default) preserves the pre-#1256 fail-open-to-True
-                behaviour.
+                sunrise boundary as naive-local wall-clock time (or ``None``
+                when unresolvable). Read through :meth:`_resolved_sunrise` by
+                the manager's two sunrise consumers: the blank-start anchor in
+                :pyattr:`after_start_time` (no start configured AND an end
+                bound configured, so a blank start anchors the window's lower
+                bound to sunrise instead of midnight — issue #1256), and the
+                opt-in floor on a REAL start in :meth:`_resolve_start_datetime`
+                (``sunrise_gates_start``, issue #1340). Injected — like the
+                ``ConditionGate`` readers below — so tests drive it
+                deterministically; omitting it (the default) preserves the
+                pre-#1256 fail-open-to-True behaviour.
 
         """
         self._hass = hass
@@ -92,6 +93,8 @@ class TimeWindowManager:
         self._start_time_entity: str | None = None
         self._end_time_config: str | None = None
         self._end_time_entity: str | None = None
+        # Issue #1340: opt-in sunrise floor on a REAL configured start.
+        self._sunrise_gates_start: bool = False
 
         # The daytime gate (issue #632) — sensors and/or a Jinja condition folded
         # into one tri-state verdict, holding its last-known answer for a grace
@@ -125,6 +128,7 @@ class TimeWindowManager:
         gate_sensors: list[str] = (),
         gate_template: str | None = None,
         gate_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
+        sunrise_gates_start: bool = False,
     ) -> None:
         """Update configuration values.
 
@@ -137,12 +141,18 @@ class TimeWindowManager:
             gate_template: Optional daytime-gate Jinja condition (truthy = daytime)
             gate_template_mode: How ``gate_template`` folds with the sensors
                 (a :class:`~const.TemplateCombineMode` value, or/and)
+            sunrise_gates_start: Opt-in sunrise floor on a REAL configured start
+                (issue #1340) — the effective start becomes ``max(configured
+                start, resolved sunrise)``. ``False`` (the default, and every
+                pre-#1340 install) keeps #438's behaviour: a start earlier than
+                sunrise opens the window at the start time.
 
         """
         self._start_time = start_time
         self._start_time_entity = start_time_entity
         self._end_time_config = end_time
         self._end_time_entity = end_time_entity
+        self._sunrise_gates_start = sunrise_gates_start
         # Runs every cycle; the kernel forgets a held verdict only when the gate
         # config actually changed (issue #742).
         self._gate.update_config(gate_sensors, gate_template, gate_template_mode)
@@ -256,7 +266,18 @@ class TimeWindowManager:
             return time.replace(year=today.year, month=today.month, day=today.day)
         return time
 
-    def _resolve_start_datetime(self) -> dt.datetime | None:
+    def _resolved_sunrise(self) -> dt.datetime | None:
+        """Today's sunrise boundary as naive-local wall-clock time, or ``None``.
+
+        The manager's single reading of "sunrise", shared by the #1256
+        blank-start anchor (:pyattr:`after_start_time`) and the #1340 sunrise
+        floor (:meth:`_resolve_start_datetime`) so the two can never disagree
+        about the same morning (CODING_GUIDELINES.md no-duplication rule).
+        ``None`` when no provider was injected or it could not resolve.
+        """
+        return self._sunrise_provider() if self._sunrise_provider else None
+
+    def _resolve_configured_start(self) -> dt.datetime | None:
         """Resolve the configured start time to a datetime, clock-independent.
 
         The pure start-resolution ``_start_has_passed`` performs, without the
@@ -286,6 +307,42 @@ class TimeWindowManager:
                 return None
             return time
         return None
+
+    def _resolve_start_datetime(self) -> dt.datetime | None:
+        """Return the EFFECTIVE window start: the configured start, floored at sunrise.
+
+        Every start-derived predicate on this manager routes through here —
+        :pyattr:`after_start_time`, :pyattr:`clock_window_open`,
+        :pyattr:`is_active`, :pyattr:`resolved_start_time` and
+        :pyattr:`window_explicitly_started` — which is what makes the #1340
+        opt-in a one-site change: the window stays shut (so the climate handler,
+        gated on ``in_time_window``, cannot open the cover in the dark) AND
+        ``window_explicitly_started`` stays False (so ``compute_effective_default``
+        keeps the night position). Gating only the effective default would fix
+        the second and leave climate free to open the cover anyway.
+
+        Off (the default) this is exactly :meth:`_resolve_configured_start`, so
+        #438 is untouched. A BLANK start resolves to ``None`` here and never
+        acquires one: the #1256 sunrise anchor stays in
+        :pyattr:`after_start_time`, where it cannot leak into
+        ``window_explicitly_started`` (#492/#493).
+        """
+        start = self._resolve_configured_start()
+        if start is None or not self._sunrise_gates_start:
+            return start
+        sunrise = self._resolved_sunrise()
+        if sunrise is None or sunrise <= start:
+            # No resolvable sunrise fails open to the configured start, matching
+            # after_start_time's own #1256 contract; a sunrise already past the
+            # start makes the floor a no-op (the max() rule, #383's direction).
+            return start
+        end = self.end_time
+        if end is not None and sunrise >= end:
+            # A sunrise past the end bound would invert the window and trip the
+            # "Start time is after end time" health check — the configured
+            # start governs instead (polar winter).
+            return start
+        return sunrise
 
     @property
     def resolved_start_time(self) -> dt.datetime | None:
@@ -344,7 +401,7 @@ class TimeWindowManager:
         if passed is not None:
             return passed
         if _bound_is_configured(self._end_time_entity, self._end_time_config):
-            sunrise = self._sunrise_provider() if self._sunrise_provider else None
+            sunrise = self._resolved_sunrise()
             if sunrise is not None:
                 return local_now_naive() >= sunrise
         return True
@@ -358,6 +415,13 @@ class TimeWindowManager:
         suppress the overnight position only when the user's operational window
         has genuinely opened — not when the start time is merely blank
         (issue #492). Returns False when no real start is configured.
+
+        "Has passed" is measured against the EFFECTIVE start
+        (:meth:`_resolve_start_datetime`), not the raw configured one. So with
+        ``sunrise_gates_start`` on this cannot be True before the resolved
+        sunrise, and the night position survives until then (issue #1340); with
+        it off — every pre-#1340 install — the configured start alone decides,
+        which is #438's behaviour unchanged.
 
         """
         passed = self._start_has_passed()

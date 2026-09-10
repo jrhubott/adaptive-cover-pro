@@ -861,8 +861,8 @@ class TestSplitRangeHoldFabricLifecycle:
     ``coordinator.async_apply_user_position`` evaluates the pipeline off-cycle
     with no ``sync_runtime_options`` ahead of it, that evaluate can reach
     ``hold_reference_position`` and set the stash, and ``_async_update_data``
-    suspends twice — ``prime_cache`` and ``manager.reset_if_needed`` — between the
-    clear and the consume with nothing serialising the two. A write really can
+    suspends once — on ``prime_cache`` — between the clear and the consume with
+    nothing serialising the two. A write really can
     land in that window.
 
     What keeps it out of the fold is the consume side. ``post_pipeline_resolve``
@@ -1453,7 +1453,7 @@ class TestDualEntityMapping:
     def test_inverse_state_round_trip(self) -> None:
         # With inverse state on, the wire value must un-invert to the same
         # open-percent middle-rail position the non-inverse mapping produces.
-        from custom_components.adaptive_cover_pro.managers.manual_override import (
+        from custom_components.adaptive_cover_pro.position_utils import (
             inverse_state,
         )
 

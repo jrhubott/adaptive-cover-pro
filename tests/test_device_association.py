@@ -1,15 +1,21 @@
 """Tests for optional device association feature."""
 
+import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from homeassistant.helpers import device_registry as dr
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_DEVICE_ID,
     CONF_ENTITIES,
     CONF_SENSOR_TYPE,
     DOMAIN,
+    CoverType,
 )
+from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -311,3 +317,109 @@ def test_options_device_step_removal_clears_device_id():
         options.pop(CONF_DEVICE_ID, None)
 
     assert CONF_DEVICE_ID not in options
+
+
+# ---------------------------------------------------------------------------
+# async_setup_entry: stale config-entry link cleanup
+# ---------------------------------------------------------------------------
+#
+# These two characterise the loop in ``async_setup_entry`` that strips this
+# entry's id off physical devices it no longer owns.  They use the real
+# ``hass`` fixture and a real device registry — a mock would only re-pin
+# whichever registry API the production code happens to call today, which is
+# exactly what issue #1339 changes.  They deliberately carry no ``integration``
+# mark so the guard runs in every ``scripts/test`` mode.
+
+
+async def _setup_acp_entry_owning_device(
+    hass,
+    *,
+    identifiers: set[tuple[str, str]],
+    entry_id: str,
+) -> tuple[MockConfigEntry, str]:
+    """Link a foreign-owned device to a fresh ACP entry, then set that entry up.
+
+    The ACP entry's options carry no ``CONF_DEVICE_ID``, so ``async_setup_entry``
+    takes the "no device association" branch and runs the stale-link loop.
+    Returns the ACP entry and the device id.
+    """
+    owner = MockConfigEntry(domain="demo", entry_id=f"{entry_id}_owner")
+    owner.add_to_hass(hass)
+
+    acp_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Stale Link", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id=entry_id,
+        title="Stale Link",
+    )
+    acp_entry.add_to_hass(hass)
+
+    device_reg = dr.async_get(hass)
+    device = device_reg.async_get_or_create(
+        config_entry_id=owner.entry_id,
+        identifiers=identifiers,
+        name="Physical Cover",
+    )
+    device_reg.async_update_device(device.id, add_config_entry_id=acp_entry.entry_id)
+    assert acp_entry.entry_id in device_reg.async_get(device.id).config_entries
+
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    hass.states.async_set(
+        "sun.sun",
+        "above_horizon",
+        {
+            "azimuth": 180.0,
+            "elevation": 45.0,
+            "rising": True,
+            "next_rising": now,
+            "next_setting": now,
+        },
+    )
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {"current_position": 100, "supported_features": 143},
+    )
+
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(acp_entry.entry_id)
+        await hass.async_block_till_done()
+
+    return acp_entry, device.id
+
+
+@pytest.mark.asyncio
+async def test_stale_config_entry_link_removed_from_physical_device(hass):
+    """Setup strips this entry's id off a physical device it does not identify.
+
+    The device carries our config entry id but not our ``(DOMAIN, entry_id)``
+    identifier — the leftover of a device association the user has since
+    cleared.  Setting up with no ``CONF_DEVICE_ID`` must unlink it.
+    """
+    acp_entry, device_id = await _setup_acp_entry_owning_device(
+        hass,
+        identifiers={("demo", "physical-cover-1")},
+        entry_id="stale_link_removed",
+    )
+
+    device = dr.async_get(hass).async_get(device_id)
+    assert acp_entry.entry_id not in device.config_entries
+
+
+@pytest.mark.asyncio
+async def test_own_virtual_device_link_preserved(hass):
+    """A device carrying our own identifier keeps the link.
+
+    The control for the test above: it pins the surviving condition
+    (``(DOMAIN, entry_id) not in device.identifiers``), so a change to the way
+    the loop enumerates devices cannot quietly unlink our own virtual device.
+    """
+    acp_entry, device_id = await _setup_acp_entry_owning_device(
+        hass,
+        identifiers={(DOMAIN, "virtual_device_kept")},
+        entry_id="virtual_device_kept",
+    )
+
+    device = dr.async_get(hass).async_get(device_id)
+    assert acp_entry.entry_id in device.config_entries

@@ -15,6 +15,7 @@ from .const import (
     DEFAULT_SOLAR_COVER_SHADE,
     DEFAULT_SOLAR_COVER_SIDE,
     DEFAULT_SOLAR_G_GLAZING,
+    DEFAULT_SUNRISE_GATES_START,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WEATHER_ENABLED,
     VENETIAN_TILT_TRANSFORM_CLAMP,
@@ -635,6 +636,14 @@ class TiltConfig:
     # the slat on a travel limit and there is no closure left to scale — see
     # ``engine/covers/tilt.py``.
     safety_margin: float = 0.0
+    # Minimum elevation (degrees, profile plane) the beam reflected off the
+    # slats' upper face may leave at (issue #1282). ``0.0`` (the default,
+    # mirroring const.DEFAULT_TILT_MIN_REFLECTED_ELEVATION) is the DISABLED
+    # sentinel — the solved slat angle is then returned untouched, byte-for-byte.
+    # A positive value caps the angle at ``90 + (beta - N)/2``, which only ever
+    # CLOSES the slat, so the direct-sun cut-off stays an invariant. See
+    # ``engine/covers/tilt.constrain_reflected_beam``.
+    min_reflected_elevation: float = 0.0
     # Output transform for the sun-tracking tilt demand (issue #957). "clamp"
     # (default) flat-caps at the [min_tilt, max_tilt] band edges — today's exact
     # behaviour; "proportional" linearly remaps the full 0–100% demand into the
@@ -717,6 +726,10 @@ class TimeWindowSlice:
     gate_sensors: list[str] = field(default_factory=list)
     gate_template: str | None = None
     gate_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
+    # Opt-in sunrise floor on a REAL configured start (issue #1340). False —
+    # every pre-#1340 install — keeps #438: an early start opens the window at
+    # the start time.
+    sunrise_gates_start: bool = DEFAULT_SUNRISE_GATES_START
 
 
 @dataclass(frozen=True, slots=True)
@@ -907,6 +920,7 @@ class RuntimeConfig:
             CONF_POSITION_TOLERANCE,
             CONF_START_ENTITY,
             CONF_START_TIME,
+            CONF_SUNRISE_GATES_START,
             CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
             CONF_VENETIAN_MODE,
             CONF_VENETIAN_POST_SETTLE_HOLD,
@@ -940,10 +954,12 @@ class RuntimeConfig:
             DEFAULT_ENABLE_POSITION_MATCHING,
             DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
             DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS,
+            DEFAULT_MANUAL_OVERRIDE_DURATION,
             DEFAULT_MAX_COVERAGE_STEPS,
             DEFAULT_MINIMIZE_MOVEMENTS,
             DEFAULT_MOTION_TIMEOUT,
             DEFAULT_OUTSIDE_TEMP_SOURCE,
+            DEFAULT_SUNRISE_GATES_START,
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             DEFAULT_VENETIAN_MODE,
             DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
@@ -1002,7 +1018,15 @@ class RuntimeConfig:
             ),
             manual_override=ManualOverrideSlice(
                 reset=options.get(CONF_MANUAL_OVERRIDE_RESET, False),
-                duration=options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2},
+                # Copied, not aliased: the constant is a mutable dict and this
+                # value reaches ``coordinator.manual_duration`` and
+                # ``DetectorConfig.duration``, so handing out the module-level
+                # object would let one entry's in-place edit retune every other
+                # entry's override window (issue #1274).
+                duration=(
+                    options.get(CONF_MANUAL_OVERRIDE_DURATION)
+                    or dict(DEFAULT_MANUAL_OVERRIDE_DURATION)
+                ),
                 ignore_external=options.get(CONF_MANUAL_IGNORE_EXTERNAL, False),
                 input_entities=options.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES, []),
                 input_template=options.get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE),
@@ -1020,6 +1044,9 @@ class RuntimeConfig:
                 gate_template=options.get(CONF_DAYTIME_GATE_TEMPLATE),
                 gate_template_mode=options.get(
                     CONF_DAYTIME_GATE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+                ),
+                sunrise_gates_start=options.get(
+                    CONF_SUNRISE_GATES_START, DEFAULT_SUNRISE_GATES_START
                 ),
             ),
             motion=MotionSlice(

@@ -20,6 +20,9 @@ import datetime as dt
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.cover_types import get_policy
+from custom_components.adaptive_cover_pro.managers.manual_override import (
+    StateChangeInputs,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -244,12 +247,14 @@ class TestManualOverrideAfterGracePeriod:
 
         # After the fix, wait_for_target is cleared; handle_state_change sees False
         manager.handle_state_change(
-            states_data=event,
-            our_state=target,
-            policy=get_policy("cover_blind"),
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=5,
+            event,
+            StateChangeInputs(
+                our_state=target,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=5,
+            ),
         )
 
         assert manager.is_cover_manual(
@@ -276,12 +281,14 @@ class TestManualOverrideAfterGracePeriod:
         event = _make_state_change_data(entity_id, motor_rounding)
 
         manager.handle_state_change(
-            states_data=event,
-            our_state=target,
-            policy=get_policy("cover_blind"),
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=5,
+            event,
+            StateChangeInputs(
+                our_state=target,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=5,
+            ),
         )
 
         assert not manager.is_cover_manual(
@@ -313,12 +320,14 @@ class TestManualOverrideAfterGracePeriod:
         # wait_for_target still True (grace period active — coordinator bails early,
         # so handle_state_change is never reached)
         manager.handle_state_change(
-            states_data=event,
-            our_state=target,
-            policy=get_policy("cover_blind"),
-            allow_reset=True,
-            is_waiting=lambda _eid: True,
-            manual_threshold=5,
+            event,
+            StateChangeInputs(
+                our_state=target,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: True,
+                manual_threshold=5,
+            ),
         )
 
         # Guard still in handle_state_change for any call paths that bypass

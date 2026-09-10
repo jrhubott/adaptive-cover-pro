@@ -20,6 +20,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import DecisionStep
 from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
 from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
+    StateChangeInputs,
 )
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.const import ControlMethod
@@ -149,12 +150,14 @@ class TestRingBufferEvents:
         mgr, event_buffer = _make_manager()
         event = _make_state_event("cover.test", new_pos=80, old_pos=50)
         mgr.handle_state_change(
-            states_data=event,
-            our_state=50,
-            policy=get_policy("cover_blind"),
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=3,
+            event,
+            StateChangeInputs(
+                our_state=50,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=3,
+            ),
         )
         buf = event_buffer.snapshot()
         set_events = [e for e in buf if e["event"] == "manual_override_set"]
@@ -169,12 +172,14 @@ class TestRingBufferEvents:
         mgr, event_buffer = _make_manager()
         event = _make_state_event("cover.test", new_pos=51, old_pos=50)
         mgr.handle_state_change(
-            states_data=event,
-            our_state=50,
-            policy=get_policy("cover_blind"),
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=5,
+            event,
+            StateChangeInputs(
+                our_state=50,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=5,
+            ),
         )
         buf = event_buffer.snapshot()
         rejected = [
@@ -187,12 +192,14 @@ class TestRingBufferEvents:
         mgr, event_buffer = _make_manager()
         event = _make_state_event("cover.test", new_pos=80)
         mgr.handle_state_change(
-            states_data=event,
-            our_state=50,
-            policy=get_policy("cover_blind"),
-            allow_reset=True,
-            is_waiting=lambda _eid: True,
-            manual_threshold=3,
+            event,
+            StateChangeInputs(
+                our_state=50,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: True,
+                manual_threshold=3,
+            ),
         )
         buf = event_buffer.snapshot()
         rejected = [
@@ -212,12 +219,14 @@ class TestRingBufferEvents:
             return_value=None,
         ):
             mgr.handle_state_change(
-                states_data=event,
-                our_state=50,
-                policy=get_policy("cover_blind"),
-                allow_reset=True,
-                is_waiting=lambda _eid: False,
-                manual_threshold=3,
+                event,
+                StateChangeInputs(
+                    our_state=50,
+                    policy=get_policy("cover_blind"),
+                    allow_reset=True,
+                    is_waiting=lambda _eid: False,
+                    manual_threshold=3,
+                ),
             )
         buf = event_buffer.snapshot()
         rejected = [
@@ -230,7 +239,7 @@ class TestRingBufferEvents:
     def test_reset_records_reset_event(self):
         """reset() records a 'manual_override_reset' event in the buffer."""
         mgr, event_buffer = _make_manager()
-        mgr.manual_control["cover.test"] = True
+        mgr.mark_user_command("cover.test", reason="test setup")
         mgr.reset("cover.test")
         buf = event_buffer.snapshot()
         reset_events = [e for e in buf if e["event"] == "manual_override_reset"]
@@ -242,12 +251,14 @@ class TestRingBufferEvents:
         mgr, event_buffer = _make_manager()
         event = _make_state_event("cover.test", new_pos=80)
         mgr.handle_state_change(
-            states_data=event,
-            our_state=50,
-            policy=get_policy("cover_blind"),
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=3,
+            event,
+            StateChangeInputs(
+                our_state=50,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=3,
+            ),
         )
         required_keys = {
             "ts",
@@ -265,12 +276,14 @@ class TestRingBufferEvents:
         mgr, event_buffer = _make_manager()
         event = _make_state_event("cover.test", new_pos=80)
         mgr.handle_state_change(
-            states_data=event,
-            our_state=50,
-            policy=get_policy("cover_blind"),
-            allow_reset=True,
-            is_waiting=lambda _eid: False,
-            manual_threshold=3,
+            event,
+            StateChangeInputs(
+                our_state=50,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: False,
+                manual_threshold=3,
+            ),
         )
         ev = event_buffer.snapshot()[0]
         dt.datetime.fromisoformat(ev["ts"])

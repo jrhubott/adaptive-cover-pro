@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
@@ -411,7 +411,7 @@ async def test_recover_on_restart_called_before_calculate_on_first_refresh():
     coordinator.state_change = False
     coordinator.cover_state_change = False
     coordinator.manager.manual_controlled = []
-    coordinator.manager.reset_if_needed = AsyncMock(return_value=False)
+    coordinator.manager.reset_if_needed = Mock(return_value=set())
     coordinator.async_handle_first_refresh = AsyncMock()
     coordinator._update_solar_times_if_needed = AsyncMock(return_value=(None, None))
     coordinator._pipeline_result = MagicMock()
@@ -465,7 +465,7 @@ async def test_recover_on_restart_not_called_on_subsequent_refresh():
     coordinator.state_change = False
     coordinator.cover_state_change = False
     coordinator.manager.manual_controlled = []
-    coordinator.manager.reset_if_needed = AsyncMock(return_value=False)
+    coordinator.manager.reset_if_needed = Mock(return_value=set())
     coordinator._update_solar_times_if_needed = AsyncMock(return_value=(None, None))
     coordinator._pipeline_result = MagicMock()
     # Dispatch is exercised by its own tests; stub the extracted step so the
