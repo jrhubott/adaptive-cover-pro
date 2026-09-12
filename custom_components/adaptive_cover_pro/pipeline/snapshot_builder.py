@@ -452,10 +452,14 @@ class PipelineSnapshotBuilder:
         if not bool(options.get(CONF_ENABLE_SUN_TRACKING, True)):
             return SunTrackingState(enabled=False)
         if self._sun_tracking_gate.resolved(default=True):
-            # Nothing closed the gate, so nothing is blocking. Sensors fold with
-            # ``any``, so an off sensor alongside an on one blocked no one, and
-            # naming it would point the user at an innocent entity (issue #1359).
+            # Tracking is live, so there is nothing to explain and no blocker to
+            # name (issue #1359).
             return SunTrackingState(enabled=True)
+        # ``blocking_sensors`` answers "did the SENSORS close it", which is not
+        # the same question as "is the gate closed": in AND mode a false template
+        # closes a gate the sensors voted open, and it correctly returns empty
+        # there rather than naming an entity ``any`` had already outvoted. So a
+        # closed gate may legitimately carry no blockers.
         return SunTrackingState(
             enabled=False,
             gate_closed=True,

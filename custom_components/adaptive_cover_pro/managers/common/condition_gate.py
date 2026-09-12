@@ -137,9 +137,14 @@ class ConditionGate:
         """One read pass → ``(sensor_opinion, the sensors voting shut)``.
 
         The single definition of what this cycle's sensors say, so
-        :meth:`live_verdict` and :pyattr:`blocking_sensors` can never disagree —
-        two independent read passes could observe different states and produce a
-        blocker list inconsistent with the verdict it is supposed to explain.
+        :meth:`live_verdict` and :pyattr:`blocking_sensors` cannot disagree on
+        the *logic* — one place decides both the fold and who caused it.
+
+        It does not make them atomic: each caller runs this afresh, so a state
+        change between a ``resolved()`` and a ``blocking_sensors`` read can still
+        yield a blocker list describing a slightly older verdict. That window is
+        one cycle wide and self-correcting, and closing it would mean threading a
+        captured pair through the builder for a diagnostic string.
 
         ``sensor_opinion`` is ``None`` when there are no sensors or every one
         reads invalid, else ``any`` valid sensor is ``"on"``. The blocker list is
@@ -155,7 +160,8 @@ class ConditionGate:
         if not valid:
             return None, ()
         opinion = any(s == "on" for _entity_id, s in valid)
-        return opinion, () if opinion else tuple(entity_id for entity_id, _s in valid)
+        blockers = () if opinion else tuple(entity_id for entity_id, _s in valid)
+        return opinion, blockers
 
     @property
     def blocking_sensors(self) -> tuple[str, ...]:
