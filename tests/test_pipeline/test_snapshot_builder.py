@@ -1806,6 +1806,46 @@ def test_build_carries_the_blocking_gate_sensors_onto_the_snapshot():
 
 
 @pytest.mark.unit
+def test_a_template_closed_gate_names_no_blocking_sensors():
+    """AND mode: a false template can close a gate the sensors voted to open.
+
+    The sensors fold with ``any``, so an ON sensor opens their side outright.
+    When the template is what closed the gate, naming the off sensor beside it
+    would tell the user to switch on an entity that was already outvoted while
+    the real cause goes unnamed.
+    """
+    from unittest.mock import patch
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUN_TRACKING_GATE_SENSORS,
+        CONF_SUN_TRACKING_GATE_TEMPLATE,
+        CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
+        TemplateCombineMode,
+    )
+
+    states = {"binary_sensor.ac": "on", "binary_sensor.away": "off"}
+    builder, _, _ = _make_builder()
+    opts = {
+        CONF_SUN_TRACKING_GATE_SENSORS: ["binary_sensor.ac", "binary_sensor.away"],
+        CONF_SUN_TRACKING_GATE_TEMPLATE: "{{ x }}",
+        CONF_SUN_TRACKING_GATE_TEMPLATE_MODE: TemplateCombineMode.AND,
+    }
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.get_safe_state",
+            side_effect=lambda _hass, entity_id: states.get(entity_id),
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.render_condition_or_none",
+            return_value=False,
+        ),
+    ):
+        snapshot = _build_minimal(builder, opts)
+    assert snapshot.sun_tracking_gate_closed is True
+    assert snapshot.sun_tracking_gate_blockers == ()
+
+
+@pytest.mark.unit
 def test_master_toggle_off_names_no_gate_blockers():
     """Tracking switched off by hand must not blame a gate sensor (#1167 audit)."""
     from unittest.mock import patch

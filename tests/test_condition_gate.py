@@ -246,13 +246,27 @@ def test_changed_template_forgets_the_held_verdict():
 # ---------------------------------------------------------------------------
 
 
-def test_blocking_sensors_names_only_the_off_sensors():
+def test_blocking_sensors_names_the_off_sensors_when_they_close_the_gate():
     """The sensors voting the gate shut, so the skip reason can name them."""
+    gate, _clock, _states = _make_gate(
+        states={"binary_sensor.a": "off", "binary_sensor.b": "off"}
+    )
+    gate.update_config(sensors=["binary_sensor.a", "binary_sensor.b"])
+    assert gate.blocking_sensors == ("binary_sensor.a", "binary_sensor.b")
+
+
+def test_one_on_sensor_means_nothing_is_blocking():
+    """``any`` semantics: a single ON sensor opens the gate on its own.
+
+    The off sensor beside it blocked nobody, so naming it would send the user
+    to switch on an entity that was already outvoted.
+    """
     gate, _clock, _states = _make_gate(
         states={"binary_sensor.a": "off", "binary_sensor.b": "on"}
     )
     gate.update_config(sensors=["binary_sensor.a", "binary_sensor.b"])
-    assert gate.blocking_sensors == ("binary_sensor.a",)
+    assert gate.effective is True
+    assert gate.blocking_sensors == ()
 
 
 def test_blocking_sensors_is_empty_when_unconfigured():
@@ -279,6 +293,42 @@ def test_blocking_sensors_preserves_configured_order():
     )
     gate.update_config(sensors=["binary_sensor.z", "binary_sensor.a"])
     assert gate.blocking_sensors == ("binary_sensor.z", "binary_sensor.a")
+
+
+def test_blocking_sensors_is_empty_when_the_template_closed_the_gate():
+    """AND mode: the template can close a gate the sensors voted to open.
+
+    With ``a`` on, ``b`` off and a false template in ``and`` mode, the sensor
+    fold is ``any(...)`` → True, so the sensors did NOT close the gate; the
+    template did. Naming ``b`` here would send the user to turn on an entity
+    that was already outvoted, while the real cause goes unnamed.
+    """
+    gate, _clock, _states = _make_gate(
+        states={"binary_sensor.a": "on", "binary_sensor.b": "off"},
+        template_result=False,
+    )
+    gate.update_config(
+        sensors=["binary_sensor.a", "binary_sensor.b"],
+        template="{{ x }}",
+        template_mode=TemplateCombineMode.AND,
+    )
+    assert gate.effective is False  # the gate IS closed
+    assert gate.blocking_sensors == ()  # but no sensor closed it
+
+
+def test_blocking_sensors_names_sensors_when_they_are_the_cause_in_and_mode():
+    """Same AND mode, but now the sensors genuinely voted it shut."""
+    gate, _clock, _states = _make_gate(
+        states={"binary_sensor.a": "off", "binary_sensor.b": "off"},
+        template_result=True,
+    )
+    gate.update_config(
+        sensors=["binary_sensor.a", "binary_sensor.b"],
+        template="{{ x }}",
+        template_mode=TemplateCombineMode.AND,
+    )
+    assert gate.effective is False
+    assert gate.blocking_sensors == ("binary_sensor.a", "binary_sensor.b")
 
 
 def test_blocking_sensors_does_not_advance_the_grace_machine():

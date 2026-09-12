@@ -130,7 +130,7 @@ Use to rebuild DE/FR from scratch **or** to add a brand-new language.
 2. Delete ALL FOUR of `translations/<lang>.json`, `summary_i18n/<lang>.json`, `reason_i18n/<lang>.json`, and `troubleshoot_i18n/<lang>.json`.
 3. Remove the code from `scripts/validate_translations.py` `LANGUAGES` list.
 4. Remove any language-specific expectations from `tests/test_translations.py`.
-5. Run `venv/bin/python -m pytest tests/test_translations.py tests/test_config_flow_summary_i18n.py tests/test_policy_summary_i18n.py tests/test_reason_i18n.py -q` to confirm.
+5. Run `venv/bin/python -m pytest tests/test_translations.py tests/test_config_flow_summary_i18n.py tests/test_policy_summary_i18n.py tests/test_reason_i18n.py tests/test_troubleshoot_i18n.py -q` to confirm.
 6. Report what was removed.
 
 ---

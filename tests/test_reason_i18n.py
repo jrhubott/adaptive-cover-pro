@@ -420,6 +420,16 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         {"detail": "", "entities": ""},
         "sun tracking gate is closed",
     ),
+    # The degraded path, pinned so it cannot change silently: ``render`` swallows
+    # a KeyError and returns the RAW template, so a caller that forgets ``detail``
+    # leaks "{detail}" to the user. Unreachable today — solar.py is the only
+    # construction site and always supplies it — but a future second caller would
+    # otherwise reintroduce it with nothing failing.
+    (
+        ReasonCode.SKIP_SUN_TRACKING_GATE,
+        {},
+        "sun tracking gate is closed{detail}",
+    ),
     (ReasonCode.SKIP_SUN_TRACKING_OFF, {}, "sun tracking is turned off"),
     (ReasonCode.SKIP_MANUAL_NOT_ACTIVE, {}, "manual override not active"),
     (ReasonCode.SKIP_OCCUPANCY_DISABLED, {}, "occupancy detection disabled"),
