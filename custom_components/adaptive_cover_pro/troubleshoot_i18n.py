@@ -227,6 +227,18 @@ _TRIAGE_TEMPLATES_EN: dict[str, str] = {
         " An external cover of the same shade would admit about "
         "{external_admitted}%."
     ),
+    # Rule 28. ``blocker`` is a nested fragment naming the offending sensors, or
+    # an empty string when a template (not a sensor) closed the gate — the same
+    # shape the rule-20 skip rows use for their optional "N minutes ago" clause.
+    # The sentence must read correctly both ways, so the advice lives in the
+    # trailing clause rather than leaning on the entity list.
+    TriageCode.SUN_TRACKING_GATE_CLOSED: (
+        "⚠️ Sun tracking is enabled, but the sun-tracking gate is closed{blocker}, "
+        "so the cover is parked at its default position instead of following the "
+        "sun. Turn the gate entity on, or remove it from the sun-tracking gate."
+    ),
+    # Rule 28 fragment — the offending sensors, leading space included.
+    TriageCode.SUN_TRACKING_GATE_BLOCKER: " by {entities}",
 }
 
 

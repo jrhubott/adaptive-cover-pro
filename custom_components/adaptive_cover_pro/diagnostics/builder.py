@@ -26,7 +26,7 @@ from ..const import (
     ReasonCode,
     SunState,
 )
-from ..reason_i18n import Reason, render
+from ..reason_i18n import Reason, reason_attrs, render
 
 # Sensor state classifications (issue #693, Q3).
 _SENSOR_STATE_NOT_CONFIGURED = "not_configured"
@@ -1150,6 +1150,17 @@ class DiagnosticsBuilder:
                     "matched": step.matched,
                     "reason": step.reason,
                     "position": step.position,
+                    # The stable code + params, same flattening the decision-trace
+                    # sensor attributes use (issue #1359). Consumers of a
+                    # downloaded diagnostics payload — the offline triage engine,
+                    # the companion card — must match on the code, never on the
+                    # English ``reason`` above. Additive: omitted entirely for a
+                    # legacy step that carries only the prose string.
+                    **(
+                        reason_attrs(step.reason_payload)
+                        if step.reason_payload is not None
+                        else {}
+                    ),
                     **(
                         {"priority": step.priority} if step.priority is not None else {}
                     ),

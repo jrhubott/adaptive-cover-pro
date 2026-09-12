@@ -82,6 +82,55 @@ def test_offline_view_feeds_run_triage_and_config_rule_fires() -> None:
     assert TriageCode.TRACKING_WINDOW_TRUNCATED in codes
 
 
+def test_offline_triage_names_the_sensor_holding_the_gate_shut() -> None:
+    """The regression this rule was written for (issue #1359).
+
+    Reproduces the real ``Side Yard Shade`` download: sun tracking on, a gate
+    sensor off, every cycle falling through to the default handler. Before rule
+    28 the offline engine reported nothing at all for this payload and the cause
+    had to be read out of ``snapshot_builder`` by hand.
+    """
+    from custom_components.adaptive_cover_pro.reason_i18n import render
+    from custom_components.adaptive_cover_pro.troubleshoot_i18n import (
+        load_troubleshoot_labels,
+    )
+
+    doc = _download(
+        decision_trace=[
+            {
+                "handler": "solar",
+                "matched": False,
+                "reason": "sun tracking gate is closed (blocked by binary_sensor.is_ac_on)",
+                "reason_code": "skip.sun_tracking_gate",
+                "reason_params": {
+                    "detail": {
+                        "code": "fragment.gate_blocked_by",
+                        "params": {"entities": "binary_sensor.is_ac_on"},
+                    },
+                    "entities": "binary_sensor.is_ac_on",
+                },
+                "position": None,
+                "priority": 40,
+            },
+            {
+                "handler": "default",
+                "matched": True,
+                "reason": "no active condition — default position 100%",
+                "position": 100,
+                "priority": 0,
+            },
+        ]
+    )
+    findings = [
+        f
+        for f in run_triage(build_offline_view(doc))
+        if f.reason.code == TriageCode.SUN_TRACKING_GATE_CLOSED
+    ]
+    assert len(findings) == 1
+    rendered = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert "binary_sensor.is_ac_on" in rendered
+
+
 def test_offline_stale_version_fires_only_with_latest_version() -> None:
     doc = _download()
     doc["diagnostics"]["meta"] = {"integration_version": "2026.7.0"}

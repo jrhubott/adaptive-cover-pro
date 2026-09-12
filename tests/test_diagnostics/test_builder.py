@@ -1295,6 +1295,62 @@ class TestDecisionTrace:
             "position": 50,
         }
 
+    def test_trace_carries_the_stable_reason_code(self, builder: DiagnosticsBuilder):
+        """A step with a payload exports ``reason_code``/``reason_params`` (#1359).
+
+        Mirrors the decision-trace sensor attributes, which have carried both
+        since #882. Without them a diagnostics consumer — the offline triage
+        engine, the companion card — can only match the localized English
+        prose, which is a latent localization bug.
+        """
+        from custom_components.adaptive_cover_pro.const import ReasonCode
+        from custom_components.adaptive_cover_pro.reason_i18n import Reason
+
+        steps = [
+            DecisionStep(
+                handler="solar",
+                matched=False,
+                reason_payload=Reason(
+                    ReasonCode.SKIP_SUN_TRACKING_GATE,
+                    {"detail": "", "entities": "binary_sensor.is_ac_on"},
+                ),
+                position=None,
+            ),
+        ]
+        pr = PipelineResult(
+            position=100,
+            control_method=ControlMethod.DEFAULT,
+            reason="default",
+            decision_trace=steps,
+        )
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
+        step = diag["decision_trace"][0]
+        assert step["reason_code"] == "skip.sun_tracking_gate"
+        assert step["reason_params"]["entities"] == "binary_sensor.is_ac_on"
+
+    def test_trace_omits_reason_code_for_payloadless_steps(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Additive only — a legacy step keeps its exact pre-#1359 shape."""
+        steps = [
+            DecisionStep(
+                handler="legacy", matched=False, reason="plain string", position=None
+            ),
+        ]
+        pr = PipelineResult(
+            position=0,
+            control_method=ControlMethod.DEFAULT,
+            reason="x",
+            decision_trace=steps,
+        )
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
+        assert diag["decision_trace"][0] == {
+            "handler": "legacy",
+            "matched": False,
+            "reason": "plain string",
+            "position": None,
+        }
+
     def test_trace_preserves_order(self, builder: DiagnosticsBuilder):
         """Trace order matches the order of DecisionStep entries."""
         steps = [

@@ -239,3 +239,62 @@ def test_changed_template_forgets_the_held_verdict():
     clock.advance(60.0)
     gate.update_config(sensors=["binary_sensor.a"], template="{{ true }}")
     assert gate.effective is None
+
+
+# ---------------------------------------------------------------------------
+# blocking_sensors (issue #1359)
+# ---------------------------------------------------------------------------
+
+
+def test_blocking_sensors_names_only_the_off_sensors():
+    """The sensors voting the gate shut, so the skip reason can name them."""
+    gate, _clock, _states = _make_gate(
+        states={"binary_sensor.a": "off", "binary_sensor.b": "on"}
+    )
+    gate.update_config(sensors=["binary_sensor.a", "binary_sensor.b"])
+    assert gate.blocking_sensors == ("binary_sensor.a",)
+
+
+def test_blocking_sensors_is_empty_when_unconfigured():
+    gate, _clock, _states = _make_gate()
+    assert gate.blocking_sensors == ()
+
+
+def test_blocking_sensors_skips_invalid_reads():
+    """An unavailable sensor abstains — it is not a blocker.
+
+    ``live_verdict`` already drops invalid reads from the fold, so reporting one
+    as the blocker would name a sensor that had no say in the verdict.
+    """
+    gate, _clock, _states = _make_gate(
+        states={"binary_sensor.a": None, "binary_sensor.b": "off"}
+    )
+    gate.update_config(sensors=["binary_sensor.a", "binary_sensor.b"])
+    assert gate.blocking_sensors == ("binary_sensor.b",)
+
+
+def test_blocking_sensors_preserves_configured_order():
+    gate, _clock, _states = _make_gate(
+        states={"binary_sensor.z": "off", "binary_sensor.a": "off"}
+    )
+    gate.update_config(sensors=["binary_sensor.z", "binary_sensor.a"])
+    assert gate.blocking_sensors == ("binary_sensor.z", "binary_sensor.a")
+
+
+def test_blocking_sensors_does_not_advance_the_grace_machine():
+    """Reading the property must not ``observe`` — it is a diagnostic accessor.
+
+    ``_resolve`` feeds ``GracefulSource.observe``; if ``blocking_sensors`` went
+    through it, merely looking at the gate would re-anchor the grace window and
+    change when the fail-open engages.
+    """
+    gate, clock, states = _make_gate(states={"binary_sensor.a": "off"})
+    gate.update_config(sensors=["binary_sensor.a"])
+    assert gate.effective is False
+
+    states["binary_sensor.a"] = None
+    clock.advance(30.0)
+    before = gate.seconds_until_fallback()
+    for _ in range(5):
+        assert gate.blocking_sensors == ()
+    assert gate.seconds_until_fallback() == before

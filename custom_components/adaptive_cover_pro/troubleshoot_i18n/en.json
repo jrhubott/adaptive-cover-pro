@@ -32,6 +32,8 @@
     "weather_override_inverted": "⚠️ The weather override moves the cover to {override}%, which is further closed than its default position of {default}%. Weather override is a safety retraction; on this cover type the retracted position is {safe}%. As configured, wind or rain will deploy the cover instead of protecting it.",
     "solar_internal_cover_weak_rejection": "ℹ️ Internal-mounted {shade_word}cover: fully closed, this window still admits an estimated {admitted}% of incident solar energy (g≈{g_shaded}).{comparison} Estimate only — not a measurement.",
     "solar_shade_word": "{shade} ",
-    "solar_external_comparison": " An external cover of the same shade would admit about {external_admitted}%."
+    "solar_external_comparison": " An external cover of the same shade would admit about {external_admitted}%.",
+    "sun_tracking_gate_closed": "⚠️ Sun tracking is enabled, but the sun-tracking gate is closed{blocker}, so the cover is parked at its default position instead of following the sun. Turn the gate entity on, or remove it from the sun-tracking gate.",
+    "sun_tracking_gate_blocker": " by {entities}"
   }
 }

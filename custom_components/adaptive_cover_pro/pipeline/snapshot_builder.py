@@ -141,6 +141,7 @@ from .types import (
     CustomPositionSensorState,
     GroupIntent,
     PipelineSnapshot,
+    SunTrackingState,
     has_fixed_tilt,
 )
 
@@ -416,10 +417,10 @@ class PipelineSnapshotBuilder:
         ]
         return min(remainings) if remainings else None
 
-    def _resolve_sun_tracking(self, options: Mapping[str, Any]) -> tuple[bool, bool]:
+    def _resolve_sun_tracking(self, options: Mapping[str, Any]) -> SunTrackingState:
         """Whether sun tracking is live this cycle, and whether a gate closed it.
 
-        Returns ``(enable_sun_tracking, gate_closed)``. The single place the
+        Returns a :class:`SunTrackingState`. The single place the
         master toggle and the gate combine (issue #1167). Everything downstream —
         ``SolarHandler``, and the glare-zone handler's sun-only limits, which
         already read the first value as "the live tracking state" — sees one
@@ -449,9 +450,17 @@ class PipelineSnapshotBuilder:
             ),
         )
         if not bool(options.get(CONF_ENABLE_SUN_TRACKING, True)):
-            return False, False
-        tracking = self._sun_tracking_gate.resolved(default=True)
-        return tracking, not tracking
+            return SunTrackingState(enabled=False)
+        if self._sun_tracking_gate.resolved(default=True):
+            # Nothing closed the gate, so nothing is blocking. Sensors fold with
+            # ``any``, so an off sensor alongside an on one blocked no one, and
+            # naming it would point the user at an innocent entity (issue #1359).
+            return SunTrackingState(enabled=True)
+        return SunTrackingState(
+            enabled=False,
+            gate_closed=True,
+            blockers=self._sun_tracking_gate.blocking_sensors,
+        )
 
     def seconds_until_sun_tracking_gate_fallback(
         self, options: Mapping[str, Any]
@@ -826,7 +835,7 @@ class PipelineSnapshotBuilder:
                 self._hass, options, cover_data.sun_data, self._time_mgr
             )
 
-        _sun_tracking, _gate_closed = self._resolve_sun_tracking(options)
+        _sun_tracking = self._resolve_sun_tracking(options)
         glare_zones_cfg = self._policy.glare_zones_config(self._config_service, options)
         active_zone_names: set[str] = set()
         if glare_zones_cfg is not None:
@@ -921,8 +930,9 @@ class PipelineSnapshotBuilder:
             custom_position_sensors=self.read_custom_position_sensors(options),
             my_position_value=options.get(CONF_MY_POSITION_VALUE),
             sunset_use_my=bool(options.get(CONF_SUNSET_USE_MY, False)),
-            enable_sun_tracking=_sun_tracking,
-            sun_tracking_gate_closed=_gate_closed,
+            enable_sun_tracking=_sun_tracking.enabled,
+            sun_tracking_gate_closed=_sun_tracking.gate_closed,
+            sun_tracking_gate_blockers=_sun_tracking.blockers,
             motion_timeout_mode=options.get(
                 CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE
             ),

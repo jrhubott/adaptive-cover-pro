@@ -25,7 +25,7 @@ When the user provides a diagnostics JSON file (path or attachment):
 
 3. **Investigate anything the engine cannot explain.** If the user's symptom is not covered by any finding, read the relevant sections of the diagnostics JSON directly (`decision_trace`, `control_status`, `cover_commands`, `last_skipped_action`, `sun_validity`, `climate_conditions`) and reason about it by hand.
 
-   **An unexplained symptom is a missing rule row.** When you find yourself hand-explaining a class of problem the engine did not flag, that is the signal to add a rule — follow [Developer Triage Rules](https://github.com/jrhubott/adaptive-cover-pro/wiki/Developer-Triage-Rules) (four edits: one rule row, one English template + `en.json` leaf, one JSON leaf per language, one test). Offer to file an issue or open that change.
+   **An unexplained symptom is a missing rule row.** When you find yourself hand-explaining a class of problem the engine did not flag, that is the signal to add a rule — follow [Developer Triage Rules](https://github.com/jrhubott/adaptive-cover-pro/wiki/Developer-Triage-Rules) (five edits: one rule row, one English template + `en.json` leaf, one JSON leaf per language via the `acp-translate` skill, one test, one wiki section). Offer to file an issue or open that change.
 
 If no file is provided, ask: "Please share the diagnostics JSON (download from HA: Settings → Devices & Services → Adaptive Cover Pro → ⋮ → Download diagnostics)."
 

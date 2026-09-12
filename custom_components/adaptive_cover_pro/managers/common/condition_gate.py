@@ -137,6 +137,29 @@ class ConditionGate:
             has_others=True,
         )
 
+    @property
+    def blocking_sensors(self) -> tuple[str, ...]:
+        """The configured sensors currently voting the gate shut (issue #1359).
+
+        A sensor qualifies when it reads a **valid** state that is not ``"on"``.
+        Invalid reads are excluded deliberately: ``live_verdict`` already drops
+        them from the fold, so an unavailable sensor abstains rather than
+        blocks, and naming one would point the user at a sensor that had no say
+        in the verdict.
+
+        Purely diagnostic — it reads state and returns; it does NOT go through
+        :meth:`_resolve`, which would feed ``GracefulSource.observe`` and
+        re-anchor the grace window as a side effect of being looked at. The
+        answer is therefore about THIS cycle's live reads, which can differ from
+        :pyattr:`effective` while a held verdict is in force; that is the honest
+        answer to "which sensor is off right now".
+        """
+        return tuple(
+            entity_id
+            for entity_id in self._sensors
+            if (state := self._read_state(entity_id)) is not None and state != "on"
+        )
+
     def _resolve(self) -> Resolution[bool]:
         """Feed this cycle's verdict to the grace machine (idempotent)."""
         return self._graceful.observe(self.live_verdict())

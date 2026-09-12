@@ -1769,6 +1769,68 @@ def test_build_carries_a_closed_gate_onto_the_snapshot():
 
 
 @pytest.mark.unit
+def test_build_carries_the_blocking_gate_sensors_onto_the_snapshot():
+    """Which sensor closed the gate reaches the snapshot, for the skip reason (#1359)."""
+    from unittest.mock import patch
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUN_TRACKING_GATE_SENSORS,
+    )
+
+    states = {"binary_sensor.ac": "off", "binary_sensor.away": "on"}
+    builder, _, _ = _make_builder()
+    opts = {CONF_SUN_TRACKING_GATE_SENSORS: ["binary_sensor.ac", "binary_sensor.away"]}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.get_safe_state",
+        side_effect=lambda _hass, entity_id: states.get(entity_id),
+    ):
+        snapshot = _build_minimal(builder, opts)
+    # Sensors fold with ``any``, so one sensor ON means the gate is open and
+    # NOTHING is blocking — an off sensor in that fold blocked no one.
+    assert snapshot.sun_tracking_gate_closed is False
+    assert snapshot.sun_tracking_gate_blockers == ()
+
+    states["binary_sensor.away"] = "off"
+    builder, _, _ = _make_builder()
+    with patch(
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.get_safe_state",
+        side_effect=lambda _hass, entity_id: states.get(entity_id),
+    ):
+        snapshot = _build_minimal(builder, opts)
+    assert snapshot.sun_tracking_gate_closed is True
+    assert snapshot.sun_tracking_gate_blockers == (
+        "binary_sensor.ac",
+        "binary_sensor.away",
+    )
+
+
+@pytest.mark.unit
+def test_master_toggle_off_names_no_gate_blockers():
+    """Tracking switched off by hand must not blame a gate sensor (#1167 audit)."""
+    from unittest.mock import patch
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_SUN_TRACKING,
+        CONF_SUN_TRACKING_GATE_SENSORS,
+    )
+
+    builder, _, _ = _make_builder()
+    opts = {
+        CONF_ENABLE_SUN_TRACKING: False,
+        CONF_SUN_TRACKING_GATE_SENSORS: ["binary_sensor.ac"],
+    }
+    with patch(
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.get_safe_state",
+        return_value="off",
+    ):
+        snapshot = _build_minimal(builder, opts)
+    assert snapshot.enable_sun_tracking is False
+    assert snapshot.sun_tracking_gate_closed is False
+    assert snapshot.sun_tracking_gate_blockers == ()
+
+
+@pytest.mark.unit
 def test_build_carries_the_interpolation_curve():
     """The curve reaches the pure pipeline as data, not as a coordinator handle.
 

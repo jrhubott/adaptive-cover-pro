@@ -20,7 +20,8 @@
     "trigger_template": "Vorlage",
     "trigger_fallback": "Auslöser",
     "axis_position": "Position",
-    "axis_tilt": "Neigung"
+    "axis_tilt": "Neigung",
+    "gate_blocked_by": " (blockiert durch {entities})"
   },
   "solar": {
     "tracking": "Sonne im Akzeptanzwinkel — Position {position}%{suffix}"
@@ -103,7 +104,7 @@
   "skip": {
     "outside_window": "außerhalb des Zeitfensters",
     "sun_outside": "Sonne außerhalb des Akzeptanzwinkels oder Höhenlimits",
-    "sun_tracking_gate": "Sonnenverfolgungs-Gate ist geschlossen",
+    "sun_tracking_gate": "Sonnenverfolgungs-Gate ist geschlossen{detail}",
     "sun_tracking_off": "Sonnenverfolgung ist ausgeschaltet",
     "manual_not_active": "manuelle Übersteuerung nicht aktiv",
     "occupancy_disabled": "Anwesenheitserkennung deaktiviert",

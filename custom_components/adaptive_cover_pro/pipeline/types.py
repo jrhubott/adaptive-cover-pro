@@ -383,6 +383,26 @@ class CustomPositionSensorState:
         return self.slot_name or (self.entity_ids[0] if self.entity_ids else "template")
 
 
+@dataclass(frozen=True, slots=True)
+class SunTrackingState:
+    """The resolved sun-tracking verdict for one cycle (issue #1359).
+
+    A dataclass rather than the 3-tuple it replaced, per CODING_GUIDELINES
+    § "Prefer Dataclasses Over Multi-Field Tuples" — the three fields are read
+    at the snapshot-construction site and positional unpacking gets brittle the
+    moment a fourth is added.
+
+    ``gate_closed`` is True ONLY when the master toggle is on and a configured
+    gate resolved false, and ``blockers`` is non-empty only alongside it — the
+    #1167 audit rule, so a user who simply switched sun tracking off is never
+    pointed at a gate they never configured.
+    """
+
+    enabled: bool
+    gate_closed: bool = False
+    blockers: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class PipelineSnapshot:
     """Raw state passed to all pipeline handlers.
@@ -452,6 +472,12 @@ class PipelineSnapshot:
     # otherwise a user who simply switched sun tracking off would be told a gate
     # they never configured is closed (issue #1167 audit).
     sun_tracking_gate_closed: bool = False
+    # Which gate sensors are currently voting it shut, so the skip reason can
+    # name them instead of leaving the user to find the culprit by hand
+    # (issue #1359). Empty when the gate closed on a template rather than a
+    # sensor, and empty whenever ``sun_tracking_gate_closed`` is False — the
+    # #1167 audit rule again: a toggle-off user is never handed a sensor.
+    sun_tracking_gate_blockers: tuple[str, ...] = ()
 
     # Minimum position mode: when True, the configured position acts as a floor —
     # the handler returns max(configured, raw_calculated) instead of always returning configured.

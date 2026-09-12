@@ -65,9 +65,21 @@ class SolarHandler(OverrideHandler):
         if not snapshot.in_time_window:
             return Reason(ReasonCode.SKIP_OUTSIDE_WINDOW)
         if not snapshot.enable_sun_tracking:
+            if not snapshot.sun_tracking_gate_closed:
+                return Reason(ReasonCode.SKIP_SUN_TRACKING_OFF)
+            # Name the sensors holding it shut so the user is not left grepping
+            # diagnostics for the culprit (issue #1359). ``detail`` is the empty
+            # string when nothing can be named — a template-closed gate — which
+            # keeps the rendered text byte-identical to the pre-#1359 wording.
+            blockers = snapshot.sun_tracking_gate_blockers
+            detail: Reason | str = ""
+            if blockers:
+                detail = Reason(
+                    ReasonCode.FRAGMENT_GATE_BLOCKED_BY,
+                    {"entities": ", ".join(blockers)},
+                )
             return Reason(
-                ReasonCode.SKIP_SUN_TRACKING_GATE
-                if snapshot.sun_tracking_gate_closed
-                else ReasonCode.SKIP_SUN_TRACKING_OFF
+                ReasonCode.SKIP_SUN_TRACKING_GATE,
+                {"detail": detail, "entities": ", ".join(blockers)},
             )
         return Reason(ReasonCode.SKIP_SUN_OUTSIDE)
