@@ -68,6 +68,16 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         " (blocked by binary_sensor.is_ac_on)",
     ),
     (
+        ReasonCode.FRAGMENT_GATE_BLOCKED_BY_TEMPLATE,
+        {},
+        " (blocked by the gate template)",
+    ),
+    (
+        ReasonCode.FRAGMENT_GATE_BLOCKED_BY_BOTH,
+        {"entities": "binary_sensor.is_ac_on"},
+        " (blocked by binary_sensor.is_ac_on and the gate template)",
+    ),
+    (
         ReasonCode.FRAGMENT_BYPASS_NOTE,
         {},
         " [bypasses automatic control]",

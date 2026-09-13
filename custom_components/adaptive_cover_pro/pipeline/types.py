@@ -401,6 +401,11 @@ class SunTrackingState:
     enabled: bool
     gate_closed: bool = False
     blockers: tuple[str, ...] = ()
+    # Whether the gate's condition template is also voting shut. Separate from
+    # ``blockers`` because it is a different kind of cause with a different fix:
+    # in AND mode the template can be the ONLY reason, and naming just the
+    # sensors there tells the user to switch on entities that will not help.
+    template_blocking: bool = False
 
 
 @dataclass(frozen=True)
@@ -478,6 +483,10 @@ class PipelineSnapshot:
     # sensor, and empty whenever ``sun_tracking_gate_closed`` is False — the
     # #1167 audit rule again: a toggle-off user is never handed a sensor.
     sun_tracking_gate_blockers: tuple[str, ...] = ()
+    # The gate's condition template is also voting shut (issue #1359). Paired
+    # with the sensor list above so the skip reason can name either cause, or
+    # both — in AND mode the template is often the only one.
+    sun_tracking_gate_template_blocking: bool = False
 
     # Minimum position mode: when True, the configured position acts as a floor —
     # the handler returns max(configured, raw_calculated) instead of always returning configured.

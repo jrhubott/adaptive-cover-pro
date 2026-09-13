@@ -189,6 +189,22 @@ class ConditionGate:
         _opinion, blockers = self._read_sensors()
         return blockers
 
+    @property
+    def blocking_template(self) -> bool:
+        """Whether the configured condition template voted the gate shut (#1359).
+
+        The template is a cause in its own right, and in ``and`` mode it is
+        frequently the *only* one — naming just the sensors there tells a user to
+        switch on entities that will not open the gate. ``False`` when there is
+        no template or it cannot render, matching how ``live_verdict`` treats an
+        absent template opinion: an unrenderable template abstains, it does not
+        block.
+
+        Same diagnostic contract as :pyattr:`blocking_sensors` — no ``_resolve``,
+        so reading it cannot re-anchor the grace window.
+        """
+        return self._render_condition(self._template) is False
+
     def _resolve(self) -> Resolution[bool]:
         """Feed this cycle's verdict to the grace machine (idempotent)."""
         return self._graceful.observe(self.live_verdict())

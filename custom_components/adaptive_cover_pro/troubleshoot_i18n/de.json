@@ -33,7 +33,9 @@
     "solar_internal_cover_weak_rejection": "ℹ️ Innen montierte Beschattung{shade_word}: Selbst vollständig geschlossen lässt dieses Fenster schätzungsweise noch {admitted}% der einfallenden Sonnenenergie herein (g≈{g_shaded}).{comparison} Nur eine Schätzung — keine Messung.",
     "solar_shade_word": " ({shade})",
     "solar_external_comparison": " Eine außen montierte Beschattung derselben Farbtiefe würde etwa {external_admitted}% durchlassen.",
-    "sun_tracking_gate_closed": "⚠️ Sonnenverfolgung ist aktiviert, aber das Sonnenverfolgungs-Gate ist geschlossen{blocker}, daher verbleibt die Beschattung auf ihrer Standardposition, anstatt der Sonne zu folgen. Schalten Sie die Gate-Entität ein, oder entfernen Sie sie aus dem Sonnenverfolgungs-Gate.",
-    "sun_tracking_gate_blocker": " durch {entities}"
+    "sun_tracking_gate_closed": "⚠️ Sonnenverfolgung ist aktiviert, aber das Sonnenverfolgungs-Gate ist geschlossen{blocker}, daher verbleibt die Beschattung auf ihrer Standardposition, anstatt der Sonne zu folgen. Erfüllen Sie die Gate-Bedingung, oder entfernen Sie sie aus den Sonnenverfolgungs-Einstellungen.",
+    "sun_tracking_gate_blocker": " durch {entities}",
+    "sun_tracking_gate_blocker_template": " durch die Gate-Vorlage",
+    "sun_tracking_gate_blocker_both": " durch {entities} und die Gate-Vorlage"
   }
 }

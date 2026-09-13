@@ -123,6 +123,8 @@ _TRIAGE_FRAGMENT_CODES: frozenset[str] = frozenset(
         TriageCode.SOLAR_SHADE_WORD,
         TriageCode.SOLAR_EXTERNAL_COMPARISON,
         TriageCode.SUN_TRACKING_GATE_BLOCKER,
+        TriageCode.SUN_TRACKING_GATE_BLOCKER_TEMPLATE,
+        TriageCode.SUN_TRACKING_GATE_BLOCKER_BOTH,
     }
 )
 
@@ -1104,20 +1106,37 @@ def _check_sun_tracking_gate_closed(data: Mapping) -> Iterable[Mapping]:
         return
     if step.get("reason_code") != ReasonCode.SKIP_SUN_TRACKING_GATE:
         return
+    # Only when the DEFAULT handler actually won. The registry writes solar's
+    # describe_skip payload into the trace whenever solar declines, whoever won,
+    # so without this the finding would claim the cover "is parked at its default
+    # position" on a cycle a manual override or weather rule was driving it. No
+    # matched winner at all means we cannot tell, which is also not a fire.
+    winner = _matched_winner(data)
+    if not isinstance(winner, Mapping) or winner.get("handler") != "default":
+        return
     params = step.get("reason_params")
-    raw = params.get("entities") if isinstance(params, Mapping) else None
+    params = params if isinstance(params, Mapping) else {}
+    raw = params.get("entities")
     entities = raw if isinstance(raw, str) else ""
-    # ``blocker`` is a nested fragment when sensors are named and an empty string
-    # otherwise, so a template-closed gate renders without a dangling "by" clause
-    # (never the literal "None"). ``entities`` rides alongside as the raw value
-    # for consumers that localize the finding themselves.
+    by_template = params.get("template_blocking") is True
+    # ``blocker`` is a nested fragment naming whichever causes exist, and an
+    # empty string when neither can be named, so the sentence never renders a
+    # dangling "by" clause (and never the literal "None"). The raw values ride
+    # alongside for consumers that localize the finding themselves.
+    if entities and by_template:
+        blocker: Reason | str = Reason(
+            TriageCode.SUN_TRACKING_GATE_BLOCKER_BOTH, {"entities": entities}
+        )
+    elif entities:
+        blocker = Reason(TriageCode.SUN_TRACKING_GATE_BLOCKER, {"entities": entities})
+    elif by_template:
+        blocker = Reason(TriageCode.SUN_TRACKING_GATE_BLOCKER_TEMPLATE)
+    else:
+        blocker = ""
     yield {
         "entities": entities,
-        "blocker": (
-            Reason(TriageCode.SUN_TRACKING_GATE_BLOCKER, {"entities": entities})
-            if entities
-            else ""
-        ),
+        "template_blocking": by_template,
+        "blocker": blocker,
     }
 
 

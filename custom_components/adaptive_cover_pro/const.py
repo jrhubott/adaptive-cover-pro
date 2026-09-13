@@ -2149,6 +2149,11 @@ class ReasonCode(StrEnum):
     # fragment, not a second skip code, so the base reason keeps its exact
     # pre-#1359 wording when no sensor can be named (a template-closed gate).
     FRAGMENT_GATE_BLOCKED_BY = "fragment.gate_blocked_by"
+    # Three whole clauses rather than one composed from parts: each reads as a
+    # complete sentence fragment, so a translator controls where the conjunction
+    # goes instead of inheriting English word order from a join (#1359).
+    FRAGMENT_GATE_BLOCKED_BY_TEMPLATE = "fragment.gate_blocked_by_template"
+    FRAGMENT_GATE_BLOCKED_BY_BOTH = "fragment.gate_blocked_by_both"
     FRAGMENT_BYPASS_NOTE = "fragment.bypass_note"
     FRAGMENT_SEASON_EXTREME_HEAT = "fragment.season_extreme_heat"
     FRAGMENT_SEASON_TRACKING_OFF = "fragment.season_tracking_off"
@@ -2397,6 +2402,8 @@ class TriageCode(StrEnum):
     # -- fragment (NOT a rule): rule 28's optional "by <entities>" clause, absent
     # when a template rather than a sensor closed the gate (#1359).
     SUN_TRACKING_GATE_BLOCKER = "triage.sun_tracking_gate_blocker"
+    SUN_TRACKING_GATE_BLOCKER_TEMPLATE = "triage.sun_tracking_gate_blocker_template"
+    SUN_TRACKING_GATE_BLOCKER_BOTH = "triage.sun_tracking_gate_blocker_both"
 
 
 # =============================================================================

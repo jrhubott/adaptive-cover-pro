@@ -73,6 +73,10 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ReasonCode.FRAGMENT_COVERAGE_STEP: " (coverage step, max {steps})",
     ReasonCode.FRAGMENT_Z_ADJUSTED: " (Z-adjusted)",
     ReasonCode.FRAGMENT_GATE_BLOCKED_BY: " (blocked by {entities})",
+    ReasonCode.FRAGMENT_GATE_BLOCKED_BY_TEMPLATE: " (blocked by the gate template)",
+    ReasonCode.FRAGMENT_GATE_BLOCKED_BY_BOTH: (
+        " (blocked by {entities} and the gate template)"
+    ),
     ReasonCode.FRAGMENT_BYPASS_NOTE: " [bypasses automatic control]",
     ReasonCode.FRAGMENT_SEASON_EXTREME_HEAT: "extreme heat",
     ReasonCode.FRAGMENT_SEASON_TRACKING_OFF: "default: tracking off this season",

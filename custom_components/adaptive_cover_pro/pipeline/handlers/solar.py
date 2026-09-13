@@ -67,19 +67,33 @@ class SolarHandler(OverrideHandler):
         if not snapshot.enable_sun_tracking:
             if not snapshot.sun_tracking_gate_closed:
                 return Reason(ReasonCode.SKIP_SUN_TRACKING_OFF)
-            # Name the sensors holding it shut so the user is not left grepping
-            # diagnostics for the culprit (issue #1359). ``detail`` is the empty
-            # string when nothing can be named — a template-closed gate — which
+            # Name what is holding it shut so the user is not left grepping
+            # diagnostics for the culprit (issue #1359). Sensors and the gate
+            # template are separate causes with separate fixes, and in AND mode
+            # the template is frequently the only one — naming just the sensors
+            # there would send the user to switch on entities that cannot help.
+            # ``detail`` stays the empty string when neither can be named, which
             # keeps the rendered text byte-identical to the pre-#1359 wording.
             blockers = snapshot.sun_tracking_gate_blockers
+            entities = ", ".join(blockers)
+            by_template = snapshot.sun_tracking_gate_template_blocking
             detail: Reason | str = ""
-            if blockers:
+            if blockers and by_template:
                 detail = Reason(
-                    ReasonCode.FRAGMENT_GATE_BLOCKED_BY,
-                    {"entities": ", ".join(blockers)},
+                    ReasonCode.FRAGMENT_GATE_BLOCKED_BY_BOTH, {"entities": entities}
                 )
+            elif blockers:
+                detail = Reason(
+                    ReasonCode.FRAGMENT_GATE_BLOCKED_BY, {"entities": entities}
+                )
+            elif by_template:
+                detail = Reason(ReasonCode.FRAGMENT_GATE_BLOCKED_BY_TEMPLATE)
             return Reason(
                 ReasonCode.SKIP_SUN_TRACKING_GATE,
-                {"detail": detail, "entities": ", ".join(blockers)},
+                {
+                    "detail": detail,
+                    "entities": entities,
+                    "template_blocking": by_template,
+                },
             )
         return Reason(ReasonCode.SKIP_SUN_OUTSIDE)

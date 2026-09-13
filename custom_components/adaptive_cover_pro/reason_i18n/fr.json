@@ -21,7 +21,9 @@
     "trigger_fallback": "déclencheur",
     "axis_position": "position",
     "axis_tilt": "inclinaison",
-    "gate_blocked_by": " (bloqué par {entities})"
+    "gate_blocked_by": " (bloqué par {entities})",
+    "gate_blocked_by_template": " (bloqué par le modèle du filtre)",
+    "gate_blocked_by_both": " (bloqué par {entities} et le modèle du filtre)"
   },
   "solar": {
     "tracking": "soleil dans l'angle d'acceptation — position {position}%{suffix}"

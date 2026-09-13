@@ -2216,6 +2216,32 @@ def test_gate_closed_does_not_fire_when_tracking_is_merely_off() -> None:
     assert _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view) == []
 
 
+def test_gate_closed_does_not_fire_when_another_handler_is_driving() -> None:
+    """The finding explains an UNMOVING cover, so it must not fire when
+    something else legitimately holds the seat.
+
+    The registry writes solar's ``describe_skip`` payload into the trace
+    whenever solar returns None, regardless of who won — so a closed gate plus
+    a matched manual override would otherwise claim the cover "is parked at its
+    default position", which is false for that cycle.
+    """
+    view = _gate_view("skip.sun_tracking_gate", entities="binary_sensor.is_ac_on")
+    view["decision_trace"][1] = {
+        "handler": "manual_override",
+        "matched": True,
+        "reason": "manual override active",
+        "position": 42,
+    }
+    assert _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view) == []
+
+
+def test_gate_closed_does_not_fire_when_no_handler_matched() -> None:
+    """Cannot tell who is driving ⇒ do not assert that nothing is."""
+    view = _gate_view("skip.sun_tracking_gate", entities="binary_sensor.x")
+    view["decision_trace"][1]["matched"] = False
+    assert _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view) == []
+
+
 def test_gate_closed_does_not_fire_when_solar_won() -> None:
     view = {
         "options": {},
@@ -2240,6 +2266,25 @@ def test_gate_closed_ignores_a_payloadless_trace() -> None:
         ],
     }
     assert _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view) == []
+
+
+def test_gate_closed_names_the_template_when_it_is_the_cause() -> None:
+    view = _gate_view("skip.sun_tracking_gate", entities="", template_blocking=True)
+    findings = _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view)
+    assert len(findings) == 1
+    rendered = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert "by the gate template" in rendered
+
+
+def test_gate_closed_names_both_causes_together() -> None:
+    view = _gate_view(
+        "skip.sun_tracking_gate",
+        entities="binary_sensor.ac",
+        template_blocking=True,
+    )
+    findings = _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view)
+    rendered = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert "by binary_sensor.ac and the gate template" in rendered
 
 
 def test_gate_closed_severity_and_wiring() -> None:

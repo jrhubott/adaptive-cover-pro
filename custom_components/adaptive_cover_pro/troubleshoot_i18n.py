@@ -235,10 +235,15 @@ _TRIAGE_TEMPLATES_EN: dict[str, str] = {
     TriageCode.SUN_TRACKING_GATE_CLOSED: (
         "⚠️ Sun tracking is enabled, but the sun-tracking gate is closed{blocker}, "
         "so the cover is parked at its default position instead of following the "
-        "sun. Turn the gate entity on, or remove it from the sun-tracking gate."
+        "sun. Satisfy the gate condition, or clear it from the sun-tracking "
+        "settings."
     ),
-    # Rule 28 fragment — the offending sensors, leading space included.
+    # Rule 28 fragments — the offending cause, leading space included. Three
+    # whole clauses rather than one composed from parts, so a translator places
+    # the conjunction rather than inheriting English word order from a join.
     TriageCode.SUN_TRACKING_GATE_BLOCKER: " by {entities}",
+    TriageCode.SUN_TRACKING_GATE_BLOCKER_TEMPLATE: " by the gate template",
+    TriageCode.SUN_TRACKING_GATE_BLOCKER_BOTH: " by {entities} and the gate template",
 }
 
 

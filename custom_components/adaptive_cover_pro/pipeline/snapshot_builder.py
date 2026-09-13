@@ -464,6 +464,7 @@ class PipelineSnapshotBuilder:
             enabled=False,
             gate_closed=True,
             blockers=self._sun_tracking_gate.blocking_sensors,
+            template_blocking=self._sun_tracking_gate.blocking_template,
         )
 
     def seconds_until_sun_tracking_gate_fallback(
@@ -937,6 +938,7 @@ class PipelineSnapshotBuilder:
             enable_sun_tracking=_sun_tracking.enabled,
             sun_tracking_gate_closed=_sun_tracking.gate_closed,
             sun_tracking_gate_blockers=_sun_tracking.blockers,
+            sun_tracking_gate_template_blocking=_sun_tracking.template_blocking,
             motion_timeout_mode=options.get(
                 CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE
             ),

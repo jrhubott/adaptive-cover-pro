@@ -331,6 +331,41 @@ def test_blocking_sensors_names_sensors_when_they_are_the_cause_in_and_mode():
     assert gate.blocking_sensors == ("binary_sensor.a", "binary_sensor.b")
 
 
+def test_blocking_template_reports_a_false_template():
+    """The template is a cause in its own right and must be nameable (#1359)."""
+    gate, _clock, _states = _make_gate(template_result=False)
+    gate.update_config(template="{{ x }}")
+    assert gate.effective is False
+    assert gate.blocking_template is True
+
+
+def test_blocking_template_is_false_when_the_template_voted_open():
+    gate, _clock, _states = _make_gate(template_result=True)
+    gate.update_config(template="{{ x }}")
+    assert gate.blocking_template is False
+
+
+def test_blocking_template_is_false_when_there_is_no_template():
+    gate, _clock, _states = _make_gate(states={"binary_sensor.a": "off"})
+    gate.update_config(sensors=["binary_sensor.a"])
+    assert gate.blocking_template is False
+
+
+def test_and_mode_with_both_sides_false_names_both_causes():
+    """Switching every sensor on would still leave the gate shut, so say so."""
+    gate, _clock, _states = _make_gate(
+        states={"binary_sensor.a": "off"}, template_result=False
+    )
+    gate.update_config(
+        sensors=["binary_sensor.a"],
+        template="{{ x }}",
+        template_mode=TemplateCombineMode.AND,
+    )
+    assert gate.effective is False
+    assert gate.blocking_sensors == ("binary_sensor.a",)
+    assert gate.blocking_template is True
+
+
 def test_blocking_sensors_does_not_advance_the_grace_machine():
     """Reading the property must not ``observe`` — it is a diagnostic accessor.
 

@@ -21,7 +21,9 @@
     "trigger_fallback": "Auslöser",
     "axis_position": "Position",
     "axis_tilt": "Neigung",
-    "gate_blocked_by": " (blockiert durch {entities})"
+    "gate_blocked_by": " (blockiert durch {entities})",
+    "gate_blocked_by_template": " (blockiert durch die Gate-Vorlage)",
+    "gate_blocked_by_both": " (blockiert durch {entities} und die Gate-Vorlage)"
   },
   "solar": {
     "tracking": "Sonne im Akzeptanzwinkel — Position {position}%{suffix}"

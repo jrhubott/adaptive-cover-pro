@@ -311,6 +311,48 @@ def test_multiple_blocking_sensors_are_joined_in_the_reason():
     )
 
 
+def test_a_template_closed_gate_names_the_template():
+    """A template-only closure has no entity to blame, but still has a cause."""
+    from custom_components.adaptive_cover_pro.reason_i18n import render_en
+    from tests.test_pipeline.conftest import make_snapshot
+
+    handler = _solar_handler()
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        enable_sun_tracking=False,
+        sun_tracking_gate_closed=True,
+        sun_tracking_gate_blockers=(),
+        sun_tracking_gate_template_blocking=True,
+    )
+
+    reason = handler.describe_skip(snap)
+    assert reason.params["template_blocking"] is True
+    assert (
+        render_en(reason)
+        == "sun tracking gate is closed (blocked by the gate template)"
+    )
+
+
+def test_both_causes_are_named_together():
+    """AND mode with both sides false: switching the sensors on is not enough."""
+    from custom_components.adaptive_cover_pro.reason_i18n import render_en
+    from tests.test_pipeline.conftest import make_snapshot
+
+    handler = _solar_handler()
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        enable_sun_tracking=False,
+        sun_tracking_gate_closed=True,
+        sun_tracking_gate_blockers=("binary_sensor.ac",),
+        sun_tracking_gate_template_blocking=True,
+    )
+
+    assert render_en(handler.describe_skip(snap)) == (
+        "sun tracking gate is closed "
+        "(blocked by binary_sensor.ac and the gate template)"
+    )
+
+
 def test_a_gate_closed_with_no_named_sensor_keeps_the_bare_reason():
     """A template-closed gate has no sensor to blame — wording is unchanged.
 

@@ -33,7 +33,9 @@
     "solar_internal_cover_weak_rejection": "ℹ️ Internal-mounted {shade_word}cover: fully closed, this window still admits an estimated {admitted}% of incident solar energy (g≈{g_shaded}).{comparison} Estimate only — not a measurement.",
     "solar_shade_word": "{shade} ",
     "solar_external_comparison": " An external cover of the same shade would admit about {external_admitted}%.",
-    "sun_tracking_gate_closed": "⚠️ Sun tracking is enabled, but the sun-tracking gate is closed{blocker}, so the cover is parked at its default position instead of following the sun. Turn the gate entity on, or remove it from the sun-tracking gate.",
-    "sun_tracking_gate_blocker": " by {entities}"
+    "sun_tracking_gate_closed": "⚠️ Sun tracking is enabled, but the sun-tracking gate is closed{blocker}, so the cover is parked at its default position instead of following the sun. Satisfy the gate condition, or clear it from the sun-tracking settings.",
+    "sun_tracking_gate_blocker": " by {entities}",
+    "sun_tracking_gate_blocker_template": " by the gate template",
+    "sun_tracking_gate_blocker_both": " by {entities} and the gate template"
   }
 }
