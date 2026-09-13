@@ -283,14 +283,35 @@ def build_limit_positions(options: dict) -> list[int]:
     ``PositionContext.limit_positions`` (the one-shot latch predicate in
     ``apply_position``) read the same definition of "an always-enforced
     limit" — one place, two consumers, per the no-duplication guideline.
+
+    Literal endpoint values (``POSITION_CLOSED``/``POSITION_OPEN``, i.e. 0
+    and 100 — the shipped defaults for ``CONF_MIN_POSITION`` /
+    ``CONF_MAX_POSITION``) are excluded even when always-enforced. Those two
+    values already have their own unconditional, non-latched bypass
+    (issue #629, seeded by :func:`build_special_positions` and governed
+    solely by ``CONF_ENFORCE_DELTA_AT_ENDPOINTS``). Letting a default
+    install's min=0/max=100 also land in this list would make
+    ``apply_position``'s one-shot limit latch strip that SAME value from
+    the effective specials the moment it latched — silently turning the
+    #629 guarantee into a one-shot for every default install, not just
+    installs with a genuine non-endpoint limit (audit finding, issue
+    #1350).
     """
     limit_positions: list[int] = []
     min_position = options.get(CONF_MIN_POSITION)
-    if min_position is not None and options.get(CONF_ENABLE_MIN_POSITION) is False:
+    if (
+        min_position is not None
+        and options.get(CONF_ENABLE_MIN_POSITION) is False
+        and min_position not in (POSITION_CLOSED, POSITION_OPEN)
+    ):
         limit_positions.append(min_position)
 
     max_position = options.get(CONF_MAX_POSITION)
-    if max_position is not None and options.get(CONF_ENABLE_MAX_POSITION) is False:
+    if (
+        max_position is not None
+        and options.get(CONF_ENABLE_MAX_POSITION) is False
+        and max_position not in (POSITION_CLOSED, POSITION_OPEN)
+    ):
         limit_positions.append(max_position)
 
     return limit_positions
