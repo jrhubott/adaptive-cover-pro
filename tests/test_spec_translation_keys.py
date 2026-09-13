@@ -42,7 +42,11 @@ from custom_components.adaptive_cover_pro.binary_sensor import (
     AdaptiveCoverBinarySensor,
     AdaptiveCoverPositionMismatchSensor,
 )
-from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
+from custom_components.adaptive_cover_pro.button import (
+    AdaptiveCoverApplyCalculatedPositionButton,
+    AdaptiveCoverButton,
+    AdaptiveCoverMyPositionButton,
+)
 from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_SENSOR_TYPE,
@@ -62,14 +66,18 @@ from custom_components.adaptive_cover_pro.group_entities import (
     GroupWhoWonSensor,
 )
 from custom_components.adaptive_cover_pro.sensor import (
+    _DIAGNOSTIC_CLASSES,
     _DIAGNOSTIC_SPECS,
+    _STANDARD_CLASSES,
     _STANDARD_SPECS,
-    _ACPDiagnosticSensor,
-    _ACPSensor,
 )
 from custom_components.adaptive_cover_pro.switch import _SWITCH_SPECS, _glare_zone_specs
 from custom_components.adaptive_cover_pro.templates import ACP_TEMPLATE_ENTITY_KEYS
-from tests.test_skip_reason_guard import _EXPECTED_SKIP_CODES
+from tests._helpers.skip_codes import (
+    EXPECTED_SKIP_CODES,
+    EXTRA_RECORD_SKIPPED_ACTION_REASONS,
+    idle_last_skipped_value,
+)
 
 _TRANSLATIONS_DIR = (
     Path(__file__).parent.parent
@@ -153,6 +161,52 @@ _GROUP_SWITCH_TRANSLATION_KEYS: frozenset[str] = frozenset(
 )
 
 
+# ---------------------------------------------------------------------------
+# English name snapshot (issue #1353 audit findings #1/#2)
+# ---------------------------------------------------------------------------
+#
+# Frozen legacy English names for every entity whose hardcoded ``name``
+# override was removed in favor of a translation_key (issue #1353). Each
+# value is verified byte-for-byte against the pre-refactor hardcoded string
+# at develop `2e58424b` — see
+# ``git show 2e58424b:custom_components/adaptive_cover_pro/{sensor,
+# binary_sensor,button}.py`` for the removed ``name``/``_sensor_name``/
+# ``_binary_name``/``_button_name`` properties this replaces.
+#
+# DO NOT edit this dict to match a renamed en.json string, and do not derive
+# it from the spec/class definitions — either would let the two sides drift
+# in lockstep and defeat the lock. HA derives the English object_id from
+# ``entity.<platform>.<translation_key>.name`` for any newly-registered
+# entity with no ``name`` override (``has_entity_name=True``), so a silent
+# rename here silently renames every new English install's entity_id. A
+# deliberate rename needs its own migration story (CLAUDE.md §
+# Rollback-Safe Config Migrations), not a snapshot update.
+_ENGLISH_NAME_SNAPSHOT: dict[tuple[str, str], str] = {
+    ("sensor", "target_position"): "Target Position",
+    ("sensor", "target_tilt"): "Target Tilt",
+    ("sensor", "start_sun"): "Start Sun",
+    ("sensor", "end_sun"): "End Sun",
+    ("sensor", "sun_position"): "Sun Position",
+    ("sensor", "solar_calculation"): "Solar Calculation",
+    ("sensor", "control_status"): "Control Status",
+    ("sensor", "decision_trace"): "Decision Trace",
+    ("sensor", "position_forecast"): "Position Forecast",
+    ("sensor", "last_skipped_action"): "Last Skipped Action",
+    ("sensor", "last_cover_action"): "Last Cover Action",
+    ("sensor", "manual_override_end_time"): "Manual Override End Time",
+    ("sensor", "position_verification"): "Position Verification",
+    ("sensor", "motion_status"): "Occupancy Status",
+    ("sensor", "travel_calibration"): "Travel Time Calibration",
+    ("sensor", "solar_gain"): "Estimated Solar Gain",
+    ("sensor", "climate_status"): "Climate Status",
+    ("binary_sensor", "sun_motion"): "Sun Infront",
+    ("binary_sensor", "manual_override"): "Manual Override",
+    ("binary_sensor", "glare_active"): "Glare Active",
+    ("binary_sensor", "position_mismatch"): "Position Mismatch",
+    ("button", "reset_manual_override"): "Reset Manual Override",
+}
+
+
 class TestSensorSpecTranslationKeys:
     """Sensor spec translation_keys must stay in sync with en.json."""
 
@@ -223,58 +277,93 @@ class TestSensorSpecTranslationKeys:
         the localization refactor (issue #1353) replaced each hardcoded
         ``name`` property with a translation_key, a mismatch here would
         silently change every English installation's entity_ids.
+
+        Compared against ``_ENGLISH_NAME_SNAPSHOT``, a frozen literal — NOT
+        against the spec/class definitions, which could be renamed in
+        lockstep with en.json and defeat a self-referential comparison (see
+        the snapshot's module-level comment for why it must never be edited
+        to match a rename).
         """
         en = _load_translation_bundle("en")
-        sensor_names = en["entity"]["sensor"]
-        binary_names = en["entity"]["binary_sensor"]
-        button_names = en["entity"]["button"]
+        bundles = {
+            "sensor": en["entity"]["sensor"],
+            "binary_sensor": en["entity"]["binary_sensor"],
+            "button": en["entity"]["button"],
+        }
 
-        for spec in (*_STANDARD_SPECS, *_DIAGNOSTIC_SPECS):
-            key = spec.translation_key
-            assert key is not None, f"{spec.suffix!r} has no translation_key"
-            assert sensor_names[key]["name"] == spec.display_name, (
-                f"entity.sensor.{key}.name must stay {spec.display_name!r} to "
-                "keep the English entity_id stable."
-            )
+        mismatches = [
+            f"{platform}.{key}: expected {expected!r}, got "
+            f"{bundles[platform].get(key, {}).get('name')!r}"
+            for (platform, key), expected in _ENGLISH_NAME_SNAPSHOT.items()
+            if bundles[platform].get(key, {}).get("name") != expected
+        ]
+        assert not mismatches, (
+            "en.json name(s) drifted from the frozen _ENGLISH_NAME_SNAPSHOT "
+            "(this would change English entity_ids):\n"
+            + "\n".join(f"  {m}" for m in mismatches)
+        )
 
-        for spec in _BINARY_SENSOR_SPECS:
-            assert binary_names[spec.key]["name"] == spec.name, (
-                f"entity.binary_sensor.{spec.key}.name must stay {spec.name!r} "
-                "to keep the English entity_id stable."
-            )
-
+        # Completeness: every entity converted by #1353 must be snapshotted,
+        # so a new one added later without a matching entry here is forced
+        # into the same lock instead of silently escaping it.
         mismatch_key = _class_translation_key(AdaptiveCoverPositionMismatchSensor)
-        assert binary_names[mismatch_key]["name"] == "Position Mismatch"
-
         reset_key = _class_translation_key(AdaptiveCoverButton)
-        assert button_names[reset_key]["name"] == "Reset Manual Override"
+        expected_pairs = (
+            {
+                ("sensor", spec.translation_key)
+                for spec in (*_STANDARD_SPECS, *_DIAGNOSTIC_SPECS)
+                if spec.translation_key is not None
+            }
+            | {("binary_sensor", spec.key) for spec in _BINARY_SENSOR_SPECS}
+            | {("binary_sensor", mismatch_key), ("button", reset_key)}
+        )
+        missing_from_snapshot = sorted(
+            f"{platform}.{key}"
+            for platform, key in expected_pairs
+            if (platform, key) not in _ENGLISH_NAME_SNAPSHOT
+        )
+        assert not missing_from_snapshot, (
+            f"New name-bearing entit{'y is' if len(missing_from_snapshot) == 1 else 'ies are'} "
+            f"missing from _ENGLISH_NAME_SNAPSHOT: {missing_from_snapshot}\n"
+            "Add it with its current en.json name."
+        )
 
         # And the removed hardcoded overrides must STAY removed: HA only
         # reads the translation_key name when a subclass has not overridden
         # Entity.name itself. This is the same check HA's own
-        # Entity.suggested_object_id uses to detect an override.
-        for cls in (
-            _ACPSensor,
-            _ACPDiagnosticSensor,
-            AdaptiveCoverBinarySensor,
-            AdaptiveCoverPositionMismatchSensor,
-            AdaptiveCoverButton,
-        ):
+        # Entity.suggested_object_id uses to detect an override. Every class
+        # production can actually instantiate — including the RestoreEntity
+        # subclasses and the per-suffix ``_resolve_cls`` subclasses sensor.py
+        # builds for unrecorded_attributes — not just the generic bases
+        # (issue #1353 audit finding #1).
+        production_classes = (
+            set(_STANDARD_CLASSES.values())
+            | set(_DIAGNOSTIC_CLASSES.values())
+            | {
+                AdaptiveCoverBinarySensor,
+                AdaptiveCoverPositionMismatchSensor,
+                AdaptiveCoverButton,
+                AdaptiveCoverMyPositionButton,
+                AdaptiveCoverApplyCalculatedPositionButton,
+            }
+        )
+        for cls in production_classes:
             assert type.__getattribute__(cls, "name") is type.__getattribute__(
                 Entity, "name"
             ), f"{cls.__name__} overrides Entity.name — remove it, use translation_key."
 
-    def test_all_sensor_names_are_translated_in_every_language(self) -> None:
-        """Every registered sensor has a localized entity name in every language."""
-        all_specs = (*_STANDARD_SPECS, *_DIAGNOSTIC_SPECS)
-        languages = _load_all_translation_bundles()
-
-        for spec in all_specs:
-            key = spec.translation_key
-            assert key is not None
-            for language, data in languages.items():
-                name = data["entity"]["sensor"][key]["name"]
-                assert name.strip(), f"{language}: entity.sensor.{key}.name is empty"
+    # NOTE: a prior version of this file had
+    # test_all_sensor_names_are_translated_in_every_language here, asserting
+    # that every spec's translation_key has a non-empty
+    # entity.sensor.<key>.name in en/de/fr. Deleted (audit finding #4): it
+    # was fully redundant. test_sensor_translation_keys_exist_in_en_json
+    # above already guarantees the key exists in en.json for every spec, and
+    # DE/FR key-for-key parity with en.json (leaf-path level, so it covers
+    # the nested ``.name`` sub-key too) is enforced by
+    # tests/test_translations.py::test_key_structure_matches_en, while
+    # non-empty values everywhere are enforced by
+    # tests/test_translations.py::test_no_empty_string_values. Nothing here
+    # asserted anything those two didn't already cover.
 
     def test_control_status_values_are_translated_in_every_language(self) -> None:
         """Every ControlStatus value has a localized display label."""
@@ -294,55 +383,70 @@ class TestSensorSpecTranslationKeys:
             for value in status_values:
                 assert states[value].strip()
 
-    def test_binary_sensor_names_are_translated_in_every_language(self) -> None:
-        """Binary-sensor names are localized in every shipped language."""
-        expected_binary_names = {
-            "sun_motion": {
-                "en": "Sun Infront",
-                "de": "Sonne davor",
-                "fr": "Soleil devant",
-            },
-            "manual_override": {
-                "en": "Manual Override",
-                "de": "Manuelle Übersteuerung",
-                "fr": "Dérogation manuelle",
-            },
-            "glare_active": {
-                "en": "Glare Active",
-                "de": "Blendung aktiv",
-                "fr": "Éblouissement actif",
-            },
-            "position_mismatch": {
-                "en": "Position Mismatch",
-                "de": "Positionsabweichung",
-                "fr": "Écart de position",
-            },
-        }
+    def test_binary_sensor_and_button_names_are_translated_in_every_language(
+        self,
+    ) -> None:
+        """Binary-sensor and button names carry a real, non-empty DE/FR name.
 
-        for language, data in _load_all_translation_bundles().items():
+        Checks presence + non-empty rather than pinning exact wording: the
+        exact English strings are locked byte-for-byte by
+        ``test_english_entity_names_match_legacy_names`` above (issue #1353
+        audit finding #4), so this only needs to catch a missing key or an
+        accidentally-blanked translation — not block a legitimate DE/FR
+        wording fix. Includes the button's translation key, which previously
+        had no DE/FR coverage at all.
+        """
+        mismatch_key = _class_translation_key(AdaptiveCoverPositionMismatchSensor)
+        binary_keys = {spec.key for spec in _BINARY_SENSOR_SPECS} | {mismatch_key}
+        button_keys = {_class_translation_key(AdaptiveCoverButton)}
+
+        for language in ("de", "fr"):
+            data = _load_translation_bundle(language)
             binary_sensor = data["entity"]["binary_sensor"]
-            for key, names in expected_binary_names.items():
-                assert binary_sensor[key]["name"] == names[language]
+            for key in binary_keys:
+                assert (
+                    key in binary_sensor
+                ), f"{language}: missing entity.binary_sensor.{key}"
+                assert binary_sensor[key][
+                    "name"
+                ].strip(), f"{language}: entity.binary_sensor.{key}.name is empty"
+
+            button = data["entity"]["button"]
+            for key in button_keys:
+                assert key in button, f"{language}: missing entity.button.{key}"
+                assert button[key][
+                    "name"
+                ].strip(), f"{language}: entity.button.{key}.name is empty"
 
     def test_last_skipped_action_reasons_are_translated_in_every_language(self) -> None:
         """Every code the coordinator can write into ``last_skipped_action.reason``
         must have a translated display state.
 
         The expected set is derived from the code that actually emits skip
-        reasons, not hand-maintained: ``_EXPECTED_SKIP_CODES`` (the
-        ``cover_command`` skip-code canon), ``_HOLD_SKIP_LABEL``'s values
-        (the motion/manual hold labels ``_dispatch_to_cover`` picks between),
-        plus the three literals emitted directly — the outside-window
-        generic ``"hold"`` fallback, ``"preempted_by_handler"``
-        (``record_preempted_skip``), and the idle ``"no_action_skipped"``
-        state. This is what would have caught the PR's wrong guess:
+        reasons, not hand-maintained: ``EXPECTED_SKIP_CODES`` (the
+        ``cover_command`` ``_skip()`` canon), ``_HOLD_SKIP_LABEL``'s values
+        (the motion/manual hold labels ``_dispatch_to_cover`` picks between,
+        read directly off the live dict), ``EXTRA_RECORD_SKIPPED_ACTION_
+        REASONS`` (the outside-window generic ``"hold"`` fallback and
+        ``"preempted_by_handler"`` from ``record_preempted_skip`` — both
+        cross-checked against their actual call sites by
+        ``test_skip_reason_guard.TestSkipCodeExhaustiveness``), and
+        ``idle_last_skipped_value()`` (the idle state, read by calling the
+        real ``sensor._last_skipped_value`` rather than retyping its return
+        value). This is what would have caught the PR's wrong guess:
         ``automatic_control_off`` is a ControlStatus value, not a skip code,
-        and the three hold labels were emitted but untranslated.
+        and the three hold labels were emitted but untranslated — and, since
+        the extras are now guarded by a source scan rather than hand-typed
+        here, a *new* literal reason slipped into a
+        ``record_skipped_action()`` call outside ``_skip()`` fails in
+        ``test_skip_reason_guard.py`` before it can reach this test
+        untranslated (issue #1353 audit finding #5).
         """
         reasons = (
-            _EXPECTED_SKIP_CODES
+            EXPECTED_SKIP_CODES
             | set(_HOLD_SKIP_LABEL.values())
-            | {"hold", "preempted_by_handler", "no_action_skipped"}
+            | EXTRA_RECORD_SKIPPED_ACTION_REASONS
+            | {idle_last_skipped_value()}
         )
 
         for language, data in _load_all_translation_bundles().items():
@@ -421,6 +525,16 @@ _WITHHELD_FROM_NAMESPACE: dict[str, frozenset[str]] = {
             # on: it reports whether a calibration pass is running, which is a
             # thing a human does from the options flow once per install.
             "travel_calibration",
+            # These nine gained a translation_key under #1353 (they used to be
+            # withheld because the namespace resolver had nothing to match on
+            # at all), but they still belong here: each is continuously
+            # varying, a timestamp, or an event echo — the same churn reason
+            # the module docstring above gives for the whole set. A tracked
+            # template reading Cover_Position/Cover_Tilt/sun_position would
+            # re-render on every cycle's new percentage/angle; Start Sun/End
+            # Sun/manual_override_end_time are timestamps; last_skipped_action
+            # /last_cover_action are event echoes; position_verification's
+            # retry count changes with every reconcile pass.
             "Cover_Position",
             "Cover_Tilt",
             "Start Sun",

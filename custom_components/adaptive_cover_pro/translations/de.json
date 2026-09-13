@@ -1290,7 +1290,7 @@
           "preempted_by_handler": "Von einem anderen Handler verdrängt",
           "hold": "Zurückgehalten",
           "manual_override_hold": "Durch manuelle Übersteuerung zurückgehalten",
-          "motion_hold": "Durch Anwesenheit zurückgehalten"
+          "motion_hold": "Durch Belegung zurückgehalten"
         }
       },
       "last_cover_action": {

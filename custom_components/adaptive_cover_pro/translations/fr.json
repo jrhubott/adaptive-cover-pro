@@ -1290,7 +1290,7 @@
           "preempted_by_handler": "Devancé par un autre gestionnaire",
           "hold": "Maintenu",
           "manual_override_hold": "Maintien par dérogation manuelle",
-          "motion_hold": "Maintien par présence"
+          "motion_hold": "Maintien par occupation"
         }
       },
       "last_cover_action": {

@@ -82,9 +82,14 @@ class TestSolarGainSensorSpec:
         assert spec.suggested_display_precision == 0
 
     def test_it_is_named_as_an_estimate(self):
-        """The name is the first and cheapest of the three estimate signals."""
+        """The name is the first and cheapest of the three estimate signals.
+
+        The legacy hardcoded display name is gone (issue #1353 removed the
+        spec's ``display_name`` field along with the ``name`` override); the
+        English string itself is locked in
+        ``tests/test_spec_translation_keys.py::_ENGLISH_NAME_SNAPSHOT``.
+        """
         spec = _spec()
-        assert "Estimated" in spec.display_name
         assert spec.translation_key == "solar_gain"
 
     def test_it_is_a_diagnostic_entity(self):

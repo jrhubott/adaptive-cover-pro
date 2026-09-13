@@ -78,7 +78,6 @@ def _make_sensor(manager):
     sensor.hass = hass
     sensor.config_entry = config_entry
     sensor._entry_id = "test_entry"
-    sensor._sensor_name = "Manual Override End Time"
     sensor._write_ha_state_called = False
 
     def _fake_write_ha_state():

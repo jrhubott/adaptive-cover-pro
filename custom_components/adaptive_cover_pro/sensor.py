@@ -120,7 +120,6 @@ class _SensorSpec:
     """
 
     suffix: str  # → unique_id; LOCKED
-    display_name: str
     icon: str | None
     value_fn: Callable[[Any], Any]
     attrs_fn: Callable[[Any], Mapping[str, Any] | None] | None = None
@@ -1394,7 +1393,6 @@ def _last_skipped_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
 _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
     _SensorSpec(
         suffix="Cover_Position",
-        display_name="Target Position",
         icon="mdi:sun-compass",
         translation_key="target_position",
         state_class=SensorStateClass.MEASUREMENT,
@@ -1420,7 +1418,6 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="Cover_Tilt",
-        display_name="Target Tilt",
         icon="mdi:angle-acute",
         translation_key="target_tilt",
         state_class=SensorStateClass.MEASUREMENT,
@@ -1432,7 +1429,6 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="Start Sun",
-        display_name="Start Sun",
         icon="mdi:sun-clock-outline",
         translation_key="start_sun",
         device_class=SensorDeviceClass.TIMESTAMP,
@@ -1442,7 +1438,6 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="End Sun",
-        display_name="End Sun",
         icon="mdi:sun-clock",
         translation_key="end_sun",
         device_class=SensorDeviceClass.TIMESTAMP,
@@ -1456,7 +1451,6 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
 _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     _SensorSpec(
         suffix="sun_position",
-        display_name="Sun Position",
         icon="mdi:compass-outline",
         translation_key="sun_position",
         state_class=SensorStateClass.MEASUREMENT,
@@ -1467,7 +1461,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="solar_calculation",
-        display_name="Solar Calculation",
         icon="mdi:sun-angle-outline",
         translation_key="solar_calculation",
         state_class=SensorStateClass.MEASUREMENT,
@@ -1481,7 +1474,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="control_status",
-        display_name="Control Status",
         icon="mdi:information-outline",
         translation_key="control_status",
         value_fn=_control_status_value,
@@ -1490,7 +1482,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="decision_trace",
-        display_name="Decision Trace",
         icon="mdi:list-status",
         translation_key="decision_trace",
         device_class=SensorDeviceClass.ENUM,
@@ -1503,7 +1494,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="position_forecast",
-        display_name="Position Forecast",
         icon="mdi:chart-line",
         translation_key="position_forecast",
         device_class=SensorDeviceClass.TIMESTAMP,
@@ -1513,7 +1503,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="last_skipped_action",
-        display_name="Last Skipped Action",
         icon="mdi:debug-step-over",
         translation_key="last_skipped_action",
         value_fn=_last_skipped_value,
@@ -1521,7 +1510,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="last_cover_action",
-        display_name="Last Cover Action",
         icon="mdi:history",
         translation_key="last_cover_action",
         value_fn=_last_action_value,
@@ -1529,7 +1517,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="manual_override_end_time",
-        display_name="Manual Override End Time",
         icon="mdi:timer-outline",
         translation_key="manual_override_end_time",
         device_class=SensorDeviceClass.TIMESTAMP,
@@ -1539,7 +1526,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="position_verification",
-        display_name="Position Verification",
         icon="mdi:refresh",
         translation_key="position_verification",
         state_class=SensorStateClass.MEASUREMENT,
@@ -1551,7 +1537,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="motion_status",
-        display_name="Occupancy Status",
         icon="mdi:motion-sensor",
         translation_key="motion_status",
         device_class=SensorDeviceClass.ENUM,
@@ -1569,7 +1554,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="travel_calibration",
-        display_name="Travel Time Calibration",
         icon="mdi:timer-cog-outline",
         translation_key="travel_calibration",
         device_class=SensorDeviceClass.ENUM,
@@ -1588,7 +1572,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="solar_gain",
-        display_name="Estimated Solar Gain",
         icon="mdi:solar-power-variant",
         translation_key="solar_gain",
         device_class=SensorDeviceClass.POWER,
@@ -1609,7 +1592,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="climate_status",
-        display_name="Climate Status",
         icon="mdi:weather-partly-cloudy",
         translation_key="climate_status",
         device_class=SensorDeviceClass.ENUM,

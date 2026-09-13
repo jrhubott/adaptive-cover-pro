@@ -1,19 +1,28 @@
 """Skip reason guard tests.
 
-Two guards in one module:
+Three guards in one module:
 
 1. Skip-code exhaustiveness — the canonical set of reason codes embedded here
    must match every ``_skip()`` call site in cover_command.py. Fails when a new
-   skip code is added or an old one removed without updating _EXPECTED_SKIP_CODES.
+   skip code is added or an old one removed without updating EXPECTED_SKIP_CODES.
 
-2. Always-present keys — every skip code must produce a ``last_skipped_action``
+2. Literal-reason exhaustiveness outside ``_skip()`` — the small number of
+   reason literals that reach ``record_skipped_action()`` directly, or via a
+   ``Mapping.get(..., "literal")`` fallback, bypassing ``_skip()`` entirely.
+   Fails when a new one is added to cover_command.py or coordinator.py
+   without updating EXTRA_RECORD_SKIPPED_ACTION_REASONS.
+
+3. Always-present keys — every skip code must produce a ``last_skipped_action``
    dict that contains all 7 always-present keys documented in CLAUDE.md. Fails
    when ``record_skipped_action()`` is changed in a way that drops a required key.
 
 When you add a new skip code:
-  - Add the reason string to _EXPECTED_SKIP_CODES below
+  - Add the reason string to EXPECTED_SKIP_CODES in tests/_helpers/skip_codes.py
   - Update the always-present-keys test if the new code produces extras
   - Update the CLAUDE.md "last_skipped_action Dict Structure" section
+  - Add a translated state to translations/{en,de,fr}.json entity.sensor
+    .last_skipped_action.state (tests/test_spec_translation_keys.py enforces
+    this)
 """
 
 from __future__ import annotations
@@ -26,25 +35,9 @@ import pytest
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
 )
-
-# Canonical set of skip reason codes.  Update this (and CLAUDE.md) whenever a
-# code is added or removed from managers/cover_command.py.
-_EXPECTED_SKIP_CODES: frozenset[str] = frozenset(
-    {
-        "integration_disabled",
-        "auto_control_off",
-        "same_position",
-        "delta_too_small",
-        "time_delta_too_small",
-        "manual_override",
-        "no_capable_service",
-        "dry_run",
-        "service_call_failed",
-        "cover_unavailable",
-        "policy_deferred",
-        "calibration_in_progress",
-        "superseded_in_queue",
-    }
+from tests._helpers.skip_codes import (
+    EXPECTED_SKIP_CODES as _EXPECTED_SKIP_CODES,
+    EXTRA_RECORD_SKIPPED_ACTION_REASONS,
 )
 
 # Always-present keys in any last_skipped_action dict (CLAUDE.md §last_skipped_action).
@@ -67,6 +60,13 @@ _COVER_COMMAND_SRC = (
     / "managers"
     / "cover_command"
     / "__init__.py"
+).read_text()
+
+_COORDINATOR_SRC = (
+    Path(__file__).parent.parent
+    / "custom_components"
+    / "adaptive_cover_pro"
+    / "coordinator.py"
 ).read_text()
 
 
@@ -118,6 +118,56 @@ class TestSkipCodeExhaustiveness:
             f"Skip codes in cover_command.py not in _EXPECTED_SKIP_CODES: "
             f"{sorted(undocumented)}\n"
             "Add them to _EXPECTED_SKIP_CODES and update CLAUDE.md."
+        )
+
+    def test_no_undocumented_literal_reasons_outside_skip(self) -> None:
+        """Every literal reason reaching record_skipped_action() outside
+        ``_skip()`` must be in EXTRA_RECORD_SKIPPED_ACTION_REASONS.
+
+        ``_skip()`` call sites are covered by
+        ``test_no_undocumented_skip_codes_in_source`` above. This closes the
+        gap for the OTHER two shapes a ``last_skipped_action.reason`` literal
+        can take, scanning both cover_command.py and coordinator.py:
+
+        1. A literal passed directly to ``record_skipped_action()`` —
+           currently only ``record_preempted_skip``'s
+           ``"preempted_by_handler"``.
+        2. A literal fallback in ``_HOLD_SKIP_LABEL.get(..., "literal")`` —
+           currently only coordinator's pseudo-hold ``"hold"`` default.
+
+        A new literal reaching either shape without being added to
+        EXTRA_RECORD_SKIPPED_ACTION_REASONS fails here. This is what would
+        have caught #1353's hand-typed, undocumented
+        ``{"hold", "preempted_by_handler", "no_action_skipped"}`` set that
+        used to live directly in test_spec_translation_keys.py.
+        """
+        direct_literal = re.compile(
+            r'record_skipped_action\(\s*\w+,\s*["\']([^"\']+)["\']'
+        )
+        found: set[str] = set()
+        for src in (_COVER_COMMAND_SRC, _COORDINATOR_SRC):
+            found |= set(direct_literal.findall(src))
+
+        # The pseudo-hold fallback is a lookup, not a direct call argument —
+        # scoped to _HOLD_SKIP_LABEL specifically so this doesn't turn into a
+        # blanket (and noisy) scan of every `.get(..., "literal")` in the file.
+        hold_fallback = re.search(
+            r'_HOLD_SKIP_LABEL\.get\([^,]+,\s*["\']([^"\']+)["\']\)', _COORDINATOR_SRC
+        )
+        assert hold_fallback, (
+            'Expected to find _HOLD_SKIP_LABEL.get(..., "<fallback>") in '
+            "coordinator.py — has the pseudo-hold fallback been refactored? "
+            "Update this scan to match."
+        )
+        found.add(hold_fallback.group(1))
+
+        undocumented = found - EXTRA_RECORD_SKIPPED_ACTION_REASONS
+        assert not undocumented, (
+            f"New literal last_skipped_action reason(s) found outside "
+            f"_skip(): {sorted(undocumented)}\n"
+            "Add them to tests/_helpers/skip_codes.EXTRA_RECORD_SKIPPED_ACTION_REASONS "
+            "and to translations/{en,de,fr}.json "
+            "entity.sensor.last_skipped_action.state."
         )
 
 
