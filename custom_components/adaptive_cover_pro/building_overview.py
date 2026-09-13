@@ -12,11 +12,10 @@ locally overrides one. This module builds:
 - structured **override records** (`build_override_records`) consumed by the
   profile's Local Overrides step and the overview's override notes.
 
-English-only by design (a maintenance/diagnostic view, mirroring the
-English-deferred ``summary_geometry_lines``); the markdown body is authored
-through the ``_LABELS`` dict so a later ``acp-translate`` pass can lift it into
-``summary_i18n`` without restructuring. Only option keys / values are read — this
-never branches on cover-type strings (uses ``get_policy``).
+The markdown body is authored through ``_LABELS`` and overlaid with the
+language-specific ``summary_i18n`` bundle when a Home Assistant instance is
+available. Only option keys / values are read — this never branches on
+cover-type strings (uses ``get_policy``).
 """
 
 from __future__ import annotations
@@ -24,6 +23,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -102,6 +102,7 @@ from .helpers import (
     manual_hold_is_unanchored,
     motion_entities,
 )
+from .i18n_bundle import load_bundle_overlay
 from .profile_link import classify_profile_sensor_source
 
 _NONE = "—"
@@ -172,6 +173,70 @@ _SENSOR_LABELS: dict[str, str] = {
     CONF_SUNRISE_TIME_ENTITY: "Sunrise time entity",
 }
 
+_COMPARISON_LABELS: dict[str, str] = {
+    "climate_mode": "Climate mode",
+    "lux_threshold": "Lux threshold",
+    "irradiance_threshold": "Irradiance threshold",
+    "cloud_coverage_threshold": "Cloud coverage threshold",
+    "position_limits": "Position limits",
+    "default_position": "Default position",
+    "sunset_position": "Sunset position",
+    "custom_positions": "Custom positions",
+    "glare_zones": "Glare zones",
+    "motion": "Motion",
+    "manual_override": "Manual override",
+    "delta_position_time": "Delta position / time",
+    "sun_elevation_range": "Sun elevation range",
+    "active_time_window": "Active time window",
+    "indoor_temp_range": "Indoor temp range",
+    "outdoor_temp_threshold": "Outdoor temp threshold",
+    "cloud_suppression": "Cloud suppression",
+    "weather_protection": "Weather protection",
+    "wind_speed_threshold": "Wind speed threshold",
+    "wind_direction_tolerance": "Wind direction tolerance",
+    "rain_threshold": "Rain threshold",
+    "weather_resume_delay": "Weather resume delay",
+}
+
+_ACTIVE_LABELS = _LABELS
+
+
+def _labels_for_overview(hass: HomeAssistant | None) -> dict[str, str]:
+    """Load localized overview labels, falling back to the English defaults."""
+    labels = dict(_LABELS)
+    labels.update({f"sensor.{key}": value for key, value in _SENSOR_LABELS.items()})
+    labels.update(
+        {f"comparison.{key}": value for key, value in _COMPARISON_LABELS.items()}
+    )
+    labels.update(
+        {
+            "value.on": "on",
+            "value.off": "off",
+            "value.enabled": "enabled",
+            "value.slots": "slot(s)",
+            "value.most": "most",
+            "value.except": "except",
+        }
+    )
+    if hass is None:
+        return labels
+    language = (getattr(hass.config, "language", None) or "en").split("-")[0]
+    overlay = load_bundle_overlay(Path(__file__).parent / "summary_i18n", language)
+    prefix = "building_overview."
+    labels = dict(_LABELS)
+    labels.update(
+        {
+            key.removeprefix(prefix): value
+            for key, value in overlay.items()
+            if key.startswith(prefix)
+        }
+    )
+    return labels
+
+
+def _overview_label(key: str) -> str:
+    return _ACTIVE_LABELS.get(key, _LABELS.get(key, key))
+
 # Shared-sensor keys shown in the "Shared sensors" listing, in display order.
 # The five *_template_mode combine-mode keys live in BUILDING_PROFILE_SENSOR_KEYS
 # but are toggles, not sensors — they are excluded from these views.
@@ -203,7 +268,7 @@ def _is_set(value: Any) -> bool:
 
 
 def _sensor_label(key: str) -> str:
-    return _SENSOR_LABELS.get(key) or key.replace("_", " ").capitalize()
+    return _overview_label(f"sensor.{key}") or _SENSOR_LABELS.get(key) or key.replace("_", " ").capitalize()
 
 
 def _entity_repr(value: Any) -> str:
@@ -249,7 +314,9 @@ def _iter_overrides(
     """
     out: list[tuple[str, str, Any, Any]] = []
     for key in sorted(BUILDING_PROFILE_SENSOR_KEYS):
-        source, _ = classify_profile_sensor_source(key, cover_options, profile_options)
+        source, _ = classify_profile_sensor_source(
+            key, dict(cover_options), dict(profile_options)
+        )
         local = cover_options.get(key)
         profile = profile_options.get(key)
         if source == "override":
@@ -260,27 +327,37 @@ def _iter_overrides(
 
 
 def build_override_records(
-    profile_entry: ConfigEntry, linked_cover_entries: Iterable[ConfigEntry]
+    profile_entry: ConfigEntry,
+    linked_cover_entries: Iterable[ConfigEntry],
+    hass: HomeAssistant | None = None,
 ) -> list[OverrideRecord]:
     """Build override records across every cover linked to a profile."""
+    global _ACTIVE_LABELS
+    previous_labels = _ACTIVE_LABELS
+    _ACTIVE_LABELS = _labels_for_overview(hass)
     profile_options = profile_entry.options or {}
     records: list[OverrideRecord] = []
-    for entry in linked_cover_entries:
-        options = entry.options or {}
-        name = entry.title or (entry.data or {}).get("name") or "Cover"
-        for key, source, local, profile in _iter_overrides(profile_options, options):
-            records.append(
-                OverrideRecord(
-                    entry_id=entry.entry_id,
-                    cover_name=name,
-                    key=key,
-                    label=_sensor_label(key),
-                    local_text=_local_override_repr(local),
-                    profile_text=_entity_repr(profile),
-                    profile_sets_it=source == "override",
+    try:
+        for entry in linked_cover_entries:
+            options = entry.options or {}
+            name = entry.title or (entry.data or {}).get("name") or "Cover"
+            for key, source, local, profile in _iter_overrides(
+                dict(profile_options), dict(options)
+            ):
+                records.append(
+                    OverrideRecord(
+                        entry_id=entry.entry_id,
+                        cover_name=name,
+                        key=key,
+                        label=_sensor_label(key),
+                        local_text=_local_override_repr(local),
+                        profile_text=_entity_repr(profile),
+                        profile_sets_it=source == "override",
+                    )
                 )
-            )
-    return records
+        return records
+    finally:
+        _ACTIVE_LABELS = previous_labels
 
 
 def profile_value_breakdown(
@@ -288,6 +365,7 @@ def profile_value_breakdown(
     cover_options: Mapping,
     keys: Iterable[str],
     profile_title: str = "",
+    hass: HomeAssistant | None = None,
 ) -> str:
     """Markdown breakdown of the profile's value per profile-owned key on a step.
 
@@ -295,38 +373,48 @@ def profile_value_breakdown(
     profile assigns a value and the cover's inherit/override status. Empty when
     no key on the step has a profile value or a local value.
     """
+    global _ACTIVE_LABELS
+    previous_labels = _ACTIVE_LABELS
+    _ACTIVE_LABELS = _labels_for_overview(hass)
     keys = [
         k
         for k in keys
         if k in BUILDING_PROFILE_SENSOR_KEYS and not k.endswith("_template_mode")
     ]
-    lines: list[str] = []
-    for key in sorted(keys):
-        source, _ = classify_profile_sensor_source(key, cover_options, profile_options)
-        profile = profile_options.get(key)
-        local = cover_options.get(key)
-        label = _sensor_label(key)
-        if source == "profile":
-            lines.append(
-                _LABELS["inherit_from_profile"].format(
-                    label=label, value=_entity_repr(profile)
+    try:
+        lines: list[str] = []
+        for key in sorted(keys):
+            source, _ = classify_profile_sensor_source(key, dict(cover_options), dict(profile_options))
+            profile = profile_options.get(key)
+            local = cover_options.get(key)
+            label = _sensor_label(key)
+            if source == "profile":
+                lines.append(
+                    _overview_label("inherit_from_profile").format(
+                        label=label, value=_entity_repr(profile)
+                    )
                 )
-            )
-        elif source == "override":
-            lines.append(
-                _LABELS["inherit_overridden"].format(
-                    label=label,
-                    value=_local_override_repr(local),
-                    profile=_entity_repr(profile),
+            elif source == "override":
+                lines.append(
+                    _overview_label("inherit_overridden").format(
+                        label=label,
+                        value=_local_override_repr(local),
+                        profile=_entity_repr(profile),
+                    )
                 )
-            )
-        elif _is_set(local):
-            lines.append(
-                _LABELS["inherit_local"].format(label=label, value=_entity_repr(local))
-            )
-    if not lines:
-        return ""
-    return "\n".join([_LABELS["inherit_header"].format(title=profile_title), *lines])
+            elif _is_set(local):
+                lines.append(
+                    _overview_label("inherit_local").format(
+                        label=label, value=_entity_repr(local)
+                    )
+                )
+        if not lines:
+            return ""
+        return "\n".join(
+            [_overview_label("inherit_header").format(title=profile_title), *lines]
+        )
+    finally:
+        _ACTIVE_LABELS = previous_labels
 
 
 # ---------------------------------------------------------------------------
@@ -590,13 +678,28 @@ def build_building_overview(
     profile_options = dict(profile_entry.options or {})
     records = [_CoverRecord.from_entry(e) for e in linked_cover_entries]
 
-    blocks: list[str] = [_LABELS["title"]]
+    global _ACTIVE_LABELS
+    previous_labels = _ACTIVE_LABELS
+    _ACTIVE_LABELS = _labels_for_overview(hass)
+    try:
+        return _build_building_overview_with_labels(profile_entry, linked_cover_entries)
+    finally:
+        _ACTIVE_LABELS = previous_labels
+
+
+def _build_building_overview_with_labels(
+    profile_entry: ConfigEntry, linked_cover_entries: list[ConfigEntry]
+) -> str:
+    """Render an overview using the currently active label overlay."""
+    profile_options = dict(profile_entry.options or {})
+    records = [_CoverRecord.from_entry(e) for e in linked_cover_entries]
+    blocks: list[str] = [_overview_label("title")]
     if not records:
-        blocks.append(_LABELS["no_covers"])
+        blocks.append(_overview_label("no_covers"))
         blocks.append("\n".join(_build_shared_sensors_section(profile_options, [])))
         return "\n\n".join(blocks)
 
-    blocks.append(_LABELS["linked_count"].format(n=len(records)))
+    blocks.append(_overview_label("linked_count").format(n=len(records)))
     blocks.append("\n".join(_build_shared_sensors_section(profile_options, records)))
     blocks.append("\n".join(_build_linked_covers_section(records)))
     blocks.append("\n".join(_build_comparison_section(records)))
@@ -606,7 +709,7 @@ def build_building_overview(
 def _build_shared_sensors_section(
     profile_options: dict, records: list[_CoverRecord]
 ) -> list[str]:
-    lines = [_LABELS["shared_header"], "", _LABELS["shared_hint"], ""]
+    lines = [_overview_label("shared_header"), "", _overview_label("shared_hint"), ""]
     defined = [k for k in _SHARED_DISPLAY_KEYS if _is_set(profile_options.get(k))]
     if defined:
         for key in defined:
@@ -614,7 +717,7 @@ def _build_shared_sensors_section(
                 f"- {_sensor_label(key)}: {_entity_repr(profile_options[key])}"
             )
     else:
-        lines.append(_LABELS["shared_none"])
+        lines.append(_overview_label("shared_none"))
 
     notes = _override_notes(profile_options, records)
     if notes:
@@ -632,7 +735,7 @@ def _override_notes(profile_options: dict, records: list[_CoverRecord]) -> list[
         ):
             if source == "override":
                 notes.append(
-                    _LABELS["override_note"].format(
+                    _overview_label("override_note").format(
                         cover=record.name,
                         label=_sensor_label(key),
                         local=_local_override_repr(local),
@@ -641,7 +744,7 @@ def _override_notes(profile_options: dict, records: list[_CoverRecord]) -> list[
                 )
             else:
                 notes.append(
-                    _LABELS["local_note"].format(
+                    _overview_label("local_note").format(
                         cover=record.name,
                         label=_sensor_label(key),
                         local=_entity_repr(local),
@@ -651,13 +754,14 @@ def _override_notes(profile_options: dict, records: list[_CoverRecord]) -> list[
 
 
 def _build_linked_covers_section(records: list[_CoverRecord]) -> list[str]:
-    lines = [_LABELS["roster_header"], ""]
+    lines = [_overview_label("roster_header"), ""]
     for record in records:
-        type_label = (
-            get_policy(record.sensor_type).display_label()
-            if record.sensor_type
-            else _NONE
-        )
+        type_label = _NONE
+        if record.sensor_type:
+            type_key = record.sensor_type.removeprefix("cover_")
+            type_label = _overview_label(f"cover_types.{type_key}")
+            if type_label == f"cover_types.{type_key}":
+                type_label = get_policy(record.sensor_type).display_label()
         entities = ", ".join(record.entities) if record.entities else _NONE
         lines.append(f"- **{record.name}** — {type_label} — {entities}")
     return lines
@@ -671,18 +775,44 @@ def _build_comparison_section(records: list[_CoverRecord]) -> list[str]:
         if len(set(values)) > 1:
             differing.append((spec, values))
         else:
-            identical.append((spec.label, values[0]))
+            identical.append(
+                (
+                    _overview_label(f"comparison.{_comparison_key(spec.label)}"),
+                    _localize_value(values[0]),
+                )
+            )
 
-    lines = [_LABELS["matrix_header"], ""]
+    lines = [_overview_label("matrix_header"), ""]
     if not differing:
-        lines.append(_LABELS["matrix_all_same"].format(n=len(records)))
+        lines.append(_overview_label("matrix_all_same").format(n=len(records)))
     else:
-        lines += [_format_diff_line(spec.label, records, v) for spec, v in differing]
+        lines += [
+                _format_diff_line(
+                _overview_label(f"comparison.{_comparison_key(spec.label)}"), records, v
+            )
+            for spec, v in differing
+        ]
 
     if identical:
-        lines += ["", _LABELS["identical_header"]]
+        lines += ["", _overview_label("identical_header")]
         lines += [f"- {label}: `{value}`" for label, value in identical]
     return lines
+
+
+def _comparison_key(label: str) -> str:
+    for key, value in _COMPARISON_LABELS.items():
+        if value == label:
+            return key
+    return label.lower().replace(" / ", "_").replace(" ", "_")
+
+
+def _localize_value(value: str) -> str:
+    if value.endswith(" slot(s)"):
+        return f"{value.removesuffix(' slot(s)')} {_overview_label('value.slots')}"
+    for prefix in ("enabled / ", "on / ", "off / "):
+        if value.startswith(prefix):
+            return f"{_overview_label(f'value.{prefix.strip()}')} / {value[len(prefix):]}"
+    return _ACTIVE_LABELS.get(f"value.{value}", value)
 
 
 def _format_diff_line(
@@ -694,10 +824,15 @@ def _format_diff_line(
     otherwise (even split / all distinct) list every cover's value.
     """
     top_value, top_count = Counter(values).most_common(1)[0]
+    top_value_text = _localize_value(top_value)
     if top_count * 2 > len(records):
         exceptions = ", ".join(
-            f"**{r.name}** `{v}`" for r, v in zip(records, values) if v != top_value
+            f"**{r.name}** `{_localize_value(v)}`"
+            for r, v in zip(records, values)
+            if v != top_value
         )
-        return f"- {label} — most `{top_value}`, except {exceptions}"
-    parts = " · ".join(f"**{r.name}** `{v}`" for r, v in zip(records, values))
+        return f"- {label} — {_overview_label('value.most')} `{top_value_text}`, {_overview_label('value.except')} {exceptions}"
+    parts = " · ".join(
+        f"**{r.name}** `{_localize_value(v)}`" for r, v in zip(records, values)
+    )
     return f"- {label} — {parts}"

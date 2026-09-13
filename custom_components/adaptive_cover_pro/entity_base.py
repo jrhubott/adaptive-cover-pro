@@ -64,13 +64,12 @@ class AdaptiveCoverBaseEntity(CoordinatorEntity["AdaptiveDataUpdateCoordinator"]
                     connections=device_entry.connections,
                 )
 
-        type_display = self._get_type_display_name(self._cover_type)
         return DeviceInfo(
             entry_type=DeviceEntryType.SERVICE,
             identifiers={(DOMAIN, self._device_id)},
             name=self._name,
             manufacturer="Jason Rhubottom",
-            model=f"Adaptive {type_display} Cover",
+            model=self._get_device_model_name(self._cover_type),
             configuration_url="https://github.com/jrhubott/adaptive-cover-pro",
         )
 
@@ -84,6 +83,40 @@ class AdaptiveCoverBaseEntity(CoordinatorEntity["AdaptiveDataUpdateCoordinator"]
         intentional add to `display_name`.
         """
         return CoverType(cover_type).display_name
+
+    def _get_device_model_name(self, cover_type: str | CoverType) -> str:
+        """Return a localized device model label for the configured cover type."""
+        language = (getattr(self.hass.config, "language", None) or "en").split("-")[0]
+        labels = {
+            "de": {
+                CoverType.BLIND: "Adaptive Vertikale Beschattung",
+                CoverType.AWNING: "Adaptive Horizontale Markise",
+                CoverType.TILT: "Adaptive Jalousie (nur Neigung)",
+                CoverType.VENETIAN: "Adaptive Jalousie (zwei Achsen)",
+                CoverType.OSCILLATING_AWNING: "Adaptive Ausfallmarkise",
+                CoverType.ROOF_WINDOW: "Adaptive Dachfenster-Beschattung",
+                CoverType.SLIDING_CURTAIN: "Adaptive Schiebegardine",
+                CoverType.LOUVERED_ROOF: "Adaptives Lamellendach",
+                CoverType.DAY_NIGHT_SHADE: "Adaptives Tag-/Nachtrollo",
+                CoverType.DUAL_PANEL: "Adaptiver Doppelpanel-Rollo",
+            },
+            "fr": {
+                CoverType.BLIND: "Store vertical Adaptive",
+                CoverType.AWNING: "Store banne horizontal Adaptive",
+                CoverType.TILT: "Store vénitien Adaptive (inclinaison seule)",
+                CoverType.VENETIAN: "Store vénitien Adaptive (deux axes)",
+                CoverType.OSCILLATING_AWNING: "Store à projection Adaptive",
+                CoverType.ROOF_WINDOW: "Fenêtre de toit Adaptive",
+                CoverType.SLIDING_CURTAIN: "Rideau coulissant Adaptive",
+                CoverType.LOUVERED_ROOF: "Toit à lames Adaptive",
+                CoverType.DAY_NIGHT_SHADE: "Store jour/nuit Adaptive",
+                CoverType.DUAL_PANEL: "Store à double panneau Adaptive",
+            },
+        }
+        cover_type = CoverType(cover_type)
+        if language in labels and cover_type in labels[language]:
+            return labels[language][cover_type]
+        return f"Adaptive {cover_type.display_name} Cover"
 
     @property
     def available(self) -> bool:

@@ -556,7 +556,7 @@ def test_sun_position_attrs_unconfigured_slot_publishes_no_spurious_range():
 
 @pytest.mark.unit
 def test_last_action_sensor_native_value_with_timestamp():
-    """native_value formats timestamp correctly when action has a valid timestamp."""
+    """native_value exposes a stable, translatable service state."""
     ts = "2024-06-21T14:30:00+00:00"
     coord = _make_coordinator(
         diagnostics={
@@ -578,10 +578,7 @@ def test_last_action_sensor_native_value_with_timestamp():
         coordinator=coord,
     )
     val = sensor.native_value
-    assert val is not None
-    assert "test_blind" in val
-    assert "set_cover_position" in val
-    assert "14:30:00" in val
+    assert val == "set_cover_position"
 
 
 @pytest.mark.unit
@@ -607,7 +604,7 @@ def test_last_action_sensor_native_value_without_timestamp():
         coordinator=coord,
     )
     val = sensor.native_value
-    assert val == "set_cover_position → test_blind"
+    assert val == "set_cover_position"
 
 
 @pytest.mark.unit

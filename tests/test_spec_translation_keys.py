@@ -44,6 +44,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_SENSOR_TYPE,
     GLARE_ZONE_SLOT_NUMBERS,
+    ControlStatus,
     CoverType,
 )
 from custom_components.adaptive_cover_pro.group_entities import (
@@ -80,10 +81,19 @@ _EXPECTED_SENSOR_TRANSLATION_KEYS: frozenset[str] = frozenset(
         "climate_status",
         "control_status",
         "decision_trace",
+        "end_sun",
+        "last_cover_action",
+        "last_skipped_action",
+        "manual_override_end_time",
         "motion_status",
+        "position_verification",
         "position_forecast",
         "solar_calculation",
         "solar_gain",
+        "start_sun",
+        "sun_position",
+        "target_position",
+        "target_tilt",
         "travel_calibration",
     }
 )
@@ -183,6 +193,227 @@ class TestSensorSpecTranslationKeys:
             "Remove the orphaned entry from en.json (and de.json, fr.json)."
         )
 
+    def test_all_sensor_names_are_translated_in_every_language(self) -> None:
+        """Every registered sensor has a localized entity name in every language."""
+        all_specs = (*_STANDARD_SPECS, *_DIAGNOSTIC_SPECS)
+        languages = {
+            language: json.loads(
+                (
+                    Path(__file__).parent.parent
+                    / "custom_components"
+                    / "adaptive_cover_pro"
+                    / "translations"
+                    / f"{language}.json"
+                ).read_text(encoding="utf-8")
+            )
+            for language in ("en", "de", "fr")
+        }
+        english = languages["en"]["entity"]["sensor"]
+
+        for spec in all_specs:
+            key = spec.translation_key
+            assert key is not None
+            english_name = english[key]["name"]
+            for language, data in languages.items():
+                name = data["entity"]["sensor"][key]["name"]
+                assert name.strip(), f"{language}: entity.sensor.{key}.name is empty"
+                if language != "en":
+                    assert name != english_name, (
+                        f"{language}: entity.sensor.{key}.name still uses English"
+                    )
+
+    def test_control_status_values_are_translated_in_every_language(self) -> None:
+        """Every ControlStatus value has a localized display label."""
+        status_values = {
+            value
+            for name, value in vars(ControlStatus).items()
+            if name.isupper() and isinstance(value, str)
+        }
+        languages = {
+            language: json.loads(
+                (
+                    Path(__file__).parent.parent
+                    / "custom_components"
+                    / "adaptive_cover_pro"
+                    / "translations"
+                    / f"{language}.json"
+                ).read_text(encoding="utf-8")
+            )
+            for language in ("en", "de", "fr")
+        }
+        english = languages["en"]["entity"]["sensor"]["control_status"]["state"]
+
+        for language, data in languages.items():
+            states = data["entity"]["sensor"]["control_status"]["state"]
+            assert set(states) >= status_values, (
+                f"{language}: missing ControlStatus translations: "
+                f"{sorted(status_values - set(states))}"
+            )
+            for value in status_values:
+                assert states[value].strip()
+                if language != "en":
+                    assert states[value] != english[value], (
+                        f"{language}: control_status.{value} still uses English"
+                    )
+
+    def test_position_verification_unit_is_translated_in_every_language(self) -> None:
+        """The retry counter uses a localized unit without changing its number."""
+        expected = {
+            "en": "retries",
+            "de": "Versuche",
+            "fr": "tentatives",
+        }
+        for language, unit in expected.items():
+            data = json.loads(
+                (
+                    Path(__file__).parent.parent
+                    / "custom_components"
+                    / "adaptive_cover_pro"
+                    / "translations"
+                    / f"{language}.json"
+                ).read_text(encoding="utf-8")
+            )
+            assert (
+                data["entity"]["sensor"]["position_verification"]
+                .get("unit_of_measurement")
+                == unit
+            )
+
+    def test_binary_sensor_names_and_empty_last_action_are_translated(self) -> None:
+        """Binary-sensor names and the empty action state are localized."""
+        expected_binary_names = {
+            "sun_motion": {
+                "en": "Sun Infront",
+                "de": "Sonne davor",
+                "fr": "Soleil devant",
+            },
+            "manual_override": {
+                "en": "Manual Override",
+                "de": "Manuelle Übersteuerung",
+                "fr": "Dérogation manuelle",
+            },
+            "glare_active": {
+                "en": "Glare Active",
+                "de": "Blendung aktiv",
+                "fr": "Éblouissement actif",
+            },
+            "position_mismatch": {
+                "en": "Position Mismatch",
+                "de": "Positionsabweichung",
+                "fr": "Écart de position",
+            },
+        }
+        expected_empty_action = {
+            "en": "No Action Recorded",
+            "de": "Keine Aktion aufgezeichnet",
+            "fr": "Aucune action enregistrée",
+        }
+        expected_action_services = {
+            "open_cover": {
+                "en": "Open Cover",
+                "de": "Beschattung öffnen",
+                "fr": "Ouvrir le store",
+            },
+            "close_cover": {
+                "en": "Close Cover",
+                "de": "Beschattung schließen",
+                "fr": "Fermer le store",
+            },
+            "stop_cover": {
+                "en": "Stop Cover",
+                "de": "Beschattung stoppen",
+                "fr": "Arrêter le store",
+            },
+            "set_cover_position": {
+                "en": "Set Cover Position",
+                "de": "Beschattungsposition setzen",
+                "fr": "Définir la position du store",
+            },
+            "set_cover_tilt_position": {
+                "en": "Set Cover Tilt",
+                "de": "Beschattungsneigung setzen",
+                "fr": "Définir l'inclinaison du store",
+            },
+            "unknown_service": {
+                "en": "Unknown Service",
+                "de": "Unbekannter Dienst",
+                "fr": "Service inconnu",
+            },
+        }
+
+        for language in ("en", "de", "fr"):
+            data = json.loads(
+                (
+                    Path(__file__).parent.parent
+                    / "custom_components"
+                    / "adaptive_cover_pro"
+                    / "translations"
+                    / f"{language}.json"
+                ).read_text(encoding="utf-8")
+            )
+            binary_sensor = data["entity"]["binary_sensor"]
+            for key, names in expected_binary_names.items():
+                assert binary_sensor[key]["name"] == names[language]
+            assert (
+                data["entity"]["sensor"]["last_cover_action"]["state"][
+                    "no_action_recorded"
+                ]
+                == expected_empty_action[language]
+            )
+            states = data["entity"]["sensor"]["last_cover_action"]["state"]
+            for service, names in expected_action_services.items():
+                assert states[service] == names[language]
+
+    def test_last_skipped_action_reasons_are_translated_in_every_language(self) -> None:
+        """Stable skip reasons must not leak machine-readable codes into HA."""
+        reasons = {
+            "integration_disabled",
+            "auto_control_off",
+            "same_position",
+            "delta_too_small",
+            "time_delta_too_small",
+            "manual_override",
+            "no_capable_service",
+            "dry_run",
+            "service_call_failed",
+            "cover_unavailable",
+            "policy_deferred",
+            "calibration_in_progress",
+            "superseded_in_queue",
+            "automatic_control_off",
+            "outside_time_window",
+            "interlock_superseded",
+            "preempted_by_handler",
+        }
+        languages = {
+            language: json.loads(
+                (
+                    Path(__file__).parent.parent
+                    / "custom_components"
+                    / "adaptive_cover_pro"
+                    / "translations"
+                    / f"{language}.json"
+                ).read_text(encoding="utf-8")
+            )
+            for language in ("en", "de", "fr")
+        }
+        english = languages["en"]["entity"]["sensor"]["last_skipped_action"][
+            "state"
+        ]
+
+        for language, data in languages.items():
+            states = data["entity"]["sensor"]["last_skipped_action"]["state"]
+            assert set(states) >= reasons, (
+                f"{language}: missing skip-reason translations: "
+                f"{sorted(reasons - set(states))}"
+            )
+            for reason in reasons:
+                assert states[reason].strip()
+                if language != "en":
+                    assert states[reason] != english[reason], (
+                        f"{language}: last_skipped_action.{reason} still uses English"
+                    )
+
 
 def _registered_entities() -> dict[str, dict[str, str | None]]:
     """Every entity the platforms register, as ``domain → {name: translation_key}``.
@@ -196,10 +427,9 @@ def _registered_entities() -> dict[str, dict[str, str | None]]:
     switch / binary-sensor ``key``. *translation_key* is what the ``acp``
     resolver matches on, and is ``None`` for a spec that sets none. Carrying
     both is what makes the exposed-or-withheld guard below non-vacuous:
-    enumerating only the specs that *have* a translation_key let the nine
-    sensors that don't (``sun_position``, ``Cover_Position``,
-    ``last_cover_action`` …) escape the forced decision entirely, so a new
-    sensor added without one would have escaped it too.
+    enumerating only the specs that *have* a translation_key would let a new
+    sensor added without one escape the forced decision entirely, so this
+    carries both values explicitly.
     """
     glare_entry = MagicMock()
     glare_entry.data = {CONF_SENSOR_TYPE: CoverType.BLIND}
@@ -230,10 +460,7 @@ def _registered_entities() -> dict[str, dict[str, str | None]]:
 #
 # Every one is continuously-varying, a timestamp, or an event echo: a tracked
 # template reading one would re-render every cycle and drive its own refresh.
-# The nine with no translation_key at all are additionally unresolvable by a
-# translation_key-keyed resolver, so exposing them would not work even if we
-# wanted to. Adding an entity without deciding either way is what the guard
-# below is for.
+# Adding an entity without deciding either way is what the guard below is for.
 _WITHHELD_FROM_NAMESPACE: dict[str, frozenset[str]] = {
     "binary_sensor": frozenset(),
     "switch": frozenset(),
@@ -252,7 +479,6 @@ _WITHHELD_FROM_NAMESPACE: dict[str, frozenset[str]] = {
             # on: it reports whether a calibration pass is running, which is a
             # thing a human does from the options flow once per install.
             "travel_calibration",
-            # No translation_key — unresolvable by the namespace resolver.
             "Cover_Position",
             "Cover_Tilt",
             "Start Sun",

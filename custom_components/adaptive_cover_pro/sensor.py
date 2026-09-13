@@ -197,13 +197,7 @@ class _ACPSensor(AdaptiveCoverSensorBase, SensorEntity):
             entry_id, hass, config_entry, coordinator, spec.suffix, spec.icon
         )
         self._spec = spec
-        self._sensor_name = spec.display_name
         _apply_spec_attrs(self, spec)
-
-    @property
-    def name(self) -> str:
-        """Display name (combined with device name when has_entity_name=True)."""
-        return self._sensor_name
 
     @property
     def native_value(self) -> Any:
@@ -234,13 +228,7 @@ class _ACPDiagnosticSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
             entry_id, hass, config_entry, coordinator, spec.suffix, spec.icon
         )
         self._spec = spec
-        self._sensor_name = spec.display_name
         _apply_spec_attrs(self, spec)
-
-    @property
-    def name(self) -> str:
-        """Display name."""
-        return self._sensor_name
 
     @property
     def native_value(self) -> Any:
@@ -788,21 +776,8 @@ def _last_action_value(s: _ACPDiagnosticSensor) -> str | None:
         return None
     action = s.data.diagnostics.get("last_cover_action")
     if not action or not action.get("entity_id"):
-        return "No action recorded"
-
-    service = action.get("service", "unknown")
-    entity = action.get("entity_id", "unknown")
-    timestamp_str = action.get("timestamp", "")
-
-    if timestamp_str:
-        try:
-            ts = dt_util.parse_datetime(timestamp_str)
-            if ts:
-                time_str = dt_util.as_local(ts).strftime("%H:%M:%S")
-                return f"{service} → {entity.split('.')[-1]} at {time_str}"
-        except (ValueError, AttributeError):
-            pass
-    return f"{service} → {entity.split('.')[-1]}"
+        return "no_action_recorded"
+    return action.get("service") or "unknown_service"
 
 
 def _last_action_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
@@ -1365,7 +1340,7 @@ def _last_skipped_value(s: _ACPDiagnosticSensor) -> str | None:
         return None
     action = s.data.diagnostics.get("last_skipped_action")
     if not action or not action.get("entity_id"):
-        return "No action skipped"
+        return "no_action_skipped"
     return action.get("reason")
 
 
@@ -1408,6 +1383,7 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
         suffix="Cover_Position",
         display_name="Target Position",
         icon="mdi:sun-compass",
+        translation_key="target_position",
         state_class=SensorStateClass.MEASUREMENT,
         unit=PERCENTAGE,
         suggested_display_precision=0,
@@ -1433,6 +1409,7 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
         suffix="Cover_Tilt",
         display_name="Target Tilt",
         icon="mdi:angle-acute",
+        translation_key="target_tilt",
         state_class=SensorStateClass.MEASUREMENT,
         unit=PERCENTAGE,
         suggested_display_precision=0,
@@ -1444,6 +1421,7 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
         suffix="Start Sun",
         display_name="Start Sun",
         icon="mdi:sun-clock-outline",
+        translation_key="start_sun",
         device_class=SensorDeviceClass.TIMESTAMP,
         value_fn=_time_value("start"),
         attrs_fn=_time_attrs("start"),
@@ -1453,6 +1431,7 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
         suffix="End Sun",
         display_name="End Sun",
         icon="mdi:sun-clock",
+        translation_key="end_sun",
         device_class=SensorDeviceClass.TIMESTAMP,
         value_fn=_time_value("end"),
         attrs_fn=_time_attrs("end"),
@@ -1466,6 +1445,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         suffix="sun_position",
         display_name="Sun Position",
         icon="mdi:compass-outline",
+        translation_key="sun_position",
         state_class=SensorStateClass.MEASUREMENT,
         unit="°",
         suggested_display_precision=1,
@@ -1522,6 +1502,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         suffix="last_skipped_action",
         display_name="Last Skipped Action",
         icon="mdi:debug-step-over",
+        translation_key="last_skipped_action",
         value_fn=_last_skipped_value,
         attrs_fn=_last_skipped_attrs,
     ),
@@ -1529,6 +1510,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         suffix="last_cover_action",
         display_name="Last Cover Action",
         icon="mdi:history",
+        translation_key="last_cover_action",
         value_fn=_last_action_value,
         attrs_fn=_last_action_attrs,
     ),
@@ -1536,6 +1518,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         suffix="manual_override_end_time",
         display_name="Manual Override End Time",
         icon="mdi:timer-outline",
+        translation_key="manual_override_end_time",
         device_class=SensorDeviceClass.TIMESTAMP,
         should_poll=False,
         value_fn=_manual_override_end_value,
@@ -1545,8 +1528,8 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         suffix="position_verification",
         display_name="Position Verification",
         icon="mdi:refresh",
+        translation_key="position_verification",
         state_class=SensorStateClass.MEASUREMENT,
-        unit="retries",
         should_poll=False,
         value_fn=_position_verification_value,
         attrs_fn=_position_verification_attrs,
