@@ -6,20 +6,24 @@ Three guards in one module:
    must match every ``_skip()`` call site in cover_command.py. Fails when a new
    skip code is added or an old one removed without updating EXPECTED_SKIP_CODES.
 
-2. Literal-reason exhaustiveness outside ``_skip()`` — the small number of
-   reason literals that reach ``record_skipped_action()`` directly, or via a
-   ``Mapping.get(..., "literal")`` fallback, bypassing ``_skip()`` entirely.
-   Fails when a new one is added to cover_command.py or coordinator.py
-   without updating EXTRA_RECORD_SKIPPED_ACTION_REASONS.
+2. Reason exhaustiveness outside ``_skip()`` — the AST-derived set of every
+   reason that can reach ``record_skipped_action()`` some other way (a direct
+   literal, a module-level constant, or the ``_HOLD_SKIP_LABEL`` dynamic
+   lookup) must match EXTRA_RECORD_SKIPPED_ACTION_REASONS plus
+   ``_HOLD_SKIP_LABEL``'s own values, in BOTH directions: a reason newly
+   emitted there but undocumented fails, and a documented reason no longer
+   emitted anywhere also fails (see
+   ``tests/_helpers/skip_codes.emitted_record_skipped_action_reasons``).
 
 3. Always-present keys — every skip code must produce a ``last_skipped_action``
-   dict that contains all 7 always-present keys documented in CLAUDE.md. Fails
-   when ``record_skipped_action()`` is changed in a way that drops a required key.
+   dict that contains all 7 always-present keys documented in
+   CODING_GUIDELINES.md. Fails when ``record_skipped_action()`` is changed in
+   a way that drops a required key.
 
 When you add a new skip code:
   - Add the reason string to EXPECTED_SKIP_CODES in tests/_helpers/skip_codes.py
   - Update the always-present-keys test if the new code produces extras
-  - Update the CLAUDE.md "last_skipped_action Dict Structure" section
+  - Update CODING_GUIDELINES.md's "last_skipped_action Dict Structure" section
   - Add a translated state to translations/{en,de,fr}.json entity.sensor
     .last_skipped_action.state (tests/test_spec_translation_keys.py enforces
     this)
@@ -32,15 +36,18 @@ from pathlib import Path
 
 import pytest
 
+from custom_components.adaptive_cover_pro.coordinator import _HOLD_SKIP_LABEL
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
 )
 from tests._helpers.skip_codes import (
     EXPECTED_SKIP_CODES as _EXPECTED_SKIP_CODES,
     EXTRA_RECORD_SKIPPED_ACTION_REASONS,
+    emitted_record_skipped_action_reasons,
 )
 
-# Always-present keys in any last_skipped_action dict (CLAUDE.md §last_skipped_action).
+# Always-present keys in any last_skipped_action dict (CODING_GUIDELINES.md §
+# `last_skipped_action` Dict Structure).
 _ALWAYS_PRESENT_KEYS: frozenset[str] = frozenset(
     {
         "entity_id",
@@ -60,13 +67,6 @@ _COVER_COMMAND_SRC = (
     / "managers"
     / "cover_command"
     / "__init__.py"
-).read_text()
-
-_COORDINATOR_SRC = (
-    Path(__file__).parent.parent
-    / "custom_components"
-    / "adaptive_cover_pro"
-    / "coordinator.py"
 ).read_text()
 
 
@@ -99,8 +99,9 @@ class TestSkipCodeExhaustiveness:
             assert (
                 f'"{code}"' in _COVER_COMMAND_SRC or f"'{code}'" in _COVER_COMMAND_SRC
             ), (
-                f"Skip code {code!r} is in _EXPECTED_SKIP_CODES but not found in "
-                "managers/cover_command.py. Remove it from _EXPECTED_SKIP_CODES."
+                f"Skip code {code!r} is in EXPECTED_SKIP_CODES (tests/_helpers/"
+                "skip_codes.py) but not found in managers/cover_command.py. "
+                "Remove it from EXPECTED_SKIP_CODES."
             )
 
     def test_no_undocumented_skip_codes_in_source(self) -> None:
@@ -115,59 +116,60 @@ class TestSkipCodeExhaustiveness:
 
         undocumented = found - _EXPECTED_SKIP_CODES
         assert not undocumented, (
-            f"Skip codes in cover_command.py not in _EXPECTED_SKIP_CODES: "
+            f"Skip codes in cover_command.py not in EXPECTED_SKIP_CODES: "
             f"{sorted(undocumented)}\n"
-            "Add them to _EXPECTED_SKIP_CODES and update CLAUDE.md."
+            "Add them to EXPECTED_SKIP_CODES in tests/_helpers/skip_codes.py "
+            "and update CODING_GUIDELINES.md's `last_skipped_action` Dict "
+            "Structure section."
         )
 
-    def test_no_undocumented_literal_reasons_outside_skip(self) -> None:
-        """Every literal reason reaching record_skipped_action() outside
-        ``_skip()`` must be in EXTRA_RECORD_SKIPPED_ACTION_REASONS.
+    def test_no_undocumented_or_stale_reasons_outside_skip(self) -> None:
+        """Every reason reaching record_skipped_action() outside ``_skip()``
+        must be documented — in both directions.
 
         ``_skip()`` call sites are covered by
-        ``test_no_undocumented_skip_codes_in_source`` above. This closes the
-        gap for the OTHER two shapes a ``last_skipped_action.reason`` literal
-        can take, scanning both cover_command.py and coordinator.py:
+        ``test_no_undocumented_skip_codes_in_source`` above. This covers every
+        OTHER shape a ``last_skipped_action.reason`` value can take — a
+        literal passed directly to ``record_skipped_action()``
+        (``record_preempted_skip``'s ``"preempted_by_handler"``), a
+        module-level constant name (coordinator's
+        ``_MANUAL_OVERRIDE_SKIP_LABEL``), and the ``_HOLD_SKIP_LABEL``
+        dynamic lookup (its live values plus the AST-read fallback literal)
+        — via ``emitted_record_skipped_action_reasons()``'s AST scan of
+        coordinator.py and cover_command/__init__.py.
 
-        1. A literal passed directly to ``record_skipped_action()`` —
-           currently only ``record_preempted_skip``'s
-           ``"preempted_by_handler"``.
-        2. A literal fallback in ``_HOLD_SKIP_LABEL.get(..., "literal")`` —
-           currently only coordinator's pseudo-hold ``"hold"`` default.
-
-        A new literal reaching either shape without being added to
-        EXTRA_RECORD_SKIPPED_ACTION_REASONS fails here. This is what would
-        have caught #1353's hand-typed, undocumented
-        ``{"hold", "preempted_by_handler", "no_action_skipped"}`` set that
-        used to live directly in test_spec_translation_keys.py.
+        Checked against ``EXTRA_RECORD_SKIPPED_ACTION_REASONS |
+        set(_HOLD_SKIP_LABEL.values())`` in BOTH directions: a reason newly
+        emitted there but undocumented fails, and a reason documented but no
+        longer emitted anywhere also fails (the reverse check the round-1
+        version of this guard didn't have). This is what would have caught
+        #1353 round 2's gap: coordinator.py's
+        ``_MANUAL_OVERRIDE_SKIP_LABEL`` reached ``record_skipped_action()``
+        as a bare ``Name`` (never a quoted literal, so the old regex scan
+        could not see it) and silently passed only because its value happens
+        to equal an already-documented ``_skip()`` code.
         """
-        direct_literal = re.compile(
-            r'record_skipped_action\(\s*\w+,\s*["\']([^"\']+)["\']'
+        documented = EXTRA_RECORD_SKIPPED_ACTION_REASONS | set(
+            _HOLD_SKIP_LABEL.values()
         )
-        found: set[str] = set()
-        for src in (_COVER_COMMAND_SRC, _COORDINATOR_SRC):
-            found |= set(direct_literal.findall(src))
+        emitted = emitted_record_skipped_action_reasons() - _EXPECTED_SKIP_CODES
 
-        # The pseudo-hold fallback is a lookup, not a direct call argument —
-        # scoped to _HOLD_SKIP_LABEL specifically so this doesn't turn into a
-        # blanket (and noisy) scan of every `.get(..., "literal")` in the file.
-        hold_fallback = re.search(
-            r'_HOLD_SKIP_LABEL\.get\([^,]+,\s*["\']([^"\']+)["\']\)', _COORDINATOR_SRC
-        )
-        assert hold_fallback, (
-            'Expected to find _HOLD_SKIP_LABEL.get(..., "<fallback>") in '
-            "coordinator.py — has the pseudo-hold fallback been refactored? "
-            "Update this scan to match."
-        )
-        found.add(hold_fallback.group(1))
-
-        undocumented = found - EXTRA_RECORD_SKIPPED_ACTION_REASONS
+        undocumented = emitted - documented
         assert not undocumented, (
-            f"New literal last_skipped_action reason(s) found outside "
-            f"_skip(): {sorted(undocumented)}\n"
+            f"Reason(s) reach record_skipped_action() outside _skip() but "
+            f"aren't documented: {sorted(undocumented)}\n"
             "Add them to tests/_helpers/skip_codes.EXTRA_RECORD_SKIPPED_ACTION_REASONS "
-            "and to translations/{en,de,fr}.json "
-            "entity.sensor.last_skipped_action.state."
+            "(or to _HOLD_SKIP_LABEL, if that's the true source) and to "
+            "translations/{en,de,fr}.json entity.sensor.last_skipped_action.state."
+        )
+
+        stale = documented - emitted
+        assert not stale, (
+            f"Documented reason(s) are no longer emitted anywhere: "
+            f"{sorted(stale)}\n"
+            "Remove them from tests/_helpers/skip_codes"
+            ".EXTRA_RECORD_SKIPPED_ACTION_REASONS if genuinely dead, or fix "
+            "the code path that stopped emitting them."
         )
 
 

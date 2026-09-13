@@ -54,7 +54,6 @@ from custom_components.adaptive_cover_pro.const import (
     ControlStatus,
     CoverType,
 )
-from custom_components.adaptive_cover_pro.coordinator import _HOLD_SKIP_LABEL
 from custom_components.adaptive_cover_pro.group_entities import (
     GroupActiveSceneSensor,
     GroupAutomationSwitch,
@@ -75,7 +74,7 @@ from custom_components.adaptive_cover_pro.switch import _SWITCH_SPECS, _glare_zo
 from custom_components.adaptive_cover_pro.templates import ACP_TEMPLATE_ENTITY_KEYS
 from tests._helpers.skip_codes import (
     EXPECTED_SKIP_CODES,
-    EXTRA_RECORD_SKIPPED_ACTION_REASONS,
+    emitted_record_skipped_action_reasons,
     idle_last_skipped_value,
 )
 
@@ -424,28 +423,31 @@ class TestSensorSpecTranslationKeys:
 
         The expected set is derived from the code that actually emits skip
         reasons, not hand-maintained: ``EXPECTED_SKIP_CODES`` (the
-        ``cover_command`` ``_skip()`` canon), ``_HOLD_SKIP_LABEL``'s values
-        (the motion/manual hold labels ``_dispatch_to_cover`` picks between,
-        read directly off the live dict), ``EXTRA_RECORD_SKIPPED_ACTION_
-        REASONS`` (the outside-window generic ``"hold"`` fallback and
-        ``"preempted_by_handler"`` from ``record_preempted_skip`` — both
-        cross-checked against their actual call sites by
-        ``test_skip_reason_guard.TestSkipCodeExhaustiveness``), and
-        ``idle_last_skipped_value()`` (the idle state, read by calling the
-        real ``sensor._last_skipped_value`` rather than retyping its return
-        value). This is what would have caught the PR's wrong guess:
-        ``automatic_control_off`` is a ControlStatus value, not a skip code,
-        and the three hold labels were emitted but untranslated — and, since
-        the extras are now guarded by a source scan rather than hand-typed
-        here, a *new* literal reason slipped into a
-        ``record_skipped_action()`` call outside ``_skip()`` fails in
-        ``test_skip_reason_guard.py`` before it can reach this test
-        untranslated (issue #1353 audit finding #5).
+        ``cover_command`` ``_skip()`` canon) unioned with
+        ``emitted_record_skipped_action_reasons()`` — an AST scan of
+        coordinator.py and cover_command/__init__.py that resolves every
+        reason argument reaching ``record_skipped_action()`` by any shape:
+        a literal, a module-level constant (e.g. coordinator's
+        ``_MANUAL_OVERRIDE_SKIP_LABEL``), or the ``_HOLD_SKIP_LABEL``
+        dynamic lookup (read live off the dict, fallback literal read from
+        the AST) — plus ``idle_last_skipped_value()`` (the idle state, read
+        by calling the real ``sensor._last_skipped_value`` rather than
+        retyping its return value).
+
+        Building this from the scan result (rather than re-combining
+        ``EXTRA_RECORD_SKIPPED_ACTION_REASONS`` and ``_HOLD_SKIP_LABEL``
+        by hand here too) is what closes #1353 round 2's gap: a regex-based
+        precursor to the scan could not see a reason passed as a bare
+        constant ``Name`` (never a quoted literal), so
+        ``_MANUAL_OVERRIDE_SKIP_LABEL`` silently escaped this union and only
+        passed because its value happens to equal an already-documented
+        ``_skip()`` code. A *new* module constant used the same way now
+        fails in ``test_skip_reason_guard.py`` before it can reach this test
+        untranslated.
         """
         reasons = (
             EXPECTED_SKIP_CODES
-            | set(_HOLD_SKIP_LABEL.values())
-            | EXTRA_RECORD_SKIPPED_ACTION_REASONS
+            | emitted_record_skipped_action_reasons()
             | {idle_last_skipped_value()}
         )
 
