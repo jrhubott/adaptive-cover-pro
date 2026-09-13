@@ -1287,29 +1287,20 @@
           "policy_deferred": "Reporté par la politique du store",
           "calibration_in_progress": "Étalonnage en cours",
           "superseded_in_queue": "Remplacé dans la file de commandes",
-          "outside_time_window": "Hors plage horaire",
-          "interlock_superseded": "Remplacé par le verrouillage",
-          "preempted_by_handler": "Devancé par un autre gestionnaire"
+          "preempted_by_handler": "Devancé par un autre gestionnaire",
+          "hold": "Maintenu",
+          "manual_override_hold": "Maintien par dérogation manuelle",
+          "motion_hold": "Maintien par présence"
         }
       },
       "last_cover_action": {
-        "name": "Dernière action du store",
-        "state": {
-          "no_action_recorded": "Aucune action enregistrée",
-          "open_cover": "Ouvrir le store",
-          "close_cover": "Fermer le store",
-          "stop_cover": "Arrêter le store",
-          "set_cover_position": "Définir la position du store",
-          "set_cover_tilt_position": "Définir l'inclinaison du store",
-          "unknown_service": "Service inconnu"
-        }
+        "name": "Dernière action du store"
       },
       "manual_override_end_time": {
         "name": "Fin de la dérogation manuelle"
       },
       "position_verification": {
-        "name": "Vérification de position",
-        "unit_of_measurement": "tentatives"
+        "name": "Vérification de position"
       },
       "solar_calculation": {
         "name": "Calcul solaire"

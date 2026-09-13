@@ -1287,29 +1287,20 @@
           "policy_deferred": "Deferred by Cover Policy",
           "calibration_in_progress": "Calibration In Progress",
           "superseded_in_queue": "Superseded in Command Queue",
-          "outside_time_window": "Outside Time Window",
-          "interlock_superseded": "Superseded by Interlock",
-          "preempted_by_handler": "Preempted by Another Handler"
+          "preempted_by_handler": "Preempted by Another Handler",
+          "motion_hold": "Occupancy Hold",
+          "manual_override_hold": "Manual Override Hold",
+          "hold": "Hold"
         }
       },
       "last_cover_action": {
-        "name": "Last Cover Action",
-        "state": {
-          "no_action_recorded": "No Action Recorded",
-          "open_cover": "Open Cover",
-          "close_cover": "Close Cover",
-          "stop_cover": "Stop Cover",
-          "set_cover_position": "Set Cover Position",
-          "set_cover_tilt_position": "Set Cover Tilt",
-          "unknown_service": "Unknown Service"
-        }
+        "name": "Last Cover Action"
       },
       "manual_override_end_time": {
         "name": "Manual Override End Time"
       },
       "position_verification": {
-        "name": "Position Verification",
-        "unit_of_measurement": "retries"
+        "name": "Position Verification"
       },
       "solar_calculation": {
         "name": "Solar Calculation"

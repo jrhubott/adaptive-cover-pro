@@ -425,11 +425,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
         if policy.is_command_queue:
             _setup_command_queue_entry(hass, entry)
             return True
-        if entry.title != entry.data.get("name"):
-            hass.config_entries.async_update_entry(
-                entry,
-                title=entry.data["name"],
-            )
         entry.async_on_unload(entry.add_update_listener(_async_profile_propagate))
         return True
 

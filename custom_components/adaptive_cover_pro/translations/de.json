@@ -1287,29 +1287,20 @@
           "policy_deferred": "Durch Beschattungsrichtlinie zurückgestellt",
           "calibration_in_progress": "Kalibrierung läuft",
           "superseded_in_queue": "In der Befehlswarteschlange ersetzt",
-          "outside_time_window": "Außerhalb des Zeitfensters",
-          "interlock_superseded": "Durch Verriegelung ersetzt",
-          "preempted_by_handler": "Von einem anderen Handler verdrängt"
+          "preempted_by_handler": "Von einem anderen Handler verdrängt",
+          "hold": "Zurückgehalten",
+          "manual_override_hold": "Durch manuelle Übersteuerung zurückgehalten",
+          "motion_hold": "Durch Anwesenheit zurückgehalten"
         }
       },
       "last_cover_action": {
-        "name": "Letzte Beschattungsaktion",
-        "state": {
-          "no_action_recorded": "Keine Aktion aufgezeichnet",
-          "open_cover": "Beschattung öffnen",
-          "close_cover": "Beschattung schließen",
-          "stop_cover": "Beschattung stoppen",
-          "set_cover_position": "Beschattungsposition setzen",
-          "set_cover_tilt_position": "Beschattungsneigung setzen",
-          "unknown_service": "Unbekannter Dienst"
-        }
+        "name": "Letzte Beschattungsaktion"
       },
       "manual_override_end_time": {
         "name": "Ende der manuellen Übersteuerung"
       },
       "position_verification": {
-        "name": "Positionsprüfung",
-        "unit_of_measurement": "Versuche"
+        "name": "Positionsprüfung"
       },
       "control_status": {
         "name": "Steuerungsstatus",
