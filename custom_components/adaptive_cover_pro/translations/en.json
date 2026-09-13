@@ -1240,7 +1240,68 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "sun_motion": {
+        "name": "Sun Infront"
+      },
+      "manual_override": {
+        "name": "Manual Override"
+      },
+      "glare_active": {
+        "name": "Glare Active"
+      },
+      "position_mismatch": {
+        "name": "Position Mismatch"
+      }
+    },
     "sensor": {
+      "target_position": {
+        "name": "Target Position"
+      },
+      "target_tilt": {
+        "name": "Target Tilt"
+      },
+      "start_sun": {
+        "name": "Start Sun"
+      },
+      "end_sun": {
+        "name": "End Sun"
+      },
+      "sun_position": {
+        "name": "Sun Position"
+      },
+      "last_skipped_action": {
+        "name": "Last Skipped Action",
+        "state": {
+          "no_action_skipped": "No Action Skipped",
+          "integration_disabled": "Integration Disabled",
+          "auto_control_off": "Automatic Control Off",
+          "same_position": "Same Position",
+          "delta_too_small": "Position Delta Too Small",
+          "time_delta_too_small": "Time Delta Too Small",
+          "manual_override": "Manual Override Active",
+          "no_capable_service": "No Capable Service",
+          "dry_run": "Dry Run",
+          "service_call_failed": "Service Call Failed",
+          "cover_unavailable": "Cover Unavailable",
+          "policy_deferred": "Deferred by Cover Policy",
+          "calibration_in_progress": "Calibration In Progress",
+          "superseded_in_queue": "Superseded in Command Queue",
+          "preempted_by_handler": "Preempted by Another Handler",
+          "motion_hold": "Occupancy Hold",
+          "manual_override_hold": "Manual Override Hold",
+          "hold": "Hold"
+        }
+      },
+      "last_cover_action": {
+        "name": "Last Cover Action"
+      },
+      "manual_override_end_time": {
+        "name": "Manual Override End Time"
+      },
+      "position_verification": {
+        "name": "Position Verification"
+      },
       "solar_calculation": {
         "name": "Solar Calculation"
       },
@@ -1248,12 +1309,23 @@
         "name": "Estimated Solar Gain"
       },
       "control_status": {
+        "name": "Control Status",
         "state": {
+          "active": "Active",
+          "calibrating": "Calibrating",
+          "outside_time_window": "Outside Time Window",
+          "position_delta_too_small": "Position Delta Too Small",
+          "time_delta_too_small": "Time Delta Too Small",
+          "manual_override": "Manual Override",
+          "automatic_control_off": "Automatic Control Off",
+          "sun_not_visible": "Sun Not Visible",
           "force_override_active": "Force override active",
+          "weather_override_active": "Weather override active",
           "motion_timeout": "No occupancy - using default position"
         }
       },
       "motion_status": {
+        "name": "Occupancy Status",
         "state": {
           "not_configured": "Not Configured",
           "motion_detected": "Occupancy Detected",
@@ -1264,6 +1336,7 @@
         }
       },
       "climate_status": {
+        "name": "Climate Status",
         "state": {
           "summer_mode": "Summer Mode",
           "winter_mode": "Winter Mode",
@@ -1391,6 +1464,9 @@
       }
     },
     "button": {
+      "reset_manual_override": {
+        "name": "Reset Manual Override"
+      },
       "my_position": {
         "name": "Managed My Position"
       },

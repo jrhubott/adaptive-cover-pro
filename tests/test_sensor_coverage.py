@@ -20,6 +20,7 @@ from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverClimateStatusSensor,
     AdaptiveCoverControlStatusSensor,
     AdaptiveCoverLastActionSensor,
+    AdaptiveCoverLastSkippedActionSensor,
     AdaptiveCoverSunPositionSensor,
     _DIAGNOSTIC_SPECS,
 )
@@ -658,6 +659,26 @@ def test_last_action_sensor_extra_state_attributes_no_action():
         coordinator=coord,
     )
     assert sensor.extra_state_attributes is None
+
+
+@pytest.mark.unit
+def test_last_skipped_sensor_native_value_no_action():
+    """native_value is the stable no_action_skipped code, not an English string.
+
+    Translatable via entity.sensor.last_skipped_action.state.no_action_skipped
+    (issue #1353) rather than the untranslatable prose HA would otherwise show
+    verbatim in every language.
+    """
+    coord = _make_coordinator(diagnostics={"last_skipped_action": {}})
+    entry = _make_config_entry()
+    sensor = AdaptiveCoverLastSkippedActionSensor(
+        config_entry_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    assert sensor.native_value == "no_action_skipped"
 
 
 # ---------------------------------------------------------------------------

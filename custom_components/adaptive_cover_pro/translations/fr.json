@@ -1240,7 +1240,68 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "sun_motion": {
+        "name": "Soleil devant"
+      },
+      "manual_override": {
+        "name": "Dérogation manuelle"
+      },
+      "glare_active": {
+        "name": "Éblouissement actif"
+      },
+      "position_mismatch": {
+        "name": "Écart de position"
+      }
+    },
     "sensor": {
+      "target_position": {
+        "name": "Position cible"
+      },
+      "target_tilt": {
+        "name": "Inclinaison cible"
+      },
+      "start_sun": {
+        "name": "Début du soleil"
+      },
+      "end_sun": {
+        "name": "Fin du soleil"
+      },
+      "sun_position": {
+        "name": "Position du soleil"
+      },
+      "last_skipped_action": {
+        "name": "Dernière action ignorée",
+        "state": {
+          "no_action_skipped": "Aucune action ignorée",
+          "integration_disabled": "Intégration désactivée",
+          "auto_control_off": "Contrôle automatique désactivé",
+          "same_position": "Même position",
+          "delta_too_small": "Écart de position trop faible",
+          "time_delta_too_small": "Écart de temps trop faible",
+          "manual_override": "Dérogation manuelle active",
+          "no_capable_service": "Aucun service compatible",
+          "dry_run": "Simulation",
+          "service_call_failed": "Échec de l'appel du service",
+          "cover_unavailable": "Store indisponible",
+          "policy_deferred": "Reporté par la politique du store",
+          "calibration_in_progress": "Étalonnage en cours",
+          "superseded_in_queue": "Remplacé dans la file de commandes",
+          "preempted_by_handler": "Devancé par un autre gestionnaire",
+          "hold": "Maintenu",
+          "manual_override_hold": "Maintien par dérogation manuelle",
+          "motion_hold": "Maintien par occupation"
+        }
+      },
+      "last_cover_action": {
+        "name": "Dernière action du store"
+      },
+      "manual_override_end_time": {
+        "name": "Fin de la dérogation manuelle"
+      },
+      "position_verification": {
+        "name": "Vérification de position"
+      },
       "solar_calculation": {
         "name": "Calcul solaire"
       },
@@ -1248,12 +1309,23 @@
         "name": "Apport solaire estimé"
       },
       "control_status": {
+        "name": "État du contrôle",
         "state": {
+          "active": "Actif",
+          "calibrating": "Étalonnage en cours",
+          "outside_time_window": "Hors plage horaire",
+          "position_delta_too_small": "Écart de position trop faible",
+          "time_delta_too_small": "Écart de temps trop faible",
+          "manual_override": "Dérogation manuelle",
+          "automatic_control_off": "Contrôle automatique désactivé",
+          "sun_not_visible": "Soleil non visible",
           "force_override_active": "Dérogation forcée active",
+          "weather_override_active": "Dérogation météo active",
           "motion_timeout": "Délai d'occupation"
         }
       },
       "motion_status": {
+        "name": "État de l'occupation",
         "state": {
           "not_configured": "Non configuré",
           "motion_detected": "Occupation détectée",
@@ -1264,6 +1336,7 @@
         }
       },
       "climate_status": {
+        "name": "État climatique",
         "state": {
           "summer_mode": "Mode été",
           "winter_mode": "Mode hiver",
@@ -1391,6 +1464,9 @@
       }
     },
     "button": {
+      "reset_manual_override": {
+        "name": "Réinitialiser la dérogation manuelle"
+      },
       "my_position": {
         "name": "Position My gérée"
       },

@@ -206,12 +206,11 @@ ENTITY_FACTORIES: dict[type, object] = {
         coordinator=_make_coordinator(),
     ),
     # --- binary_sensor.py ---
-    # Constructor: (config_entry, unique_id, binary_name, state, key, device_class, coordinator)
+    # Constructor: (config_entry, unique_id, state, key, device_class, coordinator)
     # Note: internally calls super().__init__(unique_id, coordinator.hass, ...)
     AdaptiveCoverBinarySensor: lambda: AdaptiveCoverBinarySensor(
         config_entry=_make_config_entry(),
         unique_id="test_avail_entry",
-        binary_name="Sun Infront",
         state=False,
         key="sun_infront",
         device_class=BinarySensorDeviceClass.LIGHT,

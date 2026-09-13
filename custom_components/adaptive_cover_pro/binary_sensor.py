@@ -29,7 +29,6 @@ class _SimpleBinarySensorSpec:
     contract preserved verbatim from the pre-refactor classes.
     """
 
-    name: str  # display name
     key: str  # → unique_id suffix + translation_key + states-dict key
     device_class: BinarySensorDeviceClass
     enabled_when: Callable[[ConfigEntry], bool] = lambda _: True
@@ -48,17 +47,14 @@ def _glare_zones_enabled_for_blind(entry: ConfigEntry) -> bool:
 
 _BINARY_SENSOR_SPECS: tuple[_SimpleBinarySensorSpec, ...] = (
     _SimpleBinarySensorSpec(
-        name="Sun Infront",
         key="sun_motion",
         device_class=BinarySensorDeviceClass.MOTION,
     ),
     _SimpleBinarySensorSpec(
-        name="Manual Override",
         key="manual_override",
         device_class=BinarySensorDeviceClass.RUNNING,
     ),
     _SimpleBinarySensorSpec(
-        name="Glare Active",
         key="glare_active",
         device_class=BinarySensorDeviceClass.RUNNING,
         enabled_when=_glare_zones_enabled_for_blind,
@@ -78,7 +74,6 @@ async def async_setup_entry(
         AdaptiveCoverBinarySensor(
             config_entry,
             config_entry.entry_id,
-            spec.name,
             False,
             spec.key,
             spec.device_class,
@@ -102,7 +97,6 @@ class AdaptiveCoverBinarySensor(AdaptiveCoverBaseEntity, BinarySensorEntity):
         self,
         config_entry: ConfigEntry,
         unique_id: str,
-        binary_name: str,
         state: bool,
         key: str,
         device_class: BinarySensorDeviceClass,
@@ -117,15 +111,9 @@ class AdaptiveCoverBinarySensor(AdaptiveCoverBaseEntity, BinarySensorEntity):
         )
         self._key = key
         self._attr_translation_key = key
-        self._binary_name = binary_name
         self._attr_unique_id = f"{unique_id}_{key}"
         self._state = state
         self._attr_device_class = device_class
-
-    @property
-    def name(self):
-        """Name of the entity."""
-        return self._binary_name
 
     @property
     def is_on(self) -> bool:
@@ -160,11 +148,6 @@ class AdaptiveCoverPositionMismatchSensor(AdaptiveCoverBaseEntity, BinarySensorE
             coordinator,
         )
         self._attr_unique_id = f"{unique_id}_position_mismatch"
-
-    @property
-    def name(self) -> str:
-        """Name of the entity."""
-        return "Position Mismatch"
 
     @property
     def is_on(self) -> bool:

@@ -1240,14 +1240,86 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "sun_motion": {
+        "name": "Sonne davor"
+      },
+      "manual_override": {
+        "name": "Manuelle Übersteuerung"
+      },
+      "glare_active": {
+        "name": "Blendung aktiv"
+      },
+      "position_mismatch": {
+        "name": "Positionsabweichung"
+      }
+    },
     "sensor": {
-      "control_status": {
+      "target_position": {
+        "name": "Zielposition"
+      },
+      "target_tilt": {
+        "name": "Zielneigung"
+      },
+      "start_sun": {
+        "name": "Sonnenbeginn"
+      },
+      "end_sun": {
+        "name": "Sonnenende"
+      },
+      "sun_position": {
+        "name": "Sonnenposition"
+      },
+      "last_skipped_action": {
+        "name": "Letzte übersprungene Aktion",
         "state": {
+          "no_action_skipped": "Keine Aktion übersprungen",
+          "integration_disabled": "Integration deaktiviert",
+          "auto_control_off": "Automatische Steuerung deaktiviert",
+          "same_position": "Gleiche Position",
+          "delta_too_small": "Positionsdelta zu klein",
+          "time_delta_too_small": "Zeitdelta zu klein",
+          "manual_override": "Manuelle Übersteuerung aktiv",
+          "no_capable_service": "Kein passender Dienst verfügbar",
+          "dry_run": "Probelauf",
+          "service_call_failed": "Dienstaufruf fehlgeschlagen",
+          "cover_unavailable": "Beschattung nicht verfügbar",
+          "policy_deferred": "Durch Beschattungsrichtlinie zurückgestellt",
+          "calibration_in_progress": "Kalibrierung läuft",
+          "superseded_in_queue": "In der Befehlswarteschlange ersetzt",
+          "preempted_by_handler": "Von einem anderen Handler verdrängt",
+          "hold": "Zurückgehalten",
+          "manual_override_hold": "Durch manuelle Übersteuerung zurückgehalten",
+          "motion_hold": "Durch Belegung zurückgehalten"
+        }
+      },
+      "last_cover_action": {
+        "name": "Letzte Beschattungsaktion"
+      },
+      "manual_override_end_time": {
+        "name": "Ende der manuellen Übersteuerung"
+      },
+      "position_verification": {
+        "name": "Positionsprüfung"
+      },
+      "control_status": {
+        "name": "Steuerungsstatus",
+        "state": {
+          "active": "Aktiv",
+          "calibrating": "Wird kalibriert",
+          "outside_time_window": "Außerhalb des Zeitfensters",
+          "position_delta_too_small": "Positionsdelta zu klein",
+          "time_delta_too_small": "Zeitdelta zu klein",
+          "manual_override": "Manuelle Übersteuerung",
+          "automatic_control_off": "Automatische Steuerung deaktiviert",
+          "sun_not_visible": "Sonne nicht sichtbar",
           "force_override_active": "Zwangsübersteuerung aktiv",
+          "weather_override_active": "Wetterübersteuerung aktiv",
           "motion_timeout": "Keine Belegung – Standardposition wird verwendet"
         }
       },
       "motion_status": {
+        "name": "Belegungsstatus",
         "state": {
           "not_configured": "Nicht konfiguriert",
           "motion_detected": "Belegung erkannt",
@@ -1277,6 +1349,7 @@
         "name": "Positionsvorhersage"
       },
       "climate_status": {
+        "name": "Klimastatus",
         "state": {
           "summer_mode": "Sommermodus",
           "winter_mode": "Wintermodus",
@@ -1391,6 +1464,9 @@
       }
     },
     "button": {
+      "reset_manual_override": {
+        "name": "Manuelle Übersteuerung zurücksetzen"
+      },
       "my_position": {
         "name": "Verwaltete My-Position"
       },
