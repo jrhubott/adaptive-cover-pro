@@ -20,7 +20,10 @@
     "trigger_template": "modèle",
     "trigger_fallback": "déclencheur",
     "axis_position": "position",
-    "axis_tilt": "inclinaison"
+    "axis_tilt": "inclinaison",
+    "gate_blocked_by": " (bloqué par {entities})",
+    "gate_blocked_by_template": " (bloqué par le modèle du filtre)",
+    "gate_blocked_by_both": " (bloqué par {entities} et le modèle du filtre)"
   },
   "solar": {
     "tracking": "soleil dans l'angle d'acceptation — position {position}%{suffix}"
@@ -103,7 +106,7 @@
   "skip": {
     "outside_window": "en dehors de la plage horaire",
     "sun_outside": "soleil en dehors de l'angle d'acceptation ou des limites d'élévation",
-    "sun_tracking_gate": "le filtre de suivi du soleil est fermé",
+    "sun_tracking_gate": "le filtre de suivi du soleil est fermé{detail}",
     "sun_tracking_off": "le suivi du soleil est désactivé",
     "manual_not_active": "dérogation manuelle non active",
     "occupancy_disabled": "détection de présence désactivée",

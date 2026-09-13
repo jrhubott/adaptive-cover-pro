@@ -32,6 +32,10 @@
     "weather_override_inverted": "⚠️ La dérogation météo déplace le store à {override}%, ce qui est plus fermé que sa position par défaut de {default}%. La dérogation météo est un repli de sécurité ; pour ce type de store, la position repliée (sûre) est {safe}%. Tel que configuré, le vent ou la pluie déploieront le store au lieu de le protéger.",
     "solar_internal_cover_weak_rejection": "ℹ️ Store monté à l'intérieur{shade_word} : même entièrement fermé, cette fenêtre laisse encore passer environ {admitted}% de l'énergie solaire incidente (g≈{g_shaded}).{comparison} Estimation seulement — pas une mesure.",
     "solar_shade_word": " ({shade})",
-    "solar_external_comparison": " Un store extérieur de la même teinte n'en laisserait passer qu'environ {external_admitted}%."
+    "solar_external_comparison": " Un store extérieur de la même teinte n'en laisserait passer qu'environ {external_admitted}%.",
+    "sun_tracking_gate_closed": "⚠️ Le suivi du soleil est activé, mais le filtre de suivi du soleil est fermé{blocker}, le store reste donc à sa position par défaut au lieu de suivre le soleil. Satisfaites la condition du filtre, ou supprimez-le des paramètres de suivi du soleil.",
+    "sun_tracking_gate_blocker": " par {entities}",
+    "sun_tracking_gate_blocker_template": " par le modèle du filtre",
+    "sun_tracking_gate_blocker_both": " par {entities} et le modèle du filtre"
   }
 }

@@ -68,7 +68,7 @@ from .helpers import (
     custom_position_slot_sensors,
     motion_entities,
 )
-from .reason_i18n import Reason, render, reason_to_dict
+from .reason_i18n import Reason, reason_attrs, render
 from .templates import is_template_string
 from .unit_system import length_display_unit, to_display_length
 
@@ -95,15 +95,11 @@ def _localized_reason(
 def _reason_to_dict_attrs(payload: Reason) -> dict[str, Any]:
     """Map a reason payload to the additive ``reason_code`` + ``reason_params`` attrs.
 
-    ``reason_to_dict`` yields a JSON-safe ``{"code", "params"}`` payload (nested
-    fragments preserved); this flattens it into the two attribute names the
-    companion card reads to localize with its own templates (issue #882).
+    Thin alias over :func:`..reason_i18n.reason_attrs`, which owns the flattening
+    so the diagnostics export produces byte-identical keys (issue #1359). Kept as
+    a module-local name because every call site in this file reads it.
     """
-    payload_dict = reason_to_dict(payload)
-    return {
-        "reason_code": payload_dict["code"],
-        "reason_params": payload_dict["params"],
-    }
+    return reason_attrs(payload)
 
 
 # ---------------------------------------------------------------------------

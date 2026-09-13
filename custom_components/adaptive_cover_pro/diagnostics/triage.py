@@ -80,6 +80,7 @@ from ..const import (
     SOLAR_G_PRESETS,
     SOLAR_WEAK_REJECTION_THRESHOLD,
     ControlStatus,
+    ReasonCode,
     TriageCode,
 )
 from ..engine.solar_transmittance import SOURCE_DIRECT
@@ -121,6 +122,9 @@ _TRIAGE_FRAGMENT_CODES: frozenset[str] = frozenset(
         TriageCode.SKIP_AGE,
         TriageCode.SOLAR_SHADE_WORD,
         TriageCode.SOLAR_EXTERNAL_COMPARISON,
+        TriageCode.SUN_TRACKING_GATE_BLOCKER,
+        TriageCode.SUN_TRACKING_GATE_BLOCKER_TEMPLATE,
+        TriageCode.SUN_TRACKING_GATE_BLOCKER_BOTH,
     }
 )
 
@@ -1079,6 +1083,63 @@ def _check_stale_version(data: Mapping) -> Iterable[Mapping]:
         yield {"latest": latest_raw, "current": current_raw}
 
 
+def _check_sun_tracking_gate_closed(data: Mapping) -> Iterable[Mapping]:
+    """Rule 28 — a sun-tracking gate is holding tracking shut (issue #1359).
+
+    A closed gate parks the cover at its default position for as long as the
+    gate sensor stays off, with nothing in the report saying which sensor is
+    responsible — the failure this rule exists to name.
+
+    Matches on the solar step's **stable** ``reason_code``, never on the English
+    ``reason`` prose beside it: the same payload renders in the user's language
+    everywhere else, and a prose match would silently stop firing for a non-English
+    install. A legacy step carrying only prose therefore yields nothing, which is
+    correct — there is no code to trust.
+
+    ``skip.sun_tracking_off`` is deliberately excluded. The handler keeps the two
+    apart precisely so a user who merely switched sun tracking off is not sent
+    looking for a gate they never configured (#1167's audit rule); re-merging them
+    here would undo that at the one surface meant to explain the problem.
+    """
+    step = _trace_step(data, "solar")
+    if not isinstance(step, Mapping) or step.get("matched") is not False:
+        return
+    if step.get("reason_code") != ReasonCode.SKIP_SUN_TRACKING_GATE:
+        return
+    # Only when the DEFAULT handler actually won. The registry writes solar's
+    # describe_skip payload into the trace whenever solar declines, whoever won,
+    # so without this the finding would claim the cover "is parked at its default
+    # position" on a cycle a manual override or weather rule was driving it. No
+    # matched winner at all means we cannot tell, which is also not a fire.
+    winner = _matched_winner(data)
+    if not isinstance(winner, Mapping) or winner.get("handler") != "default":
+        return
+    params = step.get("reason_params")
+    params = params if isinstance(params, Mapping) else {}
+    raw = params.get("entities")
+    entities = raw if isinstance(raw, str) else ""
+    by_template = params.get("template_blocking") is True
+    # ``blocker`` is a nested fragment naming whichever causes exist, and an
+    # empty string when neither can be named, so the sentence never renders a
+    # dangling "by" clause (and never the literal "None"). The raw values ride
+    # alongside for consumers that localize the finding themselves.
+    if entities and by_template:
+        blocker: Reason | str = Reason(
+            TriageCode.SUN_TRACKING_GATE_BLOCKER_BOTH, {"entities": entities}
+        )
+    elif entities:
+        blocker = Reason(TriageCode.SUN_TRACKING_GATE_BLOCKER, {"entities": entities})
+    elif by_template:
+        blocker = Reason(TriageCode.SUN_TRACKING_GATE_BLOCKER_TEMPLATE)
+    else:
+        blocker = ""
+    yield {
+        "entities": entities,
+        "template_blocking": by_template,
+        "blocker": blocker,
+    }
+
+
 def _check_endpoint_position_not_tracking(data: Mapping) -> Iterable[Mapping]:
     """Rule 25 — an endpoint open/close command never moved current_position.
 
@@ -1392,6 +1453,15 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         wiki="Troubleshooting-Findings#stale-version",
         issues=(972,),
         check=_check_stale_version,
+    ),
+    TriageRule(
+        code=TriageCode.SUN_TRACKING_GATE_CLOSED,
+        severity=Severity.WARNING,
+        inputs=RuleInput.RUNTIME,
+        fix_step="sun_tracking",
+        wiki="Troubleshooting-Findings#sun-tracking-gate-closed",
+        issues=(1359,),
+        check=_check_sun_tracking_gate_closed,
     ),
     TriageRule(
         code=TriageCode.ENDPOINT_POSITION_NOT_TRACKING,

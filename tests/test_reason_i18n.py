@@ -63,6 +63,21 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
     (ReasonCode.FRAGMENT_COVERAGE_STEP, {"steps": 3}, " (coverage step, max 3)"),
     (ReasonCode.FRAGMENT_Z_ADJUSTED, {}, " (Z-adjusted)"),
     (
+        ReasonCode.FRAGMENT_GATE_BLOCKED_BY,
+        {"entities": "binary_sensor.is_ac_on"},
+        " (blocked by binary_sensor.is_ac_on)",
+    ),
+    (
+        ReasonCode.FRAGMENT_GATE_BLOCKED_BY_TEMPLATE,
+        {},
+        " (blocked by the gate template)",
+    ),
+    (
+        ReasonCode.FRAGMENT_GATE_BLOCKED_BY_BOTH,
+        {"entities": "binary_sensor.is_ac_on"},
+        " (blocked by binary_sensor.is_ac_on and the gate template)",
+    ),
+    (
         ReasonCode.FRAGMENT_BYPASS_NOTE,
         {},
         " [bypasses automatic control]",
@@ -407,7 +422,24 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         {},
         "sun outside acceptance angle or elevation limits",
     ),
-    (ReasonCode.SKIP_SUN_TRACKING_GATE, {}, "sun tracking gate is closed"),
+    # #1359 added the optional ``{detail}`` blocker clause. With no blocker the
+    # render is byte-identical to the pre-#1359 legacy string, which is the
+    # compatibility contract this table exists to pin.
+    (
+        ReasonCode.SKIP_SUN_TRACKING_GATE,
+        {"detail": "", "entities": ""},
+        "sun tracking gate is closed",
+    ),
+    # The degraded path, pinned so it cannot change silently: ``render`` swallows
+    # a KeyError and returns the RAW template, so a caller that forgets ``detail``
+    # leaks "{detail}" to the user. Unreachable today — solar.py is the only
+    # construction site and always supplies it — but a future second caller would
+    # otherwise reintroduce it with nothing failing.
+    (
+        ReasonCode.SKIP_SUN_TRACKING_GATE,
+        {},
+        "sun tracking gate is closed{detail}",
+    ),
     (ReasonCode.SKIP_SUN_TRACKING_OFF, {}, "sun tracking is turned off"),
     (ReasonCode.SKIP_MANUAL_NOT_ACTIVE, {}, "manual override not active"),
     (ReasonCode.SKIP_OCCUPANCY_DISABLED, {}, "occupancy detection disabled"),

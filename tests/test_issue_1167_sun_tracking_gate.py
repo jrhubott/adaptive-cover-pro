@@ -271,6 +271,127 @@ def test_a_closed_gate_reports_the_gate_skip_reason():
     assert handler.describe_skip(snap).code is ReasonCode.SKIP_SUN_TRACKING_GATE
 
 
+def test_a_closed_gate_names_the_blocking_sensors_in_the_reason():
+    """The skip reason says WHICH sensor holds the gate shut (issue #1359)."""
+    from custom_components.adaptive_cover_pro.reason_i18n import render_en
+    from tests.test_pipeline.conftest import make_snapshot
+
+    handler = _solar_handler()
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        enable_sun_tracking=False,
+        sun_tracking_gate_closed=True,
+        sun_tracking_gate_blockers=("binary_sensor.is_ac_on",),
+    )
+
+    reason = handler.describe_skip(snap)
+    assert reason.code is ReasonCode.SKIP_SUN_TRACKING_GATE
+    assert reason.params["entities"] == "binary_sensor.is_ac_on"
+    assert (
+        render_en(reason)
+        == "sun tracking gate is closed (blocked by binary_sensor.is_ac_on)"
+    )
+
+
+def test_multiple_blocking_sensors_are_joined_in_the_reason():
+    from custom_components.adaptive_cover_pro.reason_i18n import render_en
+    from tests.test_pipeline.conftest import make_snapshot
+
+    handler = _solar_handler()
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        enable_sun_tracking=False,
+        sun_tracking_gate_closed=True,
+        sun_tracking_gate_blockers=("binary_sensor.ac", "binary_sensor.away"),
+    )
+
+    assert render_en(handler.describe_skip(snap)) == (
+        "sun tracking gate is closed "
+        "(blocked by binary_sensor.ac, binary_sensor.away)"
+    )
+
+
+def test_a_template_closed_gate_names_the_template():
+    """A template-only closure has no entity to blame, but still has a cause."""
+    from custom_components.adaptive_cover_pro.reason_i18n import render_en
+    from tests.test_pipeline.conftest import make_snapshot
+
+    handler = _solar_handler()
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        enable_sun_tracking=False,
+        sun_tracking_gate_closed=True,
+        sun_tracking_gate_blockers=(),
+        sun_tracking_gate_template_blocking=True,
+    )
+
+    reason = handler.describe_skip(snap)
+    assert reason.params["template_blocking"] is True
+    assert (
+        render_en(reason)
+        == "sun tracking gate is closed (blocked by the gate template)"
+    )
+
+
+def test_both_causes_are_named_together():
+    """AND mode with both sides false: switching the sensors on is not enough."""
+    from custom_components.adaptive_cover_pro.reason_i18n import render_en
+    from tests.test_pipeline.conftest import make_snapshot
+
+    handler = _solar_handler()
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        enable_sun_tracking=False,
+        sun_tracking_gate_closed=True,
+        sun_tracking_gate_blockers=("binary_sensor.ac",),
+        sun_tracking_gate_template_blocking=True,
+    )
+
+    assert render_en(handler.describe_skip(snap)) == (
+        "sun tracking gate is closed "
+        "(blocked by binary_sensor.ac and the gate template)"
+    )
+
+
+def test_a_gate_closed_with_no_named_sensor_keeps_the_bare_reason():
+    """A template-closed gate has no sensor to blame — wording is unchanged.
+
+    This is the compatibility anchor: the rendered string must stay byte-identical
+    to the pre-#1359 text whenever no blocker is named, so the DE/FR bundles and
+    every existing assertion keep holding.
+    """
+    from custom_components.adaptive_cover_pro.reason_i18n import render_en
+    from tests.test_pipeline.conftest import make_snapshot
+
+    handler = _solar_handler()
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        enable_sun_tracking=False,
+        sun_tracking_gate_closed=True,
+        sun_tracking_gate_blockers=(),
+    )
+
+    assert render_en(handler.describe_skip(snap)) == "sun tracking gate is closed"
+
+
+def test_the_toggle_off_reason_never_names_a_gate_sensor():
+    """#1167 audit rule, re-pinned: toggle-off must not borrow the gate wording."""
+    from custom_components.adaptive_cover_pro.reason_i18n import render_en
+    from tests.test_pipeline.conftest import make_snapshot
+
+    handler = _solar_handler()
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        enable_sun_tracking=False,
+        sun_tracking_gate_closed=False,
+        sun_tracking_gate_blockers=(),
+    )
+
+    reason = handler.describe_skip(snap)
+    assert reason.code is ReasonCode.SKIP_SUN_TRACKING_OFF
+    assert render_en(reason) == "sun tracking is turned off"
+
+
 def test_an_out_of_window_skip_still_outranks_the_gate_reason():
     """Outside the window is the more fundamental reason — it must win the message."""
     from tests.test_pipeline.conftest import make_snapshot
@@ -391,10 +512,22 @@ def _builder(states: dict, clock=None, template_result=None):
     return builder, ctx
 
 
+def _verdict(state) -> tuple[bool, bool]:
+    """Project a :class:`SunTrackingState` to the ``(enabled, gate_closed)`` pair.
+
+    ``_resolve_sun_tracking`` returned this pair as a bare tuple until issue
+    #1359 added the blocking-sensor list and promoted it to a dataclass. These
+    tests are about the two-boolean verdict, so they keep asserting exactly that
+    pair; ``blockers`` is pinned separately (``test_blocking_gate_sensors_*``
+    here and in ``tests/test_pipeline/test_snapshot_builder.py``).
+    """
+    return state.enabled, state.gate_closed
+
+
 def _resolve(options: dict, states: dict, clock=None, template_result=None):
     builder, ctx = _builder(states, clock=clock, template_result=template_result)
     with ctx:
-        return builder._resolve_sun_tracking(options)
+        return _verdict(builder._resolve_sun_tracking(options))
 
 
 def test_no_gate_configured_tracks():
@@ -480,16 +613,26 @@ def test_a_dropout_holds_the_last_verdict_then_fails_open():
     builder, ctx = _builder(states, clock=clock)
 
     with ctx:
-        assert builder._resolve_sun_tracking(options) == (False, True)
+        assert _verdict(builder._resolve_sun_tracking(options)) == (False, True)
 
         states["binary_sensor.ac"] = None
-        assert builder._resolve_sun_tracking(options) == (False, True)  # holding
+        verdict = builder._resolve_sun_tracking(options)
+        assert _verdict(verdict) == (False, True)  # holding
+        # The held verdict is closed, but the sensor is unavailable, so there is
+        # no live blocker to name — the reason renders without the clause.
+        assert verdict.blockers == ()
 
         clock.advance(60.0)
-        assert builder._resolve_sun_tracking(options) == (False, True)  # still holding
+        assert _verdict(builder._resolve_sun_tracking(options)) == (
+            False,
+            True,
+        )  # still holding
 
         clock.advance(61.0)  # past the 120s grace window
-        assert builder._resolve_sun_tracking(options) == (True, False)  # fails OPEN
+        assert _verdict(builder._resolve_sun_tracking(options)) == (
+            True,
+            False,
+        )  # fails OPEN
 
 
 def test_the_grace_wake_is_armed_only_while_holding():

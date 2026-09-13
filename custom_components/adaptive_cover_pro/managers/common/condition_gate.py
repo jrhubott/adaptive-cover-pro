@@ -116,11 +116,7 @@ class ConditionGate:
         * **combine** — both ``None`` → ``None``; exactly one ``None`` → the
           other; both present → folded via the configured OR/AND mode.
         """
-        sensor_states = [self._read_state(entity_id) for entity_id in self._sensors]
-        valid_states = [s for s in sensor_states if s is not None]
-        sensor_opinion: bool | None = (
-            None if not valid_states else any(s == "on" for s in valid_states)
-        )
+        sensor_opinion, _blockers = self._read_sensors()
         template_opinion = self._render_condition(self._template)
 
         if sensor_opinion is None and template_opinion is None:
@@ -136,6 +132,78 @@ class ConditionGate:
             has_template=True,
             has_others=True,
         )
+
+    def _read_sensors(self) -> tuple[bool | None, tuple[str, ...]]:
+        """One read pass → ``(sensor_opinion, the sensors voting shut)``.
+
+        The single definition of what this cycle's sensors say, so
+        :meth:`live_verdict` and :pyattr:`blocking_sensors` cannot disagree on
+        the *logic* — one place decides both the fold and who caused it.
+
+        It does not make them atomic: each caller runs this afresh, so a state
+        change between a ``resolved()`` and a ``blocking_sensors`` read can still
+        yield a blocker list describing a slightly older verdict. That window is
+        one cycle wide and self-correcting, and closing it would mean threading a
+        captured pair through the builder for a diagnostic string.
+
+        ``sensor_opinion`` is ``None`` when there are no sensors or every one
+        reads invalid, else ``any`` valid sensor is ``"on"``. The blocker list is
+        non-empty **only** when that opinion is ``False`` — i.e. the sensors
+        actually voted the gate shut. Because the fold is ``any``, a single
+        ``"on"`` sensor carries the whole list, so in that case no individual
+        sensor blocked anything and the list is empty.
+        """
+        states = [
+            (entity_id, self._read_state(entity_id)) for entity_id in self._sensors
+        ]
+        valid = [(entity_id, s) for entity_id, s in states if s is not None]
+        if not valid:
+            return None, ()
+        opinion = any(s == "on" for _entity_id, s in valid)
+        blockers = () if opinion else tuple(entity_id for entity_id, _s in valid)
+        return opinion, blockers
+
+    @property
+    def blocking_sensors(self) -> tuple[str, ...]:
+        """The configured sensors currently voting the gate shut (issue #1359).
+
+        Empty unless the **sensor fold itself** resolved false. That matters in
+        ``and`` mode, where a false template can close a gate the sensors voted
+        to open: naming an off sensor there would tell the user to switch on an
+        entity that was already outvoted by ``any``, while the real cause — the
+        template — went unnamed. Same reasoning excludes invalid reads, which
+        ``live_verdict`` already drops from the fold: an unavailable sensor
+        abstains rather than blocks.
+
+        Note this answers "did the sensors close it", not "is the gate closed".
+        The template can close a gate this returns ``()`` for; callers that need
+        the verdict read :pyattr:`effective`.
+
+        Purely diagnostic — it reads state and returns; it does NOT go through
+        :meth:`_resolve`, which would feed ``GracefulSource.observe`` and
+        re-anchor the grace window as a side effect of being looked at. The
+        answer is therefore about THIS cycle's live reads, which can differ from
+        :pyattr:`effective` while a held verdict is in force; that is the honest
+        answer to "which sensor is off right now".
+        """
+        _opinion, blockers = self._read_sensors()
+        return blockers
+
+    @property
+    def blocking_template(self) -> bool:
+        """Whether the configured condition template voted the gate shut (#1359).
+
+        The template is a cause in its own right, and in ``and`` mode it is
+        frequently the *only* one — naming just the sensors there tells a user to
+        switch on entities that will not open the gate. ``False`` when there is
+        no template or it cannot render, matching how ``live_verdict`` treats an
+        absent template opinion: an unrenderable template abstains, it does not
+        block.
+
+        Same diagnostic contract as :pyattr:`blocking_sensors` — no ``_resolve``,
+        so reading it cannot re-anchor the grace window.
+        """
+        return self._render_condition(self._template) is False
 
     def _resolve(self) -> Resolution[bool]:
         """Feed this cycle's verdict to the grace machine (idempotent)."""

@@ -72,6 +72,11 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ReasonCode.FRAGMENT_CLOUDY_POSITION: "cloudy position",
     ReasonCode.FRAGMENT_COVERAGE_STEP: " (coverage step, max {steps})",
     ReasonCode.FRAGMENT_Z_ADJUSTED: " (Z-adjusted)",
+    ReasonCode.FRAGMENT_GATE_BLOCKED_BY: " (blocked by {entities})",
+    ReasonCode.FRAGMENT_GATE_BLOCKED_BY_TEMPLATE: " (blocked by the gate template)",
+    ReasonCode.FRAGMENT_GATE_BLOCKED_BY_BOTH: (
+        " (blocked by {entities} and the gate template)"
+    ),
     ReasonCode.FRAGMENT_BYPASS_NOTE: " [bypasses automatic control]",
     ReasonCode.FRAGMENT_SEASON_EXTREME_HEAT: "extreme heat",
     ReasonCode.FRAGMENT_SEASON_TRACKING_OFF: "default: tracking off this season",
@@ -209,7 +214,7 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     # -- describe_skip / inactive-reason prose
     ReasonCode.SKIP_OUTSIDE_WINDOW: "outside time window",
     ReasonCode.SKIP_SUN_OUTSIDE: "sun outside acceptance angle or elevation limits",
-    ReasonCode.SKIP_SUN_TRACKING_GATE: "sun tracking gate is closed",
+    ReasonCode.SKIP_SUN_TRACKING_GATE: "sun tracking gate is closed{detail}",
     ReasonCode.SKIP_SUN_TRACKING_OFF: "sun tracking is turned off",
     ReasonCode.SKIP_MANUAL_NOT_ACTIVE: "manual override not active",
     ReasonCode.SKIP_OCCUPANCY_DISABLED: "occupancy detection disabled",
@@ -286,6 +291,23 @@ def reason_to_dict(reason: Reason) -> dict[str, object]:
     return {
         "code": reason.code,
         "params": {key: _param_to_json(val) for key, val in reason.params.items()},
+    }
+
+
+def reason_attrs(payload: Reason) -> dict[str, object]:
+    """Flatten a reason payload to the ``reason_code`` + ``reason_params`` pair.
+
+    The two attribute names every external consumer reads to localize with its
+    own templates (issue #882). Lives here, next to :func:`reason_to_dict`,
+    because both the decision-trace **sensor attributes** (``sensor.py``) and
+    the **diagnostics export** (``diagnostics/builder.py``) need the identical
+    flattening — issue #1359 added the second caller, and two copies of this
+    two-key dict would drift the moment either name changed.
+    """
+    payload_dict = reason_to_dict(payload)
+    return {
+        "reason_code": payload_dict["code"],
+        "reason_params": payload_dict["params"],
     }
 
 

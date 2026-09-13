@@ -5,6 +5,7 @@
     "cloudy_position": "cloudy position",
     "coverage_step": " (coverage step, max {steps})",
     "z_adjusted": " (Z-adjusted)",
+    "gate_blocked_by": " (blocked by {entities})",
     "bypass_note": " [bypasses automatic control]",
     "season_extreme_heat": "extreme heat",
     "season_tracking_off": "default: tracking off this season",
@@ -20,7 +21,9 @@
     "trigger_template": "template",
     "trigger_fallback": "trigger",
     "axis_position": "position",
-    "axis_tilt": "tilt"
+    "axis_tilt": "tilt",
+    "gate_blocked_by_template": " (blocked by the gate template)",
+    "gate_blocked_by_both": " (blocked by {entities} and the gate template)"
   },
   "solar": {
     "tracking": "sun within acceptance angle — position {position}%{suffix}"
@@ -103,7 +106,7 @@
   "skip": {
     "outside_window": "outside time window",
     "sun_outside": "sun outside acceptance angle or elevation limits",
-    "sun_tracking_gate": "sun tracking gate is closed",
+    "sun_tracking_gate": "sun tracking gate is closed{detail}",
     "sun_tracking_off": "sun tracking is turned off",
     "manual_not_active": "manual override not active",
     "occupancy_disabled": "occupancy detection disabled",

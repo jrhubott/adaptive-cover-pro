@@ -2161,3 +2161,145 @@ def test_cover_not_ready_renders_byte_identical_to_legacy_summary() -> None:
         render(reason, load_troubleshoot_labels("en"))
         == "⚠️ cover.x: not ready (unavailable)"
     )
+
+
+# ---------------------------------------------------------------------------
+# Rule 28 — SUN_TRACKING_GATE_CLOSED (issue #1359)
+# ---------------------------------------------------------------------------
+
+
+def _gate_view(reason_code: str, **params) -> dict:
+    """Build a view whose solar step was skipped with ``reason_code``."""
+    return {
+        "options": {},
+        "decision_trace": [
+            {
+                "handler": "solar",
+                "matched": False,
+                "reason": "whatever the English happens to be",
+                "reason_code": reason_code,
+                "reason_params": params,
+                "position": None,
+            },
+            {
+                "handler": "default",
+                "matched": True,
+                "reason": "default",
+                "position": 100,
+            },
+        ],
+    }
+
+
+def test_gate_closed_fires_and_names_the_blocking_entity() -> None:
+    view = _gate_view("skip.sun_tracking_gate", entities="binary_sensor.is_ac_on")
+    findings = _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view)
+    assert len(findings) == 1
+    assert _params(findings)[0]["entities"] == "binary_sensor.is_ac_on"
+
+
+def test_gate_closed_fires_without_a_named_entity() -> None:
+    """A template-closed gate still deserves the finding, just unnamed."""
+    view = _gate_view("skip.sun_tracking_gate")
+    findings = _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view)
+    assert len(findings) == 1
+    assert _params(findings)[0]["entities"] == ""
+
+
+def test_gate_closed_does_not_fire_when_tracking_is_merely_off() -> None:
+    """#1167's audit rule, enforced in triage: the toggle is not a gate.
+
+    Telling a user who switched sun tracking off that a gate closed would send
+    them hunting for a setting they never configured.
+    """
+    view = _gate_view("skip.sun_tracking_off")
+    assert _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view) == []
+
+
+def test_gate_closed_does_not_fire_when_another_handler_is_driving() -> None:
+    """The finding explains an UNMOVING cover, so it must not fire when
+    something else legitimately holds the seat.
+
+    The registry writes solar's ``describe_skip`` payload into the trace
+    whenever solar returns None, regardless of who won — so a closed gate plus
+    a matched manual override would otherwise claim the cover "is parked at its
+    default position", which is false for that cycle.
+    """
+    view = _gate_view("skip.sun_tracking_gate", entities="binary_sensor.is_ac_on")
+    view["decision_trace"][1] = {
+        "handler": "manual_override",
+        "matched": True,
+        "reason": "manual override active",
+        "position": 42,
+    }
+    assert _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view) == []
+
+
+def test_gate_closed_does_not_fire_when_no_handler_matched() -> None:
+    """Cannot tell who is driving ⇒ do not assert that nothing is."""
+    view = _gate_view("skip.sun_tracking_gate", entities="binary_sensor.x")
+    view["decision_trace"][1]["matched"] = False
+    assert _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view) == []
+
+
+def test_gate_closed_does_not_fire_when_solar_won() -> None:
+    view = {
+        "options": {},
+        "decision_trace": [
+            {"handler": "solar", "matched": True, "reason": "tracking", "position": 40}
+        ],
+    }
+    assert _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view) == []
+
+
+def test_gate_closed_ignores_a_payloadless_trace() -> None:
+    """Never match on English prose — an old payload carries no code."""
+    view = {
+        "options": {},
+        "decision_trace": [
+            {
+                "handler": "solar",
+                "matched": False,
+                "reason": "sun tracking gate is closed",
+                "position": None,
+            }
+        ],
+    }
+    assert _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view) == []
+
+
+def test_gate_closed_names_the_template_when_it_is_the_cause() -> None:
+    view = _gate_view("skip.sun_tracking_gate", entities="", template_blocking=True)
+    findings = _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view)
+    assert len(findings) == 1
+    rendered = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert "by the gate template" in rendered
+
+
+def test_gate_closed_names_both_causes_together() -> None:
+    view = _gate_view(
+        "skip.sun_tracking_gate",
+        entities="binary_sensor.ac",
+        template_blocking=True,
+    )
+    findings = _fire(TriageCode.SUN_TRACKING_GATE_CLOSED, view)
+    rendered = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert "by binary_sensor.ac and the gate template" in rendered
+
+
+def test_gate_closed_severity_and_wiring() -> None:
+    rule = _RULES_BY_CODE[TriageCode.SUN_TRACKING_GATE_CLOSED]
+    assert rule.severity is Severity.WARNING
+    assert rule.inputs is RuleInput.RUNTIME
+    assert rule.fix_step == "sun_tracking"
+    assert rule.issues == (1359,)
+
+
+def test_gate_closed_renders_the_blocking_entity() -> None:
+    findings = _fire(
+        TriageCode.SUN_TRACKING_GATE_CLOSED,
+        _gate_view("skip.sun_tracking_gate", entities="binary_sensor.is_ac_on"),
+    )
+    rendered = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert "binary_sensor.is_ac_on" in rendered
+    assert "sun tracking" in rendered.lower()
