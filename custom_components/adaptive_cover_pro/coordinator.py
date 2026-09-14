@@ -61,7 +61,6 @@ from .helpers import (
     custom_position_slot_delivers_fixed_position,
     custom_position_slot_name,
     custom_position_slot_sensors,
-    has_configured_window_end,
     read_sun_boundaries,
     read_sunset_window_open,
     resolve_override_deadline,
@@ -6027,9 +6026,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         the duration mode from the per-cycle ``RuntimeConfig`` mirror, resolves
         the sunset/sunrise boundaries through :func:`.helpers.read_sun_boundaries`
         — the same definition the day/night position and the time window's
-        sunrise provider use — reads the operating window's resolved end, then
-        hands the arithmetic to the pure
-        :func:`.helpers.resolve_override_deadline`.
+        sunrise provider use — asks ``_time_mgr`` both whether the operating
+        window has an end and what it resolves to, then hands the arithmetic to
+        the pure :func:`.helpers.resolve_override_deadline`.
+
+        Three source shapes meet here, each deliberate and each documented at
+        the read: a per-cycle mirror for the mode, a per-cycle mirror for the
+        window end, and a live read for the four sun-boundary keys (issue
+        #1061).
 
         ``fixed`` — the default, and what an install that never touched the
         option gets — short-circuits before any state read, so the common case
@@ -6054,20 +6058,47 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         boundaries = None
         cover_data = self._cover_data
         if cover_data is not None:
+            # The four sun-boundary option keys (sunset/sunrise time entity and
+            # offset) are read LIVE and deliberately have NO RuntimeConfig
+            # mirror. Recorded decision for issue #1061, which asked why this
+            # read is not mirrored like the mode and the window end:
+            #   * ``read_sun_boundaries`` has a second coordinator caller — the
+            #     ``_resolve_window_sunrise`` closure injected into
+            #     TimeWindowManager (see __init__) — invoked lazily, outside the
+            #     update cycle and before the first ``_update_options``. It
+            #     cannot read a per-cycle mirror.
+            #   * Mirroring only THIS call site would leave two sources for the
+            #     same four keys — the exact shape #1061 objects to, relocated.
+            #     Mirroring both would put a stale read on the #1256/#1340
+            #     window gate.
+            #   * A raw-value slice would also duplicate the concepts
+            #     ``helpers.SunBoundaryOptions`` already names in resolved form.
+            # Reading RAW ``config_entry.options`` here rather than
+            # ``self._resolved_options`` is safe because none of these keys is
+            # in ``config_fields.TEMPLATABLE_KEYS`` — the two dicts are
+            # value-identical for them (#577). A change to any of the six keys
+            # this function reads reloads the entry outright: none is in
+            # ``_RUNTIME_APPLICABLE_OPTIONS`` (pinned by
+            # TestDeadlineOptionsForceAReload).
             boundaries = read_sun_boundaries(self.hass, options, cover_data.sun_data)
 
         # An unset window end is NO anchor. ``TimeWindowManager.end_time``
         # normalises the ``BLANK_TIME`` sentinel onto tomorrow's midnight by
         # design, so consulting it for an unconfigured window would produce a
-        # deadline that recedes a day at every local midnight and the hold would
-        # never expire. Decide off the raw options, where the sentinel is still
-        # distinguishable (issue #1044).
+        # deadline that recedes a day at every local midnight and the hold
+        # would never expire (issue #1044). The manager answers BOTH halves —
+        # ``has_configured_end`` screens the sentinel on its own mirrored raw
+        # values, ``end_time`` resolves the instant — so the predicate and the
+        # value can never describe different configurations. Until #1061 the
+        # predicate read ``config_entry.options`` live while the value came
+        # from the ``TimeWindowSlice`` mirror: two sources for the same two
+        # option keys, on one line.
         deadline = resolve_override_deadline(
             mode,
             dt_util.as_utc(anchor).replace(tzinfo=None),
             boundaries=boundaries,
             window_end_local_naive=(
-                self._time_mgr.end_time if has_configured_window_end(options) else None
+                self._time_mgr.end_time if self._time_mgr.has_configured_end else None
             ),
         )
         if deadline is None:
