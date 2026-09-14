@@ -207,6 +207,35 @@ class TestRingBufferEvents:
         ]
         assert len(rejected) == 1
 
+    def test_wait_for_target_rejection_records_resolved_position(self):
+        """Issue #1358 observation 1: a gated rejection records the resolved position.
+
+        ``_reject_gated_update`` hardcoded ``new_position=None`` for every
+        gated rejection (wait_for_target and command-grace), leaving every
+        buffered rejection event with a null position — exactly what sent a
+        reporter down the wrong causal path while triaging a diagnostics
+        dump. The gate must resolve the position through the same
+        ``policy.read_axis_value`` seam the post-gate path already uses.
+        """
+        mgr, event_buffer = _make_manager()
+        event = _make_state_event("cover.test", new_pos=80, old_pos=50)
+        mgr.handle_state_change(
+            event,
+            StateChangeInputs(
+                our_state=50,
+                policy=get_policy("cover_blind"),
+                allow_reset=True,
+                is_waiting=lambda _eid: True,
+                manual_threshold=3,
+            ),
+        )
+        buf = event_buffer.snapshot()
+        rejected = [
+            e for e in buf if e["event"] == "manual_override_rejected_wait_for_target"
+        ]
+        assert len(rejected) == 1
+        assert rejected[0]["new_position"] == 80
+
     def test_position_unavailable_records_rejection(self):
         """None position records 'manual_override_rejected_position_unavailable'."""
         mgr, event_buffer = _make_manager()

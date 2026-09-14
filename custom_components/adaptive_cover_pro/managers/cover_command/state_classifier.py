@@ -8,7 +8,7 @@ coordinator before this extraction is preserved verbatim, every issue-fix
 comment included; #1139 and #1306 are the first behaviour changes made
 directly in this module rather than relocated into it.
 
-Background — the inline implementation accumulated seven issue-numbered
+Background — the inline implementation accumulated eight issue-numbered
 behaviour fixes over its lifetime:
 
 - **#147** — clearing wait_for_target on intermediate states caused
@@ -31,6 +31,12 @@ behaviour fixes over its lifetime:
   settled without progress has been stopped or reversed — neither a #186
   pause nor a #1139 unreacted command — so neither arm may suppress that
   event.
+- **#1358** — a cover whose full travel completes in under
+  ``COMMAND_GRACE_PERIOD_SECONDS`` always lands its arrival event inside
+  the grace window, where it was discarded unconditionally; a verified
+  arrival (an incremental report between dispatch origin and target, not a
+  #518 optimistic echo) now clears wait_for_target even while grace is
+  still running, instead of waiting on the 45s transit-timeout backstop.
 
 The classifier is composed by :class:`CoverCommandService` and accessed
 through its public :meth:`classify_state_change` wrapper.  External state
@@ -168,8 +174,25 @@ class StateClassifier:
                 logger.debug("Ignoring intermediate state change for %s", entity_id)
             return
         if cmd_svc.is_waiting_for_target(entity_id):
+            # Hoisted above the grace check (Issue #1358) — the in-grace
+            # arrival settle below needs both, and reading them once here
+            # (rather than a second time after grace expires) keeps this a
+            # single read per event regardless of which branch is taken.
+            caps = cmd_svc.get_cover_capabilities(entity_id)
+            position = cmd_svc.read_position_with_capabilities(
+                entity_id, caps, event.new_state
+            )
             # Check if still in grace period
             if grace_mgr.is_in_command_grace_period(entity_id):
+                if self._settle_verified_arrival_in_grace(
+                    event,
+                    entity_id,
+                    position,
+                    caps=caps,
+                    cmd_svc=cmd_svc,
+                    target_just_reached=target_just_reached,
+                ):
+                    return
                 if logger is not None:
                     logger.debug(
                         "Position change for %s ignored (in grace period)", entity_id
@@ -177,10 +200,6 @@ class StateClassifier:
                 return  # Ignore ALL position changes during grace period
 
             # Grace period expired — check if cover reached target (tolerance-based)
-            caps = cmd_svc.get_cover_capabilities(entity_id)
-            position = cmd_svc.read_position_with_capabilities(
-                entity_id, caps, event.new_state
-            )
             reached = cmd_svc.check_target_reached(entity_id, position)
             if reached:
                 # Mark this entity so async_handle_cover_state_change() skips the
@@ -531,6 +550,92 @@ class StateClassifier:
         else:
             if logger is not None:
                 logger.debug("No wait for target call for %s", entity_id)
+
+    def _settle_verified_arrival_in_grace(
+        self,
+        event: Any,
+        entity_id: str,
+        position: int | None,
+        *,
+        caps: dict[str, bool],
+        cmd_svc: Any,
+        target_just_reached: set[str],
+    ) -> bool:
+        """Issue #1358: let a *verified* arrival clear wait_for_target inside grace.
+
+        ``COMMAND_GRACE_PERIOD_SECONDS`` (5s) exists to suppress the flurry of
+        intermediate positions a cover reports while it is still travelling.
+        But on a cover that streams live intermediate positions AND completes
+        its full transit in well under 5s (a Tuya roller shutter doing 0->100
+        in ~0.87s, for example), the arrival event is guaranteed to land
+        inside that same window — the grace branch above returns
+        unconditionally, ``check_target_reached`` (the ONLY call site that
+        clears ``wait_for_target`` on arrival) never runs, and the flag can
+        then only ever be cleared by the 45s transit-timeout backstop. Any
+        user reversal in that stale window reads ``old_position == target,
+        position != target`` on its first sample — identical to the #518
+        optimistic-firmware-echo signature — so ``_check_optimistic_guard``
+        (below) swallows it as transit, restarting grace and resetting the
+        progress clock, and the loop repeats.
+
+        The fix: settle a genuine arrival even while grace is still running,
+        by reusing the exact same "at target" seam
+        (``check_target_reached`` / ``read_position_with_capabilities``) the
+        post-grace-expiry branch already uses — there must be exactly one
+        definition of "at target" in this module.
+
+        The discriminator that makes this safe against the #518 echo is
+        ``old_position != position_at_send``: a genuine arrival on a
+        position-reporting cover is preceded by at least one intermediate
+        report between the dispatch origin and the target, whereas an
+        optimistic echo teleports from the origin straight to the target in
+        a single report (``old_position == position_at_send``). Covers that
+        publish no intermediate positions at all (Velux/KLF-200, #1306) never
+        satisfy this gate either, so they fall straight through to today's
+        unconditional grace return — this change is strictly additive.
+
+        Returns:
+            ``True`` if the arrival was verified and settled (``classify``
+            should return immediately, mirroring the post-grace-expiry
+            arrival branch), ``False`` otherwise (fall through to the
+            existing "ignore during grace" behaviour).
+
+        """
+        if position is None or event.old_state is None:
+            return False
+        position_at_send = cmd_svc.get_position_at_send(entity_id)
+        if position_at_send is None:
+            return False
+        old_position = cmd_svc.read_position_with_capabilities(
+            entity_id, caps, event.old_state
+        )
+        if old_position is None or old_position == position_at_send:
+            return False
+        if not cmd_svc.check_target_reached(entity_id, position):
+            return False
+        target_just_reached.add(entity_id)
+        self._debug_log(
+            "manual_override",
+            "Target reached for %s during grace period (was %s, position at "
+            "send %s) — skipping manual override check for this event",
+            entity_id,
+            old_position,
+            position_at_send,
+        )
+        if self._event_buffer is not None:
+            self._event_buffer.record(
+                {
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "transit_arrived_during_grace",
+                    "entity_id": entity_id,
+                    "position": position,
+                    "old_position": old_position,
+                    "position_at_send": position_at_send,
+                    "target": cmd_svc.get_target(entity_id),
+                    "cover_state": event.new_state.state,
+                }
+            )
+        return True
 
     def _check_optimistic_guard(
         self,

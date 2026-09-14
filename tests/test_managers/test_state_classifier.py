@@ -150,6 +150,35 @@ def test_classify_marks_target_just_reached_within_tolerance(classifier_setup):
 
 
 @pytest.mark.unit
+def test_classify_clears_wait_on_verified_arrival_inside_grace(classifier_setup):
+    """Issue #1358: a verified arrival must clear wait_for_target inside grace.
+
+    target=100, old_pos=95, new_pos=100, position_at_send=0: the cover
+    reported an intermediate position (95) between the dispatch origin (0)
+    and the target (100) before landing on target, all while the command
+    grace period is still active. On a cover whose full travel completes in
+    under COMMAND_GRACE_PERIOD_SECONDS (e.g. a Tuya roller shutter doing
+    0->100 in under a second), the arrival event ALWAYS lands inside grace —
+    check_target_reached must still run so wait_for_target is cleared rather
+    than being stuck true until the 45s transit-timeout backstop.
+    """
+    svc = _make_service(
+        target=100, new_pos=100, old_pos=95, reached=True, position_at_send=0
+    )
+    classifier, _buf, grace, _debug_log = classifier_setup(svc)
+    grace._command_timestamps["cover.x"] = dt.datetime.now().timestamp()
+    target_just_reached: set[str] = set()
+    classifier.classify(
+        _make_event("cover.x", new_pos=100, old_pos=95),
+        ignore_intermediate_states=False,
+        target_just_reached=target_just_reached,
+        grace_mgr=grace,
+    )
+    svc.check_target_reached.assert_called_once()
+    assert "cover.x" in target_just_reached
+
+
+@pytest.mark.unit
 def test_classify_records_forward_progress(classifier_setup):
     svc = _make_service(target=0, new_pos=50, old_pos=60)
     classifier, buf, grace, _debug_log = classifier_setup(svc)
