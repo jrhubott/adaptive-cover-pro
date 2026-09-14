@@ -278,6 +278,50 @@ class TestOptimisticTargetReplay:
 
 
 # ===========================================================================
+# Issue #1358 regression guard: an in-grace arrival check must not accept a
+# firmware echo as a verified arrival.
+# ===========================================================================
+
+
+class TestOptimisticEchoInsideGrace:
+    """The #1358 in-grace arrival check must not swallow a #518 echo."""
+
+    @pytest.mark.asyncio
+    async def test_optimistic_echo_inside_grace_does_not_clear_wait_for_target(
+        self,
+    ) -> None:
+        """A firmware echo landing INSIDE grace must not read as a verified arrival.
+
+        target=20, old_position=75 (the dispatch origin), new_position=20 (the
+        commanded target, echoed optimistically). Grace is still ACTIVE
+        (grace_expired=False) — exactly the shape an in-grace arrival check
+        must reject: old_position == position_at_send means the cover
+        teleported straight from its dispatch origin to the target in one
+        report, the #518 firmware-echo signature, not a genuine incremental
+        arrival. wait_for_target must remain True.
+        """
+        entity_id = "cover.office_roller_shutter_switch_2"
+        coord = _make_coordinator(
+            entity_id,
+            target_position=20,
+            current_position=20,
+            old_position=75,
+            new_state_str="open",
+            old_state_str="open",
+            grace_expired=False,
+        )
+        coord._cmd_svc.state(entity_id).position_at_send = 75
+        _call(coord)
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True, (
+            "An optimistic echo landing inside grace must not clear "
+            "wait_for_target: it teleports from the dispatch origin straight "
+            "to the target in a single report and must not be read as a "
+            "genuine incremental arrival."
+        )
+        coord._grace_mgr.cancel_all()
+
+
+# ===========================================================================
 # Regression — true drift-away (#285) must still be detected
 # ===========================================================================
 

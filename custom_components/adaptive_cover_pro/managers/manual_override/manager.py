@@ -294,6 +294,33 @@ class AdaptiveCoverManager:
             reason=reason,
         )
 
+    def _read_primary_axis_position(
+        self,
+        entity_id: str,
+        policy,
+        state_obj,
+        *,
+        caps: dict[str, bool] | None = None,
+    ) -> int | None:
+        """Resolve the primary-axis value ``state_obj`` reports, via ``policy``.
+
+        Single source of truth for "which axis carries the current value on
+        this entity?" (issue #1358 observation 1) — extracted from the
+        detection path below so a gate rejection can resolve the same
+        position instead of recording a hardcoded ``None``. ``caps`` is
+        accepted rather than always recomputed: the detection path below
+        already has one (it also feeds ``DetectionContext``) and passes it
+        through; a gate rejection has none yet and lets this resolve it.
+        Returns ``None`` when ``policy`` or ``state_obj`` is unavailable —
+        the same "nothing to read" answer the ternary it replaces gave for a
+        missing ``old_state``.
+        """
+        if policy is None or state_obj is None:
+            return None
+        if caps is None:
+            caps = check_cover_features(self.hass, entity_id)
+        return policy.read_axis_value(self.hass, entity_id, caps, state_obj=state_obj)
+
     def _reject_gated_update(
         self,
         entity_id: str,
@@ -303,6 +330,7 @@ class AdaptiveCoverManager:
         our_state,
         secondary_axis_check,
         new_state,
+        policy,
     ) -> None:
         """Reject an update at an early gate, advancing any excursion trajectory.
 
@@ -315,6 +343,11 @@ class AdaptiveCoverManager:
         (issue #927; PR #928 fixed the command-grace gate, and the
         wait_for_target analog is issue #930). The generic ``consume_excursion``
         call keeps the manager cover-type-agnostic.
+
+        ``new_position`` is resolved via :meth:`_read_primary_axis_position`
+        (issue #1358 observation 1) rather than recorded as a hardcoded
+        ``None`` — a null position on every gated rejection was what sent a
+        reporter down the wrong causal path while triaging a diagnostics dump.
         """
         if secondary_axis_check is not None:
             secondary_axis_check.consume_excursion(entity_id, new_state)
@@ -322,7 +355,7 @@ class AdaptiveCoverManager:
             entity_id,
             event_name,
             our_state=our_state,
-            new_position=None,
+            new_position=self._read_primary_axis_position(entity_id, policy, new_state),
             reason=reason,
         )
 
@@ -430,6 +463,7 @@ class AdaptiveCoverManager:
                 our_state=inputs.our_state,
                 secondary_axis_check=inputs.secondary_axis_check,
                 new_state=event.new_state,
+                policy=inputs.policy,
             )
             return
         if inputs.is_in_command_grace(entity_id):
@@ -440,6 +474,7 @@ class AdaptiveCoverManager:
                 our_state=inputs.our_state,
                 secondary_axis_check=inputs.secondary_axis_check,
                 new_state=event.new_state,
+                policy=inputs.policy,
             )
             return
 
@@ -492,14 +527,12 @@ class AdaptiveCoverManager:
         # the coordinator commanded against.
         caps = check_cover_features(self.hass, entity_id)
         policy = inputs.policy
-        new_position = policy.read_axis_value(
-            self.hass, entity_id, caps, state_obj=new_state
+        new_position = self._read_primary_axis_position(
+            entity_id, policy, new_state, caps=caps
         )
         old_state_obj = getattr(event, "old_state", None)
-        old_position = (
-            policy.read_axis_value(self.hass, entity_id, caps, state_obj=old_state_obj)
-            if old_state_obj is not None
-            else None
+        old_position = self._read_primary_axis_position(
+            entity_id, policy, old_state_obj, caps=caps
         )
         # Issue #888 follow-up: drop the display-only assumed value only on a
         # GENUINE position transition. For assumed-state open/close covers (Somfy
