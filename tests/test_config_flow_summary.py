@@ -952,6 +952,22 @@ def test_blank_start_with_no_end_does_not_show_from_sunrise():
     assert "Active during daylight" in summary
 
 
+def test_blank_string_end_bound_does_not_render_from_sunrise():
+    """An empty-string end bound is no end bound — and the runtime now agrees.
+
+    Issue #1061. This summary and ``TimeWindowManager.after_start_time`` are
+    two renderings of the same question, "is an end bound configured?", and
+    they used to be two different implementations of it: the summary's
+    hand-rolled ``bool(end_entity) or ...`` said ``""`` was unconfigured while
+    the manager's ``_bound_is_configured`` said it was configured, so the
+    summary printed an unbounded window while the runtime held it shut until
+    sunrise. Both now route through ``helpers.has_configured_window_end``.
+    """
+    cfg = {CONF_END_ENTITY: "", CONF_END_TIME: ""}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "from sunrise" not in summary
+
+
 def test_sunrise_gates_start_renders_line_with_start_time():
     """The opt-in changes when the day starts, so the summary must say so (#1340).
 

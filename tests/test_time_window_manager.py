@@ -375,6 +375,128 @@ async def test_blank_start_opens_window_at_sunrise_not_before():
 
 
 # ---------------------------------------------------------------------------
+# has_configured_end (issue #1061): ONE definition of "is the end bound set?"
+# ---------------------------------------------------------------------------
+#
+# #1044's ``helpers.has_configured_window_end`` and #1256's module-local
+# ``_bound_is_configured`` both claimed in their docstrings to be the single
+# definition of this predicate, and disagreed on the empty string: the helper
+# called ``""`` unconfigured, the local copy called it configured. The manager
+# therefore contradicted ITSELF — ``after_start_time`` held the window shut
+# until sunrise on the strength of an end bound that ``end_time`` on the same
+# object could not produce. These pin the resolution: ``""`` is unconfigured,
+# the helper wins, and ``BLANK_TIME`` / a real bound are unmoved.
+
+
+@pytest.mark.unit
+def test_blank_string_end_entity_is_not_a_configured_end_bound():
+    """An ``end_entity`` of ``""`` is no end bound — and never was.
+
+    The three assertions here contradict each other before #1061:
+    ``after_start_time`` was False (sunrise-anchored, per ``_bound_is_configured``
+    reading ``"" is not None`` as configured) while ``end_time`` on the same
+    manager returned ``None``. With no resolvable end there is no window to
+    bound, so #1256's premise never applied and the lower bound falls back to
+    the documented "no start restriction".
+    """
+    # ``hass.states.get("")`` finds no entity, exactly as a real HA would.
+    hass = MagicMock()
+    hass.states.get.return_value = None
+    mgr = _make_manager(mock_hass=hass, sunrise_provider=_sunrise_provider(6, 0))
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity="",
+    )
+
+    with patch(
+        f"{_TIME_WINDOW}.local_now_naive",
+        return_value=dt.datetime(2026, 8, 12, 0, 5, 0),
+    ):
+        assert mgr.after_start_time is True
+        assert mgr.end_time is None
+        assert mgr.has_configured_end is False
+
+
+@pytest.mark.unit
+def test_blank_string_end_time_is_not_a_configured_end_bound():
+    """A static ``end_time`` of ``""`` is no end bound either.
+
+    ``end_time`` is deliberately NOT evaluated here: ``get_datetime_from_str("")``
+    raises ``dateutil.parser.ParserError`` with no guard, a pre-existing defect
+    that is out of scope for #1061 and should not be pinned as expected
+    behaviour. What matters is that the predicate short-circuits before
+    anything reaches the parser.
+    """
+    mgr = _make_manager(sunrise_provider=_sunrise_provider(6, 0))
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time="",
+        end_time_entity=None,
+    )
+
+    with patch(
+        f"{_TIME_WINDOW}.local_now_naive",
+        return_value=dt.datetime(2026, 8, 12, 0, 5, 0),
+    ):
+        assert mgr.after_start_time is True
+        assert mgr.has_configured_end is False
+
+
+@pytest.mark.unit
+def test_blank_time_sentinel_end_is_not_a_configured_end_bound():
+    """Control: ``BLANK_TIME`` is NOT a behaviour delta of the unification.
+
+    The sentinel a cleared TimeSelector actually writes — the shape that occurs
+    in the wild — was already unconfigured under both predicates. Pinned so the
+    #1061 changelog's "only ``""`` moves" claim is checkable.
+    """
+    mgr = _make_manager(sunrise_provider=_sunrise_provider(6, 0))
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time=BLANK_TIME,
+        end_time_entity=None,
+    )
+
+    with patch(
+        f"{_TIME_WINDOW}.local_now_naive",
+        return_value=dt.datetime(2026, 8, 12, 0, 5, 0),
+    ):
+        assert mgr.has_configured_end is False
+        assert mgr.after_start_time is True
+
+
+@pytest.mark.unit
+def test_real_end_bound_still_anchors_a_blank_start_to_sunrise():
+    """Control: #1256's reporter shape is unchanged by the unification.
+
+    A wired end entity is a real end bound under either predicate, so a blank
+    start still anchors to sunrise and the window stays shut at 00:05.
+    """
+    mgr = _make_manager(sunrise_provider=_sunrise_provider(6, 0))
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity="sensor.sun_next_setting",
+    )
+
+    with (
+        patch(f"{_TIME_WINDOW}.get_safe_state", return_value=_END_ENTITY_RAW),
+        patch(f"{_TIME_WINDOW}.get_datetime_from_str", return_value=_END_ENTITY_PARSED),
+        patch(
+            f"{_TIME_WINDOW}.local_now_naive",
+            return_value=dt.datetime(2026, 8, 12, 0, 5, 0),
+        ),
+    ):
+        assert mgr.has_configured_end is True
+        assert mgr.after_start_time is False
+
+
+# ---------------------------------------------------------------------------
 # sunrise_gates_start (issue #1340): the OPT-IN sunrise floor on a REAL start
 # ---------------------------------------------------------------------------
 #

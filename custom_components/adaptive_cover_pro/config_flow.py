@@ -293,6 +293,7 @@ from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_name,
     custom_position_slot_sensors,
+    has_configured_window_end,
     is_assumed_state,
     manual_hold_is_unanchored,
     mirror_legacy_slot_sensor_keys,
@@ -3321,7 +3322,14 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # (issue #1256), matching the start_time option's documented "leave
     # blank to start at sunrise". With no end bound either, the window stays
     # unbounded on both sides and this stays silent, as before.
-    end_bound_configured = bool(end_entity) or bool(end_time and end_time != BLANK_TIME)
+    #
+    # The summary twin of ``TimeWindowManager.has_configured_end``: this line
+    # renders the very condition that property gates at runtime, so both go
+    # through the one definition rather than each hand-rolling it (issue
+    # #1061). Three copies of this predicate had accumulated — #1044's helper,
+    # #1256's module-local one in the time-window manager, and this one — and
+    # they did not agree about the empty string.
+    end_bound_configured = has_configured_window_end(config)
     if start_entity:
         timing_parts.append(L["timing.from_entity"].format(entity=start_entity))
     elif start_time and start_time != BLANK_TIME:

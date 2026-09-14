@@ -14,28 +14,20 @@ if TYPE_CHECKING:
 
 from ..const import (
     BLANK_TIME,
+    CONF_END_ENTITY,
+    CONF_END_TIME,
     DEFAULT_CONDITION_GATE_GRACE_SECONDS,
     DEFAULT_TEMPLATE_COMBINE_MODE,
 )
-from ..helpers import get_datetime_from_str, get_safe_state, local_now_naive
+from ..helpers import (
+    get_datetime_from_str,
+    get_safe_state,
+    has_configured_window_end,
+    local_now_naive,
+)
 from ..templates import render_condition_or_none
 from .common import EventRecorder
 from .common.condition_gate import ConditionGate
-
-
-def _bound_is_configured(entity: str | None, static_value: str | None) -> bool:
-    """Whether a start/end time bound has a real (non-blank) value configured.
-
-    True when an entity is wired, or a static value is set and isn't the
-    blank sentinel ``BLANK_TIME``. Single definition of "configured" for a
-    time-window bound, shared so a future symmetric check (e.g. "is the
-    *start* bound configured?" for the blank-end case) delegates here rather
-    than re-deriving the same predicate (CODING_GUIDELINES no-duplication
-    rule). Currently consulted once, from :pyattr:`TimeWindowManager.after_start_time`.
-    """
-    return entity is not None or (
-        static_value is not None and static_value != BLANK_TIME
-    )
 
 
 class TimeWindowManager:
@@ -396,11 +388,17 @@ class TimeWindowManager:
             to True (fail-open) when no ``sunrise_provider`` was injected or
             it returns ``None``.
 
+            "Is an end bound configured?" is :pyattr:`has_configured_end` —
+            one definition shared with the #1044 manual-override deadline
+            resolver (issue #1061), replacing a module-local copy that read
+            an empty-string bound as configured while :pyattr:`end_time` on
+            this same object resolved it to ``None``.
+
         """
         passed = self._start_has_passed()
         if passed is not None:
             return passed
-        if _bound_is_configured(self._end_time_entity, self._end_time_config):
+        if self.has_configured_end:
             sunrise = self._resolved_sunrise()
             if sunrise is not None:
                 return local_now_naive() >= sunrise
@@ -426,6 +424,34 @@ class TimeWindowManager:
         """
         passed = self._start_has_passed()
         return False if passed is None else passed
+
+    @property
+    def has_configured_end(self) -> bool:
+        """Whether a real (non-blank) window END bound is configured.
+
+        Delegates to :func:`helpers.has_configured_window_end` — the one
+        definition of "does this instance have a window end at all?" (issue
+        #1044) — applied to this manager's mirrored copies of the same two
+        option keys. Shared so the manual-override deadline resolver takes the
+        predicate AND the value (:pyattr:`end_time`) from ONE source, instead
+        of asking the raw options whether an end exists and this manager what
+        it is (issue #1061).
+
+        The helper stays options-level: ``manual_hold_is_unanchored``, the
+        configuration summary and ``diagnostics.triage`` each hold a raw
+        mapping and no coordinator to read from.
+
+        Replaces the module-local ``_bound_is_configured`` (#1256), which
+        counted the empty string as configured and so disagreed with the helper
+        — and with this manager's own :pyattr:`end_time`, which returns
+        ``None`` for a blank end entity.
+        """
+        return has_configured_window_end(
+            {
+                CONF_END_TIME: self._end_time_config,
+                CONF_END_ENTITY: self._end_time_entity,
+            }
+        )
 
     @property
     def end_time(self) -> dt.datetime | None:
