@@ -429,6 +429,22 @@ _GOLDEN_PRE_CHANGE_447D9AB0 = {
 }
 # fmt: on
 
+# The table above is macOS/arm64 ``libm`` output. ``calculate_position`` runs the
+# geometry through ``atan2``/``sin``/``cos``, which are correctly-rounded on
+# neither platform and disagree by 1-2 ULP between macOS and the Linux x86_64 CI
+# runners — so exact ``==`` pinned the test to the machine that captured it and
+# failed every CI run from #1282 onward. The observed spread is ~4e-16 relative;
+# 1e-12 sits ~2400x above the noise and far below any real rearrangement, which
+# moves these values in the third decimal or worse.
+#
+# BOTH halves of each golden row need it. ``calculate_percentage`` returns a
+# float, not the rounded integer HA is eventually commanded with: under
+# ``specify_angles`` it interpolates the solved angle into the user-calibrated
+# endpoint range, so it inherits the position's drift directly. Holding the
+# percentage to exact ``==`` only looked viable because the position assertion
+# fired first and aborted the row before the percentage was ever reached.
+_GOLDEN_REL = 1e-12
+
 
 def _tilt_at(
     *,
@@ -2579,7 +2595,7 @@ class TestReflectedBeamFloor:
     @pytest.mark.unit
     @pytest.mark.parametrize("slat_distance,depth", _SWEEP_SLATS)
     @pytest.mark.parametrize("mode", _SWEEP_MODES)
-    def test_disabled_option_is_byte_identical_at_every_geometry(
+    def test_disabled_option_matches_the_pre_change_engine_at_every_geometry(
         self, slat_distance: float, depth: float, mode: str
     ) -> None:
         """THE acceptance gate: the 0 sentinel changes nothing, anywhere.
@@ -2595,9 +2611,25 @@ class TestReflectedBeamFloor:
         value exactly as it does for an install that never saw the option, and
         an explicit ``0`` arriving from a stored config entry.
 
-        Exact ``==`` rather than ``pytest.approx`` — the same standard
-        ``safety_margin = 0.0`` is held to. A rearrangement that is only
-        *approximately* a no-op still moves every existing install's slats.
+        Both halves of each row are held to ``rel=_GOLDEN_REL`` (1e-12) rather
+        than exact ``==``. The golden table is one platform's ``libm`` output:
+        macOS and the Linux CI runners disagree by 1-2 ULP on the same
+        ``atan2``/``sin``/``cos`` inputs, so exact equality asserted "this ran
+        on the machine that captured the table", not "the engine is unchanged"
+        — it went red on every CI run from #1282 until this was fixed, while
+        passing locally the whole time.
+
+        The percentage needs the tolerance for the same reason the position
+        does, not a weaker one. ``calculate_percentage`` returns a float here,
+        and under ``specify_angles`` it interpolates the solved angle into the
+        calibrated endpoint range, inheriting the drift; the rounding to the
+        integer HA is actually commanded with happens further down the
+        pipeline, outside this engine.
+
+        1e-12 is ~2400x the observed drift and orders of magnitude below any
+        real rearrangement, which moves these values in the third decimal or
+        worse — so the gate still bites. A no-op that is only *approximately*
+        a no-op at this scale cannot move any install's slats.
         """
         # The table is a flat list in sweep order, so it is keyed to these exact
         # sweep VALUES, not merely to their count. Changing ``5`` to ``7`` in
@@ -2633,11 +2665,11 @@ class TestReflectedBeamFloor:
                         _tilt_at(**params),
                         _tilt_at(**params, min_reflected_elevation=0),
                     ):
-                        assert (
-                            cover.calculate_position() == want_position
+                        assert cover.calculate_position() == pytest.approx(
+                            want_position, rel=_GOLDEN_REL
                         ), f"position moved off 447d9ab0 at {params}"
-                        assert (
-                            cover.calculate_percentage() == want_percentage
+                        assert cover.calculate_percentage() == pytest.approx(
+                            want_percentage, rel=_GOLDEN_REL
                         ), f"percentage moved off 447d9ab0 at {params}"
 
     @pytest.mark.unit
