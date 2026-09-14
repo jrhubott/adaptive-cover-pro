@@ -780,16 +780,18 @@ def _last_action_value(s: _ACPDiagnosticSensor) -> str | None:
     service = action.get("service", "unknown")
     entity = action.get("entity_id", "unknown")
     timestamp_str = action.get("timestamp", "")
+    position = action.get("position")
+    position_str = f"{position}%" if position is not None else "unknown"
 
     if timestamp_str:
         try:
             ts = dt_util.parse_datetime(timestamp_str)
             if ts:
                 time_str = dt_util.as_local(ts).strftime("%H:%M:%S")
-                return f"{service} → {entity.split('.')[-1]} at {time_str}"
+                return f"{service} → {entity.split('.')[-1]} → {position_str} at {time_str}"
         except (ValueError, AttributeError):
             pass
-    return f"{service} → {entity.split('.')[-1]}"
+    return f"{service} → {entity.split('.')[-1]} → {position_str}"
 
 
 def _last_action_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:

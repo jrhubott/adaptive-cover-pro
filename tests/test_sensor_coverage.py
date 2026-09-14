@@ -583,6 +583,7 @@ def test_last_action_sensor_native_value_with_timestamp():
     assert "test_blind" in val
     assert "set_cover_position" in val
     assert "14:30:00" in val
+    assert "50%" in val
 
 
 @pytest.mark.unit
@@ -608,7 +609,32 @@ def test_last_action_sensor_native_value_without_timestamp():
         coordinator=coord,
     )
     val = sensor.native_value
-    assert val == "set_cover_position → test_blind"
+    assert val == "set_cover_position → test_blind → 50%"
+
+
+@pytest.mark.unit
+def test_last_action_sensor_native_value_position_none_fallback():
+    """native_value falls back to 'unknown' when position is None."""
+    coord = _make_coordinator(
+        diagnostics={
+            "last_cover_action": {
+                "entity_id": "cover.test_blind",
+                "service": "set_cover_position",
+                "position": None,
+                "timestamp": "",  # empty timestamp
+            }
+        }
+    )
+    entry = _make_config_entry()
+    sensor = AdaptiveCoverLastActionSensor(
+        config_entry_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    val = sensor.native_value
+    assert val == "set_cover_position → test_blind → unknown"
 
 
 @pytest.mark.unit
