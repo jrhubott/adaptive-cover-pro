@@ -147,7 +147,7 @@ _SWITCH_SPECS: tuple[_SwitchSpec, ...] = (
         switch_name="Outside Temperature",
         key="temp_toggle",
         initial_state=False,
-        enabled_default=False,
+        enabled_default=True,
         enabled_when=_has_climate_temp_source,
     ),
     _SwitchSpec(

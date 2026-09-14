@@ -379,6 +379,20 @@ class TestSwitchEnabledDefault:
         sig = inspect.signature(AdaptiveCoverSwitch.__init__)
         assert "enabled_default" in sig.parameters
 
+    def test_temp_toggle_enabled_default_is_true(self):
+        """The Outside Temperature switch is visible by default (#1125).
+
+        It must remain OFF by default (temp_switch behavior unchanged) while
+        no longer being registry-hidden, so a user who configures an
+        Outdoor Temperature Entity can see and control the switch that
+        governs whether it's used.
+        """
+        from custom_components.adaptive_cover_pro.switch import _SWITCH_SPECS
+
+        spec = next(s for s in _SWITCH_SPECS if s.key == "temp_toggle")
+        assert spec.enabled_default is True
+        assert spec.initial_state is False
+
 
 # ---------------------------------------------------------------------------
 # Selector domain widening (#318)
