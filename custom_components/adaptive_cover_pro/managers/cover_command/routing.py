@@ -266,6 +266,57 @@ def is_my_preset_target(
     return target not in (POSITION_CLOSED, POSITION_OPEN)
 
 
+def build_limit_positions(options: dict) -> list[int]:
+    """Return the always-enforced ``min_position`` / ``max_position`` values.
+
+    Issue #474: when ``CONF_MIN_POSITION`` / ``CONF_MAX_POSITION`` is set AND
+    the corresponding enable flag is ``False`` (always-enforced, not
+    sun-tracking-only), the limit value is a candidate for the delta-gate
+    bypass — the same guarantee endpoints (0/100) and default_height already
+    have. Conservative v1 restricts this to always-enforced limits because
+    this function does not receive sun_valid context; the sun-tracking-only
+    case (enable flag = True) is handled by the ordinary delta comparison
+    once the limit is actually active.
+
+    Extracted as its own function (issue #1350) so both
+    :func:`build_special_positions` (the delta-gate bypass list) and
+    ``PositionContext.limit_positions`` (the one-shot latch predicate in
+    ``apply_position``) read the same definition of "an always-enforced
+    limit" — one place, two consumers, per the no-duplication guideline.
+
+    Literal endpoint values (``POSITION_CLOSED``/``POSITION_OPEN``, i.e. 0
+    and 100 — the shipped defaults for ``CONF_MIN_POSITION`` /
+    ``CONF_MAX_POSITION``) are excluded even when always-enforced. Those two
+    values already have their own unconditional, non-latched bypass
+    (issue #629, seeded by :func:`build_special_positions` and governed
+    solely by ``CONF_ENFORCE_DELTA_AT_ENDPOINTS``). Letting a default
+    install's min=0/max=100 also land in this list would make
+    ``apply_position``'s one-shot limit latch strip that SAME value from
+    the effective specials the moment it latched — silently turning the
+    #629 guarantee into a one-shot for every default install, not just
+    installs with a genuine non-endpoint limit (audit finding, issue
+    #1350).
+    """
+    limit_positions: list[int] = []
+    min_position = options.get(CONF_MIN_POSITION)
+    if (
+        min_position is not None
+        and options.get(CONF_ENABLE_MIN_POSITION) is False
+        and min_position not in (POSITION_CLOSED, POSITION_OPEN)
+    ):
+        limit_positions.append(min_position)
+
+    max_position = options.get(CONF_MAX_POSITION)
+    if (
+        max_position is not None
+        and options.get(CONF_ENABLE_MAX_POSITION) is False
+        and max_position not in (POSITION_CLOSED, POSITION_OPEN)
+    ):
+        limit_positions.append(max_position)
+
+    return limit_positions
+
+
 def build_special_positions(options: dict) -> list[int]:
     """Build list of special positions from options.
 
@@ -283,16 +334,19 @@ def build_special_positions(options: dict) -> list[int]:
     guarantee byte-for-byte. Useful on mechanically coupled covers where
     commanding a full endpoint disturbs the tilt axis.
 
-    Active position limits (issue #474): when ``CONF_MIN_POSITION`` /
-    ``CONF_MAX_POSITION`` is set AND the corresponding enable flag is
-    ``False`` (always-enforced, not sun-tracking-only), the limit value is
-    added to the special set.  This lets a target pinned to the configured
-    floor or ceiling bypass the delta gate and snap to the limit — the same
-    guarantee that endpoints (0/100) and default_height already have.
-    Conservative v1 restricts the bypass to always-enforced limits because
-    ``build_special_positions`` does not receive sun_valid context; the
-    sun-tracking-only case (enable flag = True) is handled by the ordinary
-    delta comparison once the limit is actually active.
+    Active position limits (issue #474, see :func:`build_limit_positions`):
+    when ``CONF_MIN_POSITION`` / ``CONF_MAX_POSITION`` is set AND the
+    corresponding enable flag is ``False`` (always-enforced, not
+    sun-tracking-only), the limit value is added to the special set.  This
+    lets a target pinned to the configured floor or ceiling bypass the delta
+    gate and snap to the limit — the same guarantee that endpoints (0/100)
+    and default_height already have. Issue #1350: a repeated approach to an
+    already-latched limit is narrowed back to the ordinary delta gate at the
+    ``apply_position`` seam (``PositionContext.limit_positions`` /
+    ``PerEntityState.snapped_limit``), not here — this function always
+    returns the full always-enforced set so every other caller (and the
+    #763 regression tests, which call this function directly) keeps seeing
+    the limit as special.
 
     """
     enforce_endpoints = options.get(
@@ -309,13 +363,6 @@ def build_special_positions(options: dict) -> list[int]:
     if my_position_value is not None:
         special_positions.append(my_position_value)
 
-    # Issue #474: always-enforced position limits bypass the delta gate.
-    min_position = options.get(CONF_MIN_POSITION)
-    if min_position is not None and options.get(CONF_ENABLE_MIN_POSITION) is False:
-        special_positions.append(min_position)
-
-    max_position = options.get(CONF_MAX_POSITION)
-    if max_position is not None and options.get(CONF_ENABLE_MAX_POSITION) is False:
-        special_positions.append(max_position)
+    special_positions.extend(build_limit_positions(options))
 
     return filter_endpoint_specials(special_positions, enforce_endpoints)

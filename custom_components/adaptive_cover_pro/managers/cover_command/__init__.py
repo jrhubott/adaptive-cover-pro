@@ -44,6 +44,7 @@ from .position_context import PositionContextTracker
 from .queue import CommandQueue, QueueGrant
 from .routing import (
     ServiceCallPlan,
+    build_limit_positions,
     build_special_positions,
     is_my_preset_target,
     route_service_call,
@@ -65,6 +66,7 @@ __all__ = [
     "ServiceCallPlan",
     "TravelCalibration",
     "TravelPlan",
+    "build_limit_positions",
     "build_special_positions",
     "build_travel_plan",
     "is_my_preset_target",
@@ -2087,11 +2089,31 @@ class CoverCommandService:
             )
 
         if not context.force and not force_endpoint:
+            # One-shot limit latch (issue #1350): PR #763 (#474) put the
+            # active min/max limit in context.special_positions so a cover
+            # can reach its configured floor/ceiling even under the delta
+            # threshold — but that membership test is stateless, so it
+            # re-fires forever on hardware that settles a point or two off
+            # the commanded limit (e.g. a coupled venetian whose tilt
+            # back-drives the carriage). Once this limit has already been
+            # dispatched to (``snapped_limit`` latched from a prior
+            # successful send, armed below), drop it from the effective
+            # special-positions list so the ordinary delta gate — the
+            # user's CONF_DELTA_POSITION — resumes ownership. Mirrors the
+            # forced_endpoint anti-relay latch's read-before/arm-after
+            # shape; see PerEntityState.snapped_limit for why it is not the
+            # same field.
+            _delta_specials = context.special_positions
+            if (
+                position in context.limit_positions
+                and self._get(entity_id).snapped_limit == position
+            ):
+                _delta_specials = [p for p in _delta_specials if p != position]
             if not self._check_position_delta(
                 entity_id,
                 position,
                 context.min_change,
-                context.special_positions,
+                _delta_specials,
                 sun_just_appeared=context.sun_just_appeared,
             ):
                 _delta = abs(_current - position) if _current is not None else None
@@ -2491,6 +2513,38 @@ class CoverCommandService:
             self.state(entity_id).forced_endpoint = position
         elif position not in (POSITION_CLOSED, POSITION_OPEN):
             self.state(entity_id).forced_endpoint = None
+
+        # Limit latch bookkeeping (issue #1350). Arm it to the dispatched
+        # position when that position is a configured always-enforced limit,
+        # so the NEXT approach to the same limit is narrowed to the ordinary
+        # delta gate above. Clear it otherwise, so a later approach to
+        # EITHER limit (a flip from floor to ceiling, or a resend after an
+        # intervening mid-range move) re-fires because the latched value no
+        # longer matches. Written only after a successful send — a dry-run
+        # or a cycle that skipped above never reaches this line, matching
+        # forced_endpoint's own "arm/clear on dispatch only" contract.
+        #
+        # Deliberately NOT unified with the forced_endpoint bookkeeping just
+        # above (no-duplication guideline, audited): forced_endpoint's write
+        # is a THREE-way rule keyed off a routing decision made earlier this
+        # cycle (`force_endpoint`, itself one conjunct of a four-part
+        # boolean mixing `context.full_endpoint_target`,
+        # `_endpoint_use_open_close`, and `_is_at_mechanical_stop`) — arm iff
+        # this dispatch WAS a forced endpoint-route, clear iff the dispatch
+        # landed mid-range, otherwise leave untouched. snapped_limit's write
+        # is a plain two-way function of `position` alone: no dependency on
+        # how this cycle got here, and no third "leave it" branch. The reads
+        # differ the same way — forced_endpoint gates WHICH HA SERVICE gets
+        # called (open_cover/close_cover vs. set_cover_position), snapped_limit
+        # gates WHICH POSITIONS the delta gate is allowed to bypass. A shared
+        # helper would need parameters for the stored field, the arm
+        # predicate, and the clear predicate, at which point it is generic
+        # get/set plumbing wrapped around two one-liners — replacing two
+        # auditable, independently issue-numbered invariants with an
+        # abstraction that hides the very rule each latch exists to state.
+        self.state(entity_id).snapped_limit = (
+            position if position in context.limit_positions else None
+        )
 
         # Cover-type policy hook: dual-axis covers (venetian) run their
         # settle+tilt sequence here. Default policies are no-ops, so vertical /

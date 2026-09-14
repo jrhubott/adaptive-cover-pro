@@ -380,6 +380,24 @@ class PerEntityState:
     # move fires; a flip to the other endpoint re-fires because the latched
     # value differs from the new target.
     forced_endpoint: int | None = None
+    # One-shot latch for the configured min/max position limit (issue #1350),
+    # the same shape as ``forced_endpoint`` above but for a DIFFERENT
+    # permanent bypass: PR #763 (#474) added the active min/max limit to
+    # ``build_special_positions`` so a cover could reach its configured floor
+    # or ceiling even when the last step is under ``CONF_DELTA_POSITION``.
+    # That membership test is stateless, so on hardware that settles a point
+    # or two off the commanded limit (e.g. a coupled venetian whose tilt
+    # back-drives the carriage) it re-fires every update cycle forever.
+    # Holds the limit value ``apply_position`` last dispatched to. Read
+    # BEFORE the delta-gate call to drop the target from the effective
+    # special-positions list once already latched, and written only after a
+    # successful send, so the limit is snapped to exactly once per approach
+    # and ``CONF_DELTA_POSITION`` resumes ownership afterward. Cleared
+    # whenever a dispatch lands on a position that is NOT one of
+    # ``PositionContext.limit_positions``; a later approach to a limit (the
+    # same one, or the other one after a floor/ceiling flip) re-fires because
+    # the latched value differs from the new target.
+    snapped_limit: int | None = None
 
     @property
     def acts_outside_clock_window(self) -> bool:
@@ -431,6 +449,19 @@ class PositionContext:
     # reconciliation may resend the licensed target overnight. Strictly narrower
     # than ``is_safety``: it grants the clock crossing and nothing else.
     outside_window_constraint: bool = False
+    # The always-enforced min/max position limits for this cycle (issue
+    # #1350), built once by ``build_limit_positions(options)`` — the same
+    # values ``build_special_positions`` folds into ``special_positions``
+    # above. Read by ``apply_position`` alongside ``PerEntityState.snapped_limit``
+    # to narrow the limit's delta-gate bypass from "every cycle" to "once per
+    # approach": a target in this list whose ``snapped_limit`` already
+    # matches it is dropped from the effective special-positions list before
+    # the delta gate runs, so ``CONF_DELTA_POSITION`` resumes ownership after
+    # the first successful send. Empty list (not ``None``) is the "no
+    # always-enforced limit configured" case, matching ``special_positions``'
+    # own convention. ``default_factory=list`` keeps every existing
+    # construction site (tests included) unchanged.
+    limit_positions: list[int] = dataclasses.field(default_factory=list)
     bypass_auto_control: bool = (
         False  # Sanctioned one-shot bypass of auto_control gate (e.g. switch return-to-default)
     )

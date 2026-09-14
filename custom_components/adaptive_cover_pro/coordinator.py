@@ -143,6 +143,7 @@ from .diagnostics.event_buffer import EventBuffer
 from .managers.cover_command import (
     CoverCommandService,
     PositionContext,
+    build_limit_positions,
     build_special_positions,
 )
 from .managers.cover_command.queue import (
@@ -2936,6 +2937,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             min_change=self.min_change,
             time_threshold=self.time_threshold,
             special_positions=build_special_positions(options),
+            limit_positions=build_limit_positions(options),
             inverse_state=self._inverse_state,
             force=force,
             is_safety=is_safety,
