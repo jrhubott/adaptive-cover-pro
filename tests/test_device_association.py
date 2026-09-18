@@ -19,8 +19,8 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENTITIES,
     CONF_SENSOR_TYPE,
     DOMAIN,
-    ISSUE_DUPLICATE_DEVICE,
     CoverType,
+    duplicate_device_issue_id,
 )
 from tests.ha_helpers import (
     HA_DEVICE_REGISTRY_V3,
@@ -276,7 +276,7 @@ async def test_options_device_step_prefills_live_device_for_stale_id(hass):
     )
     views = {physical.id: live, "old-composite": standin}
 
-    def _async_get(self, device_id):
+    def _async_get(self, device_id, **kwargs):
         return views.get(device_id)
 
     captured: dict = {}
@@ -375,10 +375,27 @@ def _bind_acp_entity(
     )
 
 
+def _bind_foreign_entity(hass, owner, device_id: str, unique_id: str):
+    """Register one entity belonging to *owner* on *device_id*.
+
+    Nothing stops a config entry's entity from naming a device another entry
+    owns — the entity registry only checks that the device exists — and that is
+    exactly how a user-created helper ends up riding on a record Adaptive Cover
+    Pro owns.  ``unique_id`` is used verbatim so a test can look the row back up.
+    """
+    return er.async_get(hass).async_get_or_create(
+        "sensor",
+        owner.domain,
+        unique_id,
+        config_entry=owner,
+        device_id=device_id,
+    )
+
+
 def _duplicate_device_issues(hass, entry_id) -> set[str]:
     """Every ``duplicate_device`` Repair this entry currently has raised."""
     registry = ir.async_get(hass)
-    prefix = f"{ISSUE_DUPLICATE_DEVICE}_{entry_id}_"
+    prefix = duplicate_device_issue_id(entry_id)
     return {
         issue_id
         for reg_domain, issue_id in registry.issues
@@ -606,7 +623,7 @@ async def test_stored_id_that_is_a_composite_resolves_to_live_split(hass):
     )
     views = {physical.id: live, "old-composite": standin}
 
-    def _async_get(self, device_id):
+    def _async_get(self, device_id, **kwargs):
         return views.get(device_id)
 
     options = {CONF_DEVICE_ID: "old-composite", CONF_ENTITIES: ["cover.test_blind"]}
@@ -677,6 +694,54 @@ async def test_resolve_refuses_a_device_our_own_entry_owns(hass):
     options = {CONF_DEVICE_ID: ours.id, CONF_ENTITIES: ["cover.test_blind"]}
 
     assert resolve_linked_device(hass, options, own_entry_id=acp_entry.entry_id) is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_refuses_a_synthesized_composite_from_the_fallback(hass):
+    """The stored-id fallback refuses a composite HA reconstructed for it.
+
+    From HA 2026.9 ``async_get`` does not return ``None`` for a pre-migration
+    id: it synthesizes a read-only composite whose own ``id`` is the composite
+    id.  ``mirror_link`` would write that as ``via_device_id``; HA accepts it
+    and then resolves it to a split, so the stored value never equals what we
+    wrote — every reload rewrites it, logs a deprecation that breaks in 2027.8,
+    and the area listener subscribes to an id no event ever names.
+
+    A *genuine* restored composite is evolved from a split and carries that
+    split's id in ``composite_device_id``, which is why the guard compares the
+    two rather than merely testing the attribute for truthiness.  Reachable only
+    when the cover-entity hop finds nothing, so this options dict carries no
+    entities.
+    """
+    from custom_components.adaptive_cover_pro.state.device_link import (
+        resolve_linked_device,
+    )
+
+    synthesized = SimpleNamespace(
+        id="synth-composite",
+        config_entries={"some_other_entry"},
+        composite_device_id="synth-composite",
+    )
+    real_split = SimpleNamespace(
+        id="live-split",
+        config_entries={"some_other_entry"},
+        composite_device_id="synth-composite",
+    )
+    views = {device.id: device for device in (synthesized, real_split)}
+
+    def _async_get(self, device_id, **kwargs):
+        return views.get(device_id)
+
+    with patch.object(dr.DeviceRegistry, "async_get", _async_get):
+        refused = resolve_linked_device(
+            hass, {CONF_DEVICE_ID: "synth-composite"}, own_entry_id="acp_synth"
+        )
+        accepted = resolve_linked_device(
+            hass, {CONF_DEVICE_ID: "live-split"}, own_entry_id="acp_synth"
+        )
+
+    assert refused is None
+    assert accepted is real_split
 
 
 # ---------------------------------------------------------------------------
@@ -807,13 +872,17 @@ async def _setup_with_acp_owned_device(
     leftover_identifiers: set[tuple[str, str]],
     entity_suffixes: tuple[str, ...] = (),
     disabled_suffixes: tuple[str, ...] = (),
+    foreign_unique_ids: tuple[str, ...] = (),
     link: bool = True,
 ):
     """Set an ACP entry up with a pre-existing device of its own already in place.
 
     Builds the physical cover (owned by a ``demo`` entry), then a second device
     owned solely by the ACP entry carrying ``leftover_identifiers`` and whatever
-    entities the caller asks for.  Returns ``(acp_entry, physical, leftover_id)``.
+    entities the caller asks for.  ``foreign_unique_ids`` puts entities belonging
+    to a *helper* config entry on that same record — the shape a user creates by
+    attaching a helper to the duplicate's card.  Returns
+    ``(acp_entry, physical, leftover_id)``.
     """
     owner = MockConfigEntry(domain="demo", entry_id=f"{entry_id}_owner")
     owner.add_to_hass(hass)
@@ -836,6 +905,11 @@ async def _setup_with_acp_owned_device(
         _bind_acp_entity(hass, acp_entry, leftover.id, suffix)
     for suffix in disabled_suffixes:
         _bind_acp_entity(hass, acp_entry, leftover.id, suffix, disabled=True)
+    if foreign_unique_ids:
+        helper = MockConfigEntry(domain="input_number", entry_id=f"{entry_id}_helper")
+        helper.add_to_hass(hass)
+        for unique_id in foreign_unique_ids:
+            _bind_foreign_entity(hass, helper, leftover.id, unique_id)
 
     _seed_cover_states(hass)
     with _patch_coordinator_refresh():
@@ -950,8 +1024,86 @@ async def test_adoption_refuses_a_device_holding_no_entities_of_ours(hass):
     assert leftover is not None
     assert leftover.identifiers == {("demo", "empty-leftover")}
     assert _duplicate_device_issues(hass, acp_entry.entry_id) == {
-        f"{ISSUE_DUPLICATE_DEVICE}_{acp_entry.entry_id}_{leftover_id}"
+        duplicate_device_issue_id(acp_entry.entry_id, leftover_id)
     }
+
+
+@pytest.mark.asyncio
+async def test_clone_carrying_a_user_helper_is_still_adopted(hass):
+    """A duplicate holding our entities *and* a user's helper is adopted anyway.
+
+    HA helpers bind to a device, and the duplicate is where this instance's
+    entities have lived since August, so it is a perfectly ordinary place for
+    one to be attached.  "Every entity on it is ours" would disqualify the
+    record, we would mint a fresh service device, every entity would be re-homed
+    onto it — the id churn adoption exists to prevent — and the leftover would
+    be left behind holding the helper.
+
+    Adoption rewrites identifiers and nothing else, so the helper keeps riding
+    on the same record it always did, and no Repair is raised: this device is
+    ours now, not a leftover to offer the user a delete button for.
+    """
+    acp_entry, physical, clone_id = await _setup_with_acp_owned_device(
+        hass,
+        entry_id="adopt_with_helper",
+        leftover_identifiers={("demo", "clone-with-helper")},
+        entity_suffixes=("legacy_probe",),
+        foreign_unique_ids=("user_helper_on_clone",),
+    )
+
+    adopted = dr.async_get(hass).async_get(clone_id)
+    assert adopted.identifiers == {(DOMAIN, acp_entry.entry_id)}
+    assert adopted.via_device_id == physical.id
+    assert len(_acp_devices(hass, acp_entry.entry_id)) == 1
+
+    ent_reg = er.async_get(hass)
+    helper_id = ent_reg.async_get_entity_id(
+        "sensor", "input_number", "user_helper_on_clone"
+    )
+    assert helper_id is not None
+    assert ent_reg.async_get(helper_id).device_id == clone_id
+    assert {
+        entity.device_id
+        for entity in er.async_entries_for_config_entry(ent_reg, acp_entry.entry_id)
+    } == {clone_id}
+    assert _duplicate_device_issues(hass, acp_entry.entry_id) == set()
+
+
+@pytest.mark.asyncio
+async def test_leftover_holding_only_foreign_entities_is_left_alone(hass):
+    """A device of ours carrying only somebody else's entities is not touched.
+
+    The third classification, and the one with no safe action: adopting it would
+    rename a card the user sees as their helper's, and removing it would take
+    that helper's registry row with it — ``async_remove_device`` deletes the
+    entities of the removed device's config entries.  So setup leaves it exactly
+    where it is and raises **no** Repair, because the only fix a Repair could
+    offer is the removal we just ruled out.  The scan still reports it, so the
+    state is visible rather than silently dropped on the floor.
+    """
+    from custom_components.adaptive_cover_pro.state.device_link import scan_own_devices
+
+    acp_entry, _physical, leftover_id = await _setup_with_acp_owned_device(
+        hass,
+        entry_id="entangled_leftover",
+        leftover_identifiers={("demo", "entangled-marker")},
+        foreign_unique_ids=("orphan_helper",),
+    )
+
+    leftover = dr.async_get(hass).async_get(leftover_id)
+    assert leftover is not None
+    assert leftover.identifiers == {("demo", "entangled-marker")}
+    assert _duplicate_device_issues(hass, acp_entry.entry_id) == set()
+
+    ent_reg = er.async_get(hass)
+    helper_id = ent_reg.async_get_entity_id("sensor", "input_number", "orphan_helper")
+    assert ent_reg.async_get(helper_id).device_id == leftover_id
+
+    scan = scan_own_devices(hass, acp_entry)
+    assert [device.id for device in scan.entangled] == [leftover_id]
+    assert scan.strays == ()
+    assert scan.clones == ()
+    assert scan.own is not None and scan.own.id != leftover_id
 
 
 @pytest.mark.asyncio
@@ -993,7 +1145,7 @@ async def test_adoption_skipped_when_own_device_already_exists(hass):
         for entity in er.async_entries_for_config_entry(ent_reg, acp_entry.entry_id)
     } == {own_id}
     assert _duplicate_device_issues(hass, acp_entry.entry_id) == {
-        f"{ISSUE_DUPLICATE_DEVICE}_{acp_entry.entry_id}_{ex_clone.id}"
+        duplicate_device_issue_id(acp_entry.entry_id, ex_clone.id)
     }
     assert physical.id != ex_clone.id
 
@@ -1092,11 +1244,18 @@ async def test_scan_classifies_a_coowned_device_as_shared(hass):
     co-owned device cannot exist above it.  This one hands the scan a
     hand-built co-owned entry instead, so the guard stays pinned on the CI leg
     where the real shape is unconstructible.
+
+    The stand-in is a ``SimpleNamespace`` and not a real ``DeviceEntry`` for
+    exactly that reason: from HA 2026.8 ``config_entries`` is a read-only
+    property derived from the stored single ``config_entry_id``, so passing it
+    as a constructor kwarg is a ``TypeError`` — on the very CI leg this test
+    exists to cover.  ``scan_own_devices`` reads three attributes off a device
+    (``config_entries``, ``identifiers``, ``id``) and this carries all three.
     """
     from custom_components.adaptive_cover_pro.state.device_link import scan_own_devices
 
     acp_entry = _make_acp_entry(hass, "scan_shared", dict(VERTICAL_OPTIONS))
-    coowned = dr.DeviceEntry(
+    coowned = SimpleNamespace(
         id="coowned-device",
         config_entries={acp_entry.entry_id, "another_entry"},
         identifiers={("demo", "coowned-1")},

@@ -37,6 +37,7 @@ platform setup.  No capability probe, one code path.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 from homeassistant.core import callback
@@ -49,8 +50,11 @@ from ..const import (
     CONF_DEVICE_ID,
     CONF_ENTITIES,
     DOMAIN,
+    ISSUE_DATA_DEVICE_ID,
+    ISSUE_DATA_ENTRY_ID,
     ISSUE_DUPLICATE_DEVICE,
     _LOGGER,
+    duplicate_device_issue_id,
 )
 from .area_resolver import device_area_id
 
@@ -111,10 +115,19 @@ def resolve_linked_device(
     composite's.  ``composite_device_id`` is read defensively because the
     attribute does not exist below HA 2026.9.
 
-    Only the stored id is left as a fallback, and any candidate our *own* config
-    entry owns is refused: a leftover duplicate of our service device would
-    otherwise be resolved as "the physical cover" and we would link ourselves to
-    ourselves.  Fail-open: anything unresolvable yields ``None``, which reads as
+    Only the stored id is left as a fallback, and it refuses two things.  Any
+    candidate our *own* config entry owns: a leftover duplicate of our service
+    device would otherwise be resolved as "the physical cover" and we would link
+    ourselves to ourselves.  And a **synthesized composite** — from HA 2026.9
+    ``async_get`` reconstructs a read-only composite for a pre-migration id
+    rather than returning nothing, and such a stand-in reports its own id as its
+    ``composite_device_id`` (a genuine restored composite is evolved from a
+    split and carries the split's id there).  Writing one as ``via_device_id``
+    is accepted and then resolved to a split, so the stored value never equals
+    what we wrote: every reload rewrites it, logs a deprecation, and the area
+    listener ends up subscribed to an id that never fires.
+
+    Fail-open: anything unresolvable yields ``None``, which reads as
     "standalone".
     """
     wanted = options.get(CONF_DEVICE_ID)
@@ -128,78 +141,125 @@ def resolve_linked_device(
             return device
 
     device = dr.async_get(hass).async_get(wanted)
-    if device is not None and own_entry_id not in device.config_entries:
+    if (
+        device is not None
+        and own_entry_id not in device.config_entries
+        and getattr(device, "composite_device_id", None) != device.id
+    ):
         return device
     return None
 
 
+class OwnDeviceRole(Enum):
+    """What one device is to the config entry the registry associates it with.
+
+    The module's whole vocabulary for "is this record safe to rename, safe to
+    delete, or neither".  Both the setup-time scan and the Repair flow's removal
+    guard decide through :func:`classify_own_device`, so what we *offer* to
+    delete and what we will *actually* delete cannot drift apart — which is
+    exactly what happened when they were two hand-mirrored guard trios.
+    """
+
+    # Not owned solely by this entry: co-owned with a real integration (only
+    # representable below HA 2026.8) or another entry's device entirely.  Never
+    # adopted, never removed — either would seize somebody else's record.
+    SHARED = auto()
+    # Carries ``(DOMAIN, entry_id)``: the service device itself.
+    OWN = auto()
+    # Sole-owned, foreign identifiers, and at least one of OUR entities lives on
+    # it.  The duplicate HA 2026.8+ minted — adopt it in place.
+    CLONE = auto()
+    # Sole-owned, foreign identifiers, holding no entities at all.  The only
+    # shape that is safe to delete, so the only one offered as a fixable Repair.
+    STRAY = auto()
+    # Sole-owned, foreign identifiers, holding entities — none of them ours.  A
+    # user's helper on a card we own, say.  Adopting it would rename a device
+    # the user thinks of as their helper's; removing it would delete that
+    # helper's registry row, because ``async_remove_device`` takes the entities
+    # of the removed device's config entries with it.  Neither is safe, so it is
+    # logged and left exactly where it is — and gets NO Repair, because the only
+    # fix a Repair could offer is the removal just ruled out.
+    ENTANGLED = auto()
+
+
 @dataclass(frozen=True, slots=True)
 class OwnDeviceScan:
-    """How every device this config entry owns is classified.
+    """Every device this config entry owns, bucketed by :class:`OwnDeviceRole`.
 
-    ``own``    — carries ``(DOMAIN, entry_id)``; the service device, if it exists.
-    ``clones`` — sole-owned, foreign identifiers, holding only our entities.
-                 Adoptable: this is the duplicate HA 2026.8+ minted.
-    ``strays`` — sole-owned, foreign identifiers, holding none of our entities.
-                 A leftover the user should be offered a way to delete.
-    ``shared`` — co-owned with another config entry.  Only representable below
-                 HA 2026.8, and never adopted whatever else it looks like.
+    ``own`` is singular because ``(DOMAIN, entry_id)`` identifies at most one
+    record; the rest are tuples because an install can carry several.
     """
 
     own: DeviceEntry | None
     clones: tuple[DeviceEntry, ...]
     strays: tuple[DeviceEntry, ...]
+    entangled: tuple[DeviceEntry, ...]
     shared: tuple[DeviceEntry, ...]
+
+
+@callback
+def classify_own_device(
+    hass: HomeAssistant, entry_id: str, device: DeviceEntry
+) -> OwnDeviceRole:
+    """Say what *device* is to the config entry *entry_id*.
+
+    The single predicate behind both :func:`scan_own_devices` and
+    :func:`remove_duplicate_device`.  The clauses are ordered so the dangerous
+    answer is unreachable first: a device this entry does not solely own stops
+    at ``SHARED`` before anything looks at identifiers or entities.
+
+    No identifier *lookup*, deliberately — ``async_get_device(identifiers=...)``
+    is deprecated from HA 2026.8 (ERROR for core and core-integration frames,
+    i.e. a hard ``RuntimeError`` from a test frame) and its v3 replacement does
+    not exist on the 2026.3 floor this integration supports.  Matching
+    identifiers in Python over an index read is the one spelling that is neither
+    deprecated nor version-specific.
+
+    ``include_disabled_entities=True`` because a user who disabled everything on
+    the duplicate still has it as the device their entities live on.  One of
+    ours is enough to make it a ``CLONE``: a helper riding along does not make
+    the record any less the home of this instance's entities, and refusing to
+    adopt over it would re-home every one of them onto a fresh service device —
+    the id churn adoption exists to prevent.
+    """
+    if device.config_entries != {entry_id}:
+        return OwnDeviceRole.SHARED
+    if (DOMAIN, entry_id) in device.identifiers:
+        return OwnDeviceRole.OWN
+
+    entities = er.async_entries_for_device(
+        er.async_get(hass), device.id, include_disabled_entities=True
+    )
+    if not entities:
+        return OwnDeviceRole.STRAY
+    if any(entity.config_entry_id == entry_id for entity in entities):
+        return OwnDeviceRole.CLONE
+    return OwnDeviceRole.ENTANGLED
 
 
 @callback
 def scan_own_devices(hass: HomeAssistant, entry: ConfigEntry) -> OwnDeviceScan:
     """Partition every device this config entry owns.
 
-    One pass over the registry's config-entry index, one entity lookup per
-    device — and no identifier lookup, deliberately.
-    ``async_get_device(identifiers=...)`` is deprecated from HA 2026.8 (ERROR for
-    core and core-integration frames, i.e. a hard ``RuntimeError`` from a test
-    frame) and its v3 replacement does not exist on the 2026.3 floor this
-    integration supports; matching identifiers in Python over an index read is
-    the one spelling that is neither deprecated nor version-specific.  It also
-    means ``scan.own`` is the only way anything here asks "which device is ours".
-
-    The guards are ordered so the dangerous one is unreachable first:
-
-    1. **Sole ownership.**  A device another config entry also owns is
-       ``shared`` and stops there — adoption would rename a real integration's
-       record out from under it.
-    2. **Our identifier.**  Already ours, so it is ``own``, not a candidate.
-    3. **Holds only our entities.**  ``include_disabled_entities=True`` because a
-       user who disabled everything on the duplicate still has it as the device
-       their entities live on.  Anything else is a ``stray``.
+    One pass over the registry's config-entry index, classifying each record
+    through :func:`classify_own_device`.  ``scan.own`` is the only way anything
+    in this module asks "which device is ours".
     """
-    dev_reg = dr.async_get(hass)
-    ent_reg = er.async_get(hass)
     entry_id = entry.entry_id
+    buckets: dict[OwnDeviceRole, list[DeviceEntry]] = {
+        role: [] for role in OwnDeviceRole
+    }
+    for device in dr.async_entries_for_config_entry(dr.async_get(hass), entry_id):
+        buckets[classify_own_device(hass, entry_id, device)].append(device)
 
-    own: DeviceEntry | None = None
-    clones: list[DeviceEntry] = []
-    strays: list[DeviceEntry] = []
-    shared: list[DeviceEntry] = []
-
-    for device in dr.async_entries_for_config_entry(dev_reg, entry_id):
-        if device.config_entries != {entry_id}:
-            shared.append(device)
-            continue
-        if (DOMAIN, entry_id) in device.identifiers:
-            own = device
-            continue
-        entities = er.async_entries_for_device(
-            ent_reg, device.id, include_disabled_entities=True
-        )
-        if entities and all(entity.config_entry_id == entry_id for entity in entities):
-            clones.append(device)
-        else:
-            strays.append(device)
-
-    return OwnDeviceScan(own, tuple(clones), tuple(strays), tuple(shared))
+    owned = buckets[OwnDeviceRole.OWN]
+    return OwnDeviceScan(
+        own=owned[0] if owned else None,
+        clones=tuple(buckets[OwnDeviceRole.CLONE]),
+        strays=tuple(buckets[OwnDeviceRole.STRAY]),
+        entangled=tuple(buckets[OwnDeviceRole.ENTANGLED]),
+        shared=tuple(buckets[OwnDeviceRole.SHARED]),
+    )
 
 
 @callback
@@ -222,9 +282,12 @@ def adopt_clone_device(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
     entity on it with it.  Adoption reclaims the record before the sweep sees it.
 
     Adopts only when there is no service device yet and exactly one candidate:
-    with two, "which one is ours" is a question only the user can answer, and
-    the post-forward sweep raises a Repair instead.  Returns the adopted device
-    id, or ``None`` when nothing was written.
+    with two, "which one is ours" is a question only the user can answer, so
+    nothing is written and the post-forward sweep classifies whatever is left
+    afresh — as a ``STRAY`` worth a Repair once the platform has re-homed our
+    entities off it, or as ``ENTANGLED`` and untouchable if somebody else's
+    entities are on it.  Returns the adopted device id, or ``None`` when nothing
+    was written.
     """
     scan = scan_own_devices(hass, entry)
     if scan.own is not None or len(scan.clones) != 1:
@@ -269,7 +332,7 @@ def clear_duplicate_device_issues(
     HA restart.  Also called when the config entry itself is removed.
     """
     registry = ir.async_get(hass)
-    prefix = f"{ISSUE_DUPLICATE_DEVICE}_{entry_id}_"
+    prefix = duplicate_device_issue_id(entry_id)
     for reg_domain, issue_id in list(registry.issues):
         if (
             reg_domain == DOMAIN
@@ -283,13 +346,18 @@ def clear_duplicate_device_issues(
 def remove_duplicate_device(hass: HomeAssistant, entry_id: str, device_id: str) -> bool:
     """Delete a leftover duplicate device, or report why it was refused.
 
-    Every condition is re-checked against the live registry rather than trusted
-    from the Repair's stored payload, because the payload was written at setup
-    and the user has had every chance to change things since.  The entity check
-    is the one that matters: ``async_remove_device`` removes every entity
-    belonging to the removed device's config entries along with it, so
-    confirming a stale Repair on a device that has since acquired entities would
-    silently delete the user's sensors.
+    Re-classified against the live registry rather than trusted from the
+    Repair's stored payload, because the payload was written at setup and the
+    user has had every chance to change things since — and through the very
+    :func:`classify_own_device` the Repair was raised from, so the set of
+    devices we *offer* a delete button for and the set we will actually delete
+    are the same set by construction.
+
+    ``STRAY`` — sole-owned, not ours by identifier, holding nothing — is the
+    only removable role, and the entity half of that is the one that matters:
+    ``async_remove_device`` removes every entity belonging to the removed
+    device's config entries along with it, so confirming a stale Repair on a
+    device that has since acquired entities would silently delete them.
 
     Returns ``True`` only when the device was actually removed.
     """
@@ -297,13 +365,7 @@ def remove_duplicate_device(hass: HomeAssistant, entry_id: str, device_id: str) 
     device = dev_reg.async_get(device_id)
     if device is None:
         return False
-    if (DOMAIN, entry_id) in device.identifiers:
-        return False
-    if device.config_entries != {entry_id}:
-        return False
-    if er.async_entries_for_device(
-        er.async_get(hass), device_id, include_disabled_entities=True
-    ):
+    if classify_own_device(hass, entry_id, device) is not OwnDeviceRole.STRAY:
         return False
 
     dev_reg.async_remove_device(device_id)
@@ -375,9 +437,20 @@ def _reconcile_stale_devices(hass: HomeAssistant, entry: ConfigEntry) -> OwnDevi
         )
         dev_reg.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
 
+    for device in scan.entangled:
+        # No Repair, on purpose: the only fix one could offer is a removal that
+        # would take another config entry's entities with it.  A log line is the
+        # whole intervention — the record is left exactly as the user left it.
+        _LOGGER.debug(
+            "Leaving device %s alone for %s: this entry owns the record but "
+            "every entity on it belongs to something else",
+            device.id,
+            entry.entry_id,
+        )
+
     desired: set[str] = set()
     for device in scan.strays:
-        issue_id = f"{ISSUE_DUPLICATE_DEVICE}_{entry.entry_id}_{device.id}"
+        issue_id = duplicate_device_issue_id(entry.entry_id, device.id)
         desired.add(issue_id)
         ir.async_create_issue(
             hass,
@@ -390,7 +463,10 @@ def _reconcile_stale_devices(hass: HomeAssistant, entry: ConfigEntry) -> OwnDevi
                 "name": entry.title,
                 "device_name": device.name_by_user or device.name or device.id,
             },
-            data={"entry_id": entry.entry_id, "device_id": device.id},
+            data={
+                ISSUE_DATA_ENTRY_ID: entry.entry_id,
+                ISSUE_DATA_DEVICE_ID: device.id,
+            },
         )
 
     clear_duplicate_device_issues(hass, entry.entry_id, keep=frozenset(desired))

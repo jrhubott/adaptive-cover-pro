@@ -8,9 +8,13 @@ health checks that followed).  Home Assistant renders those straight from the
 :class:`ConfirmRepairFlow`.
 
 The one exception is ``duplicate_device`` (issue #1369): a device this config
-entry owns that is neither our service device nor holding any of our entities.
+entry solely owns that is not our service device and holds no entities at all.
 It is the residue of the identifier-borrowing device model, and it is fixable
-because the fix is simply deleting a registry record nothing points at.
+precisely because it is empty — the fix is deleting a registry record nothing
+points at.  A leftover that still holds *somebody's* entities is deliberately
+never raised as this issue, because removing a device removes the entities of
+its config entries with it; ``state.device_link.classify_own_device`` draws that
+line once, for the raise and for the removal below.
 """
 
 from __future__ import annotations
@@ -19,7 +23,11 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
 
-from .const import ISSUE_DUPLICATE_DEVICE
+from .const import (
+    ISSUE_DATA_DEVICE_ID,
+    ISSUE_DATA_ENTRY_ID,
+    ISSUE_DUPLICATE_DEVICE,
+)
 from .state import device_link
 
 if TYPE_CHECKING:
@@ -46,16 +54,17 @@ class DuplicateDeviceRepairFlow(ConfirmRepairFlow):
     ) -> RepairsFlowResult:
         """Remove the duplicate device, then hand back to the confirm flow."""
         if user_input is not None:
-            entry_id = self._data.get("entry_id")
-            device_id = self._data.get("device_id")
+            entry_id = self._data.get(ISSUE_DATA_ENTRY_ID)
+            device_id = self._data.get(ISSUE_DATA_DEVICE_ID)
             if not (
                 entry_id
                 and device_id
                 and device_link.remove_duplicate_device(self.hass, entry_id, device_id)
             ):
-                # The device is gone, is not solely ours, or has acquired
-                # entities since the Repair was raised. Deleting it now would
-                # take those entities with it, so refuse and say so.
+                # The device is gone, is not solely ours, is our own service
+                # device, or has acquired entities since the Repair was raised.
+                # Deleting it now would take those entities with it, so refuse
+                # and say so.
                 return self.async_abort(reason="device_in_use")
         return await super().async_step_confirm(user_input)
 

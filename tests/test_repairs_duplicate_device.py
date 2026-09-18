@@ -19,17 +19,30 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
-from custom_components.adaptive_cover_pro.const import DOMAIN, ISSUE_DUPLICATE_DEVICE
+from custom_components.adaptive_cover_pro.const import (
+    DOMAIN,
+    ISSUE_DATA_DEVICE_ID,
+    ISSUE_DATA_ENTRY_ID,
+    ISSUE_DUPLICATE_DEVICE,
+    duplicate_device_issue_id,
+)
 from custom_components.adaptive_cover_pro.repairs import async_create_fix_flow
 from tests.ha_helpers import setup_integration
 
 
 async def _seed_leftover(
-    hass, *, entry_id: str, with_entity: bool = False
+    hass,
+    *,
+    entry_id: str,
+    with_entity: bool = False,
+    with_foreign_entity: bool = False,
 ) -> tuple[MockConfigEntry, dr.DeviceEntry, str]:
     """Set an ACP entry up, then park a leftover device + its Repair beside it.
 
-    Returns ``(entry, leftover, issue_id)``.
+    ``with_foreign_entity`` puts an entity belonging to a *helper* config entry
+    on the leftover — the shape that gets no Repair raised against it any more,
+    but can still be named by one the issue registry persisted before the
+    upgrade.  Returns ``(entry, leftover, issue_id)``.
     """
     entry = await setup_integration(hass, name="Repairable", entry_id=entry_id)
 
@@ -47,8 +60,18 @@ async def _seed_leftover(
             config_entry=entry,
             device_id=leftover.id,
         )
+    if with_foreign_entity:
+        helper = MockConfigEntry(domain="input_number", entry_id=f"{entry_id}_helper")
+        helper.add_to_hass(hass)
+        er.async_get(hass).async_get_or_create(
+            "sensor",
+            helper.domain,
+            f"{entry_id}_foreign_probe",
+            config_entry=helper,
+            device_id=leftover.id,
+        )
 
-    issue_id = f"{ISSUE_DUPLICATE_DEVICE}_{entry.entry_id}_{leftover.id}"
+    issue_id = duplicate_device_issue_id(entry.entry_id, leftover.id)
     ir.async_create_issue(
         hass,
         DOMAIN,
@@ -57,7 +80,10 @@ async def _seed_leftover(
         severity=ir.IssueSeverity.WARNING,
         translation_key=ISSUE_DUPLICATE_DEVICE,
         translation_placeholders={"name": entry.title, "device_name": leftover.name},
-        data={"entry_id": entry.entry_id, "device_id": leftover.id},
+        data={
+            ISSUE_DATA_ENTRY_ID: entry.entry_id,
+            ISSUE_DATA_DEVICE_ID: leftover.id,
+        },
     )
     return entry, leftover, issue_id
 
@@ -91,7 +117,9 @@ async def test_fix_flow_removes_entity_less_leftover(hass):
     }
 
     flow = await _start_flow(
-        hass, issue_id, {"entry_id": entry.entry_id, "device_id": leftover.id}
+        hass,
+        issue_id,
+        {ISSUE_DATA_ENTRY_ID: entry.entry_id, ISSUE_DATA_DEVICE_ID: leftover.id},
     )
     form = await flow.async_step_init()
     assert form["type"] is FlowResultType.FORM
@@ -123,7 +151,9 @@ async def test_fix_flow_aborts_when_entities_still_attached(hass):
     )
 
     flow = await _start_flow(
-        hass, issue_id, {"entry_id": entry.entry_id, "device_id": leftover.id}
+        hass,
+        issue_id,
+        {ISSUE_DATA_ENTRY_ID: entry.entry_id, ISSUE_DATA_DEVICE_ID: leftover.id},
     )
     result = await flow.async_step_confirm({})
 
@@ -132,6 +162,35 @@ async def test_fix_flow_aborts_when_entities_still_attached(hass):
     assert dr.async_get(hass).async_get(leftover.id) is not None
     assert er.async_get(hass).async_get_entity_id(
         "sensor", DOMAIN, f"{entry.entry_id}_leftover_probe"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fix_flow_aborts_for_a_device_holding_only_foreign_entities(hass):
+    """A leftover carrying somebody else's entities is refused too.
+
+    Setup no longer raises a Repair for this shape, but the issue registry is
+    persisted, so a Repair raised by an older build can still be sitting there
+    naming one after the upgrade.  Removing the device would delete the helper's
+    registry row along with it, which is the whole reason the shape stopped
+    being offered as fixable.
+    """
+    entry, leftover, issue_id = await _seed_leftover(
+        hass, entry_id="repair_foreign_entity", with_foreign_entity=True
+    )
+
+    flow = await _start_flow(
+        hass,
+        issue_id,
+        {ISSUE_DATA_ENTRY_ID: entry.entry_id, ISSUE_DATA_DEVICE_ID: leftover.id},
+    )
+    result = await flow.async_step_confirm({})
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "device_in_use"
+    assert dr.async_get(hass).async_get(leftover.id) is not None
+    assert er.async_get(hass).async_get_entity_id(
+        "sensor", "input_number", "repair_foreign_entity_foreign_probe"
     )
 
 
@@ -155,7 +214,9 @@ async def test_fix_flow_ignores_device_it_does_not_own(hass):
     )
 
     flow = await _start_flow(
-        hass, issue_id, {"entry_id": entry.entry_id, "device_id": physical.id}
+        hass,
+        issue_id,
+        {ISSUE_DATA_ENTRY_ID: entry.entry_id, ISSUE_DATA_DEVICE_ID: physical.id},
     )
     result = await flow.async_step_confirm({})
 
@@ -201,7 +262,9 @@ async def test_fix_flow_aborts_when_the_device_is_already_gone(hass):
     assert dev_reg.async_get(leftover.id) is None
 
     flow = await _start_flow(
-        hass, issue_id, {"entry_id": entry.entry_id, "device_id": leftover.id}
+        hass,
+        issue_id,
+        {ISSUE_DATA_ENTRY_ID: entry.entry_id, ISSUE_DATA_DEVICE_ID: leftover.id},
     )
     result = await flow.async_step_confirm({})
 
@@ -236,7 +299,9 @@ async def test_fix_flow_never_removes_our_own_service_device(hass):
     assert on_own, "the service device is where this instance's entities live"
 
     flow = await _start_flow(
-        hass, issue_id, {"entry_id": entry.entry_id, "device_id": own_id}
+        hass,
+        issue_id,
+        {ISSUE_DATA_ENTRY_ID: entry.entry_id, ISSUE_DATA_DEVICE_ID: own_id},
     )
     result = await flow.async_step_confirm({})
 
@@ -278,7 +343,9 @@ async def test_fix_flow_refuses_our_own_device_that_holds_no_entities(hass):
     )
 
     flow = await _start_flow(
-        hass, issue_id, {"entry_id": bare.entry_id, "device_id": bare_own.id}
+        hass,
+        issue_id,
+        {ISSUE_DATA_ENTRY_ID: bare.entry_id, ISSUE_DATA_DEVICE_ID: bare_own.id},
     )
     result = await flow.async_step_confirm({})
 
