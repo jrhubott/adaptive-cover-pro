@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -135,8 +136,7 @@ async def test_force_override_sensor_never_created(hass: HomeAssistant) -> None:
     def _has_force_trigger_sensor(entry, reg):
         return any(
             "force_override_triggers" in (e.unique_id or "")
-            for e in reg.entities.values()
-            if e.config_entry_id == entry.entry_id
+            for e in er.async_entries_for_config_entry(reg, entry.entry_id)
         )
 
     reg = er.async_get(hass)
@@ -159,8 +159,7 @@ async def test_climate_status_sensor_only_when_climate_mode(
     def _has_climate_status_sensor(entry, reg):
         return any(
             "climate_status" in (e.unique_id or "")
-            for e in reg.entities.values()
-            if e.config_entry_id == entry.entry_id
+            for e in er.async_entries_for_config_entry(reg, entry.entry_id)
         )
 
     reg = er.async_get(hass)
@@ -194,8 +193,8 @@ async def test_motion_control_switch_only_when_motion_sensors(
         return any(
             # unique_id is "{entry_id}_Motion Control" (switch_name not key)
             "Motion Control" in (e.unique_id or "")
-            for e in reg.entities.values()
-            if e.config_entry_id == entry.entry_id and e.domain == "switch"
+            for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+            if e.domain == "switch"
         )
 
     reg = er.async_get(hass)
@@ -252,9 +251,7 @@ async def test_unique_ids_are_unique(hass: HomeAssistant) -> None:
     entry = await _setup_entry(hass, entry_id="uid_01")
     reg = er.async_get(hass)
     unique_ids = [
-        e.unique_id
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id
+        e.unique_id for e in er.async_entries_for_config_entry(reg, entry.entry_id)
     ]
     assert len(unique_ids) == len(
         set(unique_ids)
@@ -268,9 +265,7 @@ async def test_unique_ids_stable_across_reload(hass: HomeAssistant) -> None:
     reg = er.async_get(hass)
 
     before = {
-        e.unique_id
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id
+        e.unique_id for e in er.async_entries_for_config_entry(reg, entry.entry_id)
     }
 
     with _patch_coordinator_refresh():
@@ -278,9 +273,7 @@ async def test_unique_ids_stable_across_reload(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
     after = {
-        e.unique_id
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id
+        e.unique_id for e in er.async_entries_for_config_entry(reg, entry.entry_id)
     }
     assert (
         before == after
@@ -295,9 +288,8 @@ async def test_diagnostic_sensors_have_entity_category(hass: HomeAssistant) -> N
 
     diagnostic_entities = [
         e
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id
-        and e.entity_category == EntityCategory.DIAGNOSTIC
+        for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.entity_category == EntityCategory.DIAGNOSTIC
     ]
     # We expect at least the consolidated diagnostic sensors
     assert len(diagnostic_entities) >= 5, (
@@ -309,18 +301,16 @@ async def test_diagnostic_sensors_have_entity_category(hass: HomeAssistant) -> N
 @pytest.mark.integration
 async def test_device_info_standalone_virtual_device(hass: HomeAssistant) -> None:
     """Without device association, entities belong to a virtual standalone device."""
-    from homeassistant.helpers import device_registry as dr
-
     opts = dict(VERTICAL_OPTIONS)
     opts["linked_device_id"] = None
     entry = await _setup_entry(hass, options=opts, entry_id="dev_standalone_01")
 
     device_reg = dr.async_get(hass)
-    # The integration should have registered a virtual device
-    devices = [
-        d for d in device_reg.devices.values() if entry.entry_id in d.config_entries
-    ]
-    assert len(devices) >= 1, "Expected at least one device for the entry"
+    # The integration should have registered a virtual device.  The indexed
+    # accessor holds on both device-registry storage models: membership before
+    # HA 2026.8, ownership after.
+    devices = dr.async_entries_for_config_entry(device_reg, entry.entry_id)
+    assert devices, "Expected at least one device for the entry"
 
 
 # ---------------------------------------------------------------------------
@@ -338,8 +328,8 @@ async def test_target_position_sensor_unit_percentage(hass: HomeAssistant) -> No
     reg = er.async_get(hass)
     sensor_entities = [
         e
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id and e.domain == "sensor"
+        for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.domain == "sensor"
     ]
     # At least one sensor with Cover_Position unique_id suffix
     position_entities = [

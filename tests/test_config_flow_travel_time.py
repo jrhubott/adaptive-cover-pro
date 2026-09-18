@@ -16,8 +16,6 @@ everything the run measured.
 
 from __future__ import annotations
 
-import re
-
 import pytest
 from homeassistant.data_entry_flow import InvalidData
 from homeassistant.config_entries import ConfigEntryState
@@ -216,8 +214,16 @@ async def test_out_of_range_value_is_rejected(hass: HomeAssistant) -> None:
     entry = await _setup_entry(hass, entry_id="tt_manual_range")
     _, flow_id = await _open_calibration(hass, entry)
 
-    with pytest.raises(InvalidData, match=re.escape(f"data['{_COVER}']")):
+    with pytest.raises(InvalidData) as exc:
         await _submit_manual(hass, flow_id, {_COVER: TRAVEL_TIME_MAX_SECONDS + 50})
+
+    # ``path`` and ``schema_errors`` are ``InvalidData.__init__`` parameters,
+    # i.e. HA's own API. The rendered ``str(exception)`` is not: it is stitched
+    # together by whichever schema library HA vendors this release (voluptuous
+    # through 2026.8, probatio after), and matching it pinned a message none of
+    # this repo owns (issue #1373).
+    assert exc.value.path == [_COVER]
+    assert _COVER in exc.value.schema_errors
 
 
 async def test_reset_clears_the_whole_table(hass: HomeAssistant) -> None:

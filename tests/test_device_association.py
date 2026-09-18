@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from homeassistant.const import MAJOR_VERSION, MINOR_VERSION
 from homeassistant.helpers import device_registry as dr
 
 from custom_components.adaptive_cover_pro.const import (
@@ -329,6 +330,17 @@ def test_options_device_step_removal_clears_device_id():
 # whichever registry API the production code happens to call today, which is
 # exactly what issue #1339 changes.  They deliberately carry no ``integration``
 # mark so the guard runs in every ``scripts/test`` mode.
+#
+# Both are xfailed on HA 2026.8+ — see ``HA_DEVICE_REGISTRY_V3`` below.
+
+# HA 2026.8 moved the device registry to storage v3, where a device belongs to
+# exactly ONE config entry.  ``async_update_device(add_config_entry_id=...)`` —
+# the multi-entry link the helper above builds — is guarded from that release
+# on, and a *test* frame (no custom integration on the stack) gets the ERROR
+# behaviour rather than the LOG one custom integrations get, i.e. a
+# ``RuntimeError``.  Reworking the helper means reworking the device model the
+# two tests characterise, which is issue #1369's job, not this one's.
+HA_DEVICE_REGISTRY_V3 = (MAJOR_VERSION, MINOR_VERSION) >= (2026, 8)
 
 
 async def _setup_acp_entry_owning_device(
@@ -389,6 +401,13 @@ async def _setup_acp_entry_owning_device(
     return acp_entry, device.id
 
 
+@pytest.mark.xfail(
+    HA_DEVICE_REGISTRY_V3,
+    reason="#1369: the helper links via add_config_entry_id, which HA 2026.8's "
+    "single-config-entry registry rejects from a test frame; rewritten in #1369",
+    raises=RuntimeError,
+    strict=True,
+)
 @pytest.mark.asyncio
 async def test_stale_config_entry_link_removed_from_physical_device(hass):
     """Setup strips this entry's id off a physical device it does not identify.
@@ -407,6 +426,13 @@ async def test_stale_config_entry_link_removed_from_physical_device(hass):
     assert acp_entry.entry_id not in device.config_entries
 
 
+@pytest.mark.xfail(
+    HA_DEVICE_REGISTRY_V3,
+    reason="#1369: the helper links via add_config_entry_id, which HA 2026.8's "
+    "single-config-entry registry rejects from a test frame; rewritten in #1369",
+    raises=RuntimeError,
+    strict=True,
+)
 @pytest.mark.asyncio
 async def test_own_virtual_device_link_preserved(hass):
     """A device carrying our own identifier keeps the link.

@@ -67,8 +67,8 @@ async def test_glare_active_binary_sensor_created_when_enabled(hass) -> None:
     reg = er.async_get(hass)
     binary_sensor_entities = [
         e
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id and e.domain == "binary_sensor"
+        for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.domain == "binary_sensor"
     ]
     entity_unique_ids = [e.unique_id for e in binary_sensor_entities]
     assert any(
@@ -104,8 +104,8 @@ async def test_glare_active_binary_sensor_not_created_when_awning(hass) -> None:
     reg = er.async_get(hass)
     binary_sensor_entities = [
         e
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id and e.domain == "binary_sensor"
+        for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.domain == "binary_sensor"
     ]
     entity_unique_ids = [e.unique_id for e in binary_sensor_entities]
     assert not any("glare_active" in uid for uid in entity_unique_ids)
