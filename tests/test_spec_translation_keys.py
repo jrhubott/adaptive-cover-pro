@@ -107,6 +107,7 @@ _EN_JSON: dict = _load_translation_bundle("en")
 _EXPECTED_SENSOR_TRANSLATION_KEYS: frozenset[str] = frozenset(
     {
         "climate_status",
+        "cloud_escalation_end_time",
         "control_status",
         "decision_trace",
         "end_sun",
@@ -193,6 +194,7 @@ _ENGLISH_NAME_SNAPSHOT: dict[tuple[str, str], str] = {
     ("sensor", "last_skipped_action"): "Last Skipped Action",
     ("sensor", "last_cover_action"): "Last Cover Action",
     ("sensor", "manual_override_end_time"): "Manual Override End Time",
+    ("sensor", "cloud_escalation_end_time"): "Cloud Escalation End Time",
     ("sensor", "position_verification"): "Position Verification",
     ("sensor", "motion_status"): "Occupancy Status",
     ("sensor", "travel_calibration"): "Travel Time Calibration",
@@ -538,6 +540,12 @@ _WITHHELD_FROM_NAMESPACE: dict[str, frozenset[str]] = {
             "last_cover_action",
             "manual_override_end_time",
             "position_verification",
+            # A timestamp too, and withheld for the same reason as
+            # ``manual_override_end_time`` beside it (issue #175): a tracked
+            # template reading it would re-render on every cycle that moves
+            # the escalation deadline, and the entity is readable directly for
+            # anyone who wants it.
+            "cloud_escalation_end_time",
         }
     ),
 }

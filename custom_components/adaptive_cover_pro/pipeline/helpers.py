@@ -120,6 +120,78 @@ def apply_snapshot_limits(
     )
 
 
+def apply_snapshot_tilt_limits(
+    snapshot: PipelineSnapshot,
+    value: int,
+    *,
+    sun_valid: bool,
+) -> int:
+    """Apply the configured min/max tilt limits from *snapshot*.
+
+    The tilt-axis mirror of :func:`apply_snapshot_limits`: one adapter that
+    knows which four snapshot fields make up a tilt band, so no caller has to
+    spell out the five-argument
+    :meth:`PositionConverter.apply_tilt_limits` call itself. Extracted when
+    ``resolve_cloudy_tilt`` became a second caller (#175) — the position axis
+    had a snapshot adapter from the start and the tilt axis did not, which is
+    the asymmetry this closes rather than widens.
+
+    Args:
+        snapshot: Current pipeline snapshot (provides the tilt band).
+        value:    Raw tilt (0–100) to constrain.
+        sun_valid: Whether the sun is currently in the valid tracking zone.
+            The ``*_sun_only`` flags are enforced only while this is True.
+
+    Returns:
+        Constrained tilt value (0–100).
+
+    """
+    return PositionConverter.apply_tilt_limits(
+        value,
+        snapshot.min_tilt,
+        snapshot.max_tilt,
+        snapshot.min_tilt_sun_only,
+        snapshot.max_tilt_sun_only,
+        sun_valid=sun_valid,
+    )
+
+
+def resolve_cloudy_tilt(snapshot: PipelineSnapshot) -> int | None:
+    """Effective cloud-suppression slat angle, or None when unset (issue #175).
+
+    Single source of truth for the cloud tilt, so every branch of
+    ``CloudSuppressionHandler`` that answers with a configured cloud override
+    resolves it the same way.
+
+    Returns ``None`` whenever the option is absent — there is no
+    ``DEFAULT_CLOUDY_TILT`` and no fallback to ``default_tilt``. That is the
+    invariant the whole option rests on: an install that never opened the Light
+    & Cloud step keeps naming no tilt on the cloudy branch, so the slats hold
+    exactly as they did before #175 and no config migration is needed. An
+    explicit ``0`` is a real answer (slats closed), which is why the check is
+    ``is not None`` and not a truthiness test.
+
+    A configured angle is clamped to the global tilt band with
+    ``sun_valid=False``, matching how ``default_tilt`` is treated (#503) and
+    how ``cloudy_position`` — this value's own position sibling, resolved on
+    the very same handler branch — is already treated. The #128 sunset bypass
+    does not apply: sunset is an explicit nighttime carve-out, a cloudy hold is
+    a daytime state.
+
+    Args:
+        snapshot: Current pipeline snapshot.
+
+    Returns:
+        Constrained cloud tilt, or None when no cloud tilt is configured.
+
+    """
+    options = snapshot.climate_options
+    tilt = options.cloudy_tilt if options is not None else None
+    if tilt is None:
+        return None
+    return apply_snapshot_tilt_limits(snapshot, tilt, sun_valid=False)
+
+
 def solar_position_from_geometry(
     cover: AdaptiveGeneralCover,
     config: CoverConfig,
@@ -461,8 +533,11 @@ def compute_default_tilt(snapshot: PipelineSnapshot) -> int | None:
     * ``DefaultHandler`` — every branch, including "Use My at sunset", which
       substitutes the *position* only.
     * ``CloudSuppressionHandler`` — the sunset and no-``cloudy_position``
-      branches; the ``cloudy_position`` branch is a configured override and
-      stays untilted.
+      branches; the ``cloudy_position`` branch is a configured override, so it
+      asks :func:`resolve_cloudy_tilt` instead and stays untilted unless the
+      user configured a ``cloudy_tilt`` (#175). It never falls back here: a
+      branch that did not resolve from the default must not borrow the
+      default's tilt.
     * ``MotionTimeoutHandler`` — the return-to-default branch; the
       ``hold_position`` branch stays untilted.
     * ``ClimateHandler`` — the ``ControlMethod.DEFAULT`` branches whose
@@ -499,12 +574,5 @@ def compute_default_tilt(snapshot: PipelineSnapshot) -> int | None:
     else:
         tilt = snapshot.default_tilt
         if tilt is not None:
-            tilt = PositionConverter.apply_tilt_limits(
-                tilt,
-                snapshot.min_tilt,
-                snapshot.max_tilt,
-                snapshot.min_tilt_sun_only,
-                snapshot.max_tilt_sun_only,
-                sun_valid=False,
-            )
+            tilt = apply_snapshot_tilt_limits(snapshot, tilt, sun_valid=False)
     return tilt

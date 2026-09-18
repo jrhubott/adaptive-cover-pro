@@ -208,3 +208,45 @@ class TestSyncCoverage:
             f"Keys in _SHARED_OPTIONS_EXCLUDED are also in SYNC_CATEGORIES: {sorted(overlap)}.\n"
             "Remove them from one or the other."
         )
+
+
+class TestCloudyTiltSyncCoverage:
+    """The #175 slat angle is registered for selective sync explicitly.
+
+    ``CONF_WEATHER_OVERRIDE_TILT`` escapes
+    ``test_all_option_schema_keys_are_in_sync_categories_or_excluded`` only
+    because the module-level ``WEATHER_OVERRIDE_SCHEMA`` is built with
+    ``include_tilt=False``, so the enumeration never sees it. The same accident
+    would hide the cloudy tilt. That is a latent hole in the weather tilt's
+    coverage, not a pattern to reproduce, so this asserts the memberships
+    directly instead of relying on the enumeration to demand them.
+    """
+
+    def test_cloudy_tilt_is_in_light_cloud_values(self):
+        from custom_components.adaptive_cover_pro.const import CONF_CLOUDY_TILT
+
+        assert CONF_CLOUDY_TILT in SYNC_CATEGORIES["light_cloud_values"]
+
+    def test_cloudy_tilt_matches_its_position_siblings_memberships(self):
+        """Three memberships, exactly like ``cloudy_position``.
+
+        The position sibling sits in ``light_cloud_values`` plus the two legacy
+        aliases (``light_cloud`` and ``climate``). A tilt that skipped the
+        aliases would sync on one category and silently not on the others —
+        the two options would then drift apart on a selective sync, which is
+        precisely the failure mode a paired position/tilt target cannot afford.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_CLOUDY_POSITION,
+            CONF_CLOUDY_TILT,
+        )
+
+        position_categories = {
+            name
+            for name, keys in SYNC_CATEGORIES.items()
+            if CONF_CLOUDY_POSITION in keys
+        }
+        tilt_categories = {
+            name for name, keys in SYNC_CATEGORIES.items() if CONF_CLOUDY_TILT in keys
+        }
+        assert tilt_categories == position_categories

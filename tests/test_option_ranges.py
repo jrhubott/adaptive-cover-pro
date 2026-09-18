@@ -287,6 +287,30 @@ def test_weather_override_tilt_is_service_settable() -> None:
 
 
 @pytest.mark.unit
+def test_cloudy_tilt_is_service_settable() -> None:
+    """The #175 cloud slat angle must be reachable from ``set_light_cloud``.
+
+    Same convention the weather tilt above follows: a FIELD_VALIDATORS entry
+    with no service seat is dead code and the key is silently dropped. The
+    range is the shared tilt range — a second ``(0, 100)`` constant for the
+    same axis would be exactly the duplicate the no-magic-numbers rule bans.
+
+    Deliberately asymmetric with ``cloudy_position``, which is
+    ``ValidatorKind.NONE`` and therefore not settable. That is a historical
+    accident rather than a pattern: bounds validation on a percentage field is
+    worth having, and having it is what makes the service seat mandatory.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_CLOUDY_TILT
+    from custom_components.adaptive_cover_pro.services.options_service import (
+        ALL_SETTABLE_KEYS,
+    )
+
+    assert CONF_CLOUDY_TILT in FIELD_VALIDATORS
+    assert CONF_CLOUDY_TILT in ALL_SETTABLE_KEYS
+    assert OPTION_RANGES[CONF_CLOUDY_TILT] == (0, 100)
+
+
+@pytest.mark.unit
 def test_weather_outside_window_selector_defaults_to_acting_outside() -> None:
     """The weather step offers the opt-out, pre-ticked to today's behaviour."""
     from custom_components.adaptive_cover_pro.config_dynamic import (

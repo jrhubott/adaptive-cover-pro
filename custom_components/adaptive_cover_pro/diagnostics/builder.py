@@ -15,6 +15,7 @@ from typing import Any
 
 from ..const import ControlStatus
 from ..const import (
+    CONF_CLOUD_ESCALATION_DELAY,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_PLANE,
     DEFAULT_IRRADIANCE_PLANE,
@@ -218,6 +219,15 @@ class DiagnosticContext:
     # Manual override detection toggles
     manual_toggle: bool = True
     enabled_toggle: bool = True
+
+    # Cloud-suppression escalation live state (issue #175). Threaded from
+    # ``CloudSuppressionManager`` because neither is recoverable from config:
+    # the deadline is DERIVED from an in-memory start instant, so a support
+    # read of the options dict can see the configured delay and still have no
+    # idea whether the hold is two minutes or two hours old. Defaulted so
+    # contexts built without them (tests, older callers) are unaffected.
+    cloud_suppression_phase: Any = None  # CloudSuppressionPhase | None
+    cloud_escalation_deadline: Any = None  # dt.datetime | None
 
     # Issue #33 Phase 5: per-entity counts of cross-axis publish-lag
     # suppressions in the last 24 h. Threaded in from
@@ -1030,6 +1040,31 @@ class DiagnosticsBuilder:
         return diagnostics
 
     @staticmethod
+    def build_cloud_escalation_block(ctx: DiagnosticContext) -> dict:
+        """Describe the cloud-escalation clock: the setting AND the live phase.
+
+        Three keys, because the stored delay alone cannot answer the question a
+        reporter actually asks. "Why has my cover not opened yet" needs the
+        phase the manager resolved and the deadline it derived — and the
+        deadline exists nowhere in the options dict, since it is computed from
+        an in-memory start instant on every read (issue #175).
+
+        The delay is read RAW, ungated and un-normalised: the dump's job is to
+        show what is STORED, so an all-zero duration that the runtime treats as
+        "off" must still be visible as the all-zero duration it is.
+        """
+        deadline = ctx.cloud_escalation_deadline
+        return {
+            "cloud_escalation_delay": (ctx.config_options or {}).get(
+                CONF_CLOUD_ESCALATION_DELAY
+            ),
+            "cloud_suppression_phase": ctx.cloud_suppression_phase,
+            "cloud_escalation_deadline": (
+                None if deadline is None else deadline.isoformat()
+            ),
+        }
+
+    @staticmethod
     def build_command_queue_block(queue) -> dict | None:
         """Describe the dispatch queue this entry belongs to, or ``None``.
 
@@ -1259,6 +1294,7 @@ class DiagnosticsBuilder:
             CONF_AZIMUTH,
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
+            CONF_CLOUDY_TILT,
             CONF_ENABLE_BLIND_SPOT,
             CONF_ENABLE_MAX_POSITION,
             CONF_ENABLE_MIN_POSITION,
@@ -1351,6 +1387,11 @@ class DiagnosticsBuilder:
                 "enabled_toggle": ctx.enabled_toggle,
                 "cloud_suppression_enabled": options.get(CONF_CLOUD_SUPPRESSION, False),
                 "cloudy_position": options.get(CONF_CLOUDY_POSITION),
+                # Read raw, ungated (#175): the dump's job is to show what
+                # is STORED, and a value the policy currently drops is
+                # exactly what a triage read needs to see.
+                "cloudy_tilt": options.get(CONF_CLOUDY_TILT),
+                **DiagnosticsBuilder.build_cloud_escalation_block(ctx),
                 # issue #625: raw config value (None when disabled).
                 "end_of_window_position": options.get(CONF_END_OF_WINDOW_POS),
                 "is_sunny_source": (

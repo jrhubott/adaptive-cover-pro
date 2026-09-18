@@ -1676,3 +1676,85 @@ def climate_mode_from_diagnostics(diagnostics: dict | None) -> str | None:
     if data.get("is_winter"):
         return "winter_mode"
     return "intermediate"
+
+
+# ---------------------------------------------------------------------------
+# DurationSelector values
+# ---------------------------------------------------------------------------
+#
+# Both live here rather than in ``config_flow`` (which is where the formatter
+# started) for the reason ``check_cover_capabilities`` above gives: a module
+# that only needs to READ a stored duration should not have to import the
+# config flow to do it. ``building_overview`` and ``config_types`` are both
+# such callers.
+
+
+# Component name → seconds. The one place a DurationSelector's shape is
+# spelled out, so the display formatter and the "is this actually configured"
+# test cannot disagree about what a duration contains.
+_DURATION_COMPONENT_SECONDS: tuple[tuple[str, int], ...] = (
+    ("hours", 3600),
+    ("minutes", 60),
+    ("seconds", 1),
+)
+
+
+def format_duration(dur: dict | int | float | None) -> str:
+    """Format a DurationSelector value (dict or legacy int minutes) as human-readable text.
+
+    A DurationSelector stores ``{"hours": H, "minutes": M, "seconds": S}``.
+    Legacy configs may store a plain number (treated as minutes).
+    Zero-valued components are omitted unless all are zero (returns "0 min").
+    Examples:
+        {"hours": 5, "minutes": 0, "seconds": 0} -> "5 h"
+        {"hours": 2, "minutes": 15, "seconds": 0} -> "2 h 15 min"
+        {"hours": 0, "minutes": 30, "seconds": 0} -> "30 min"
+        {"hours": 0, "minutes": 0, "seconds": 45} -> "45 s"
+        120 (legacy int)                           -> "120 min"
+
+    Moved here from ``config_flow.py`` (issue #175), which still re-exports the
+    name for its own call sites.
+
+    """
+    if dur is None:
+        return ""
+    if isinstance(dur, int | float):
+        return f"{int(dur)} min"
+    h = int(dur.get("hours", 0) or 0)
+    m = int(dur.get("minutes", 0) or 0)
+    s = int(dur.get("seconds", 0) or 0)
+    parts = []
+    if h:
+        parts.append(f"{h} h")
+    if m:
+        parts.append(f"{m} min")
+    if s:
+        parts.append(f"{s} s")
+    return " ".join(parts) if parts else "0 min"
+
+
+def duration_seconds_or_none(dur: Any) -> int | None:
+    """Return a DurationSelector value as whole seconds, or None when blank.
+
+    An ALL-ZERO duration normalises to ``None`` alongside an absent key and an
+    explicit ``null``, because HA's duration control submits
+    ``{"hours": 0, "minutes": 0, "seconds": 0}`` for a field the user never
+    touched. "Absent" and "explicitly nothing" therefore arrive as two
+    different values meaning the same thing, and for an
+    absent-means-feature-off option only ``None`` says it. Read literally, zero
+    would be the loudest possible misreading — "act the instant the condition
+    appears" — for everyone who merely opened the step.
+
+    One definition so the runtime slice that arms the feature and the
+    configuration summary that describes it agree on what "configured" means
+    (issue #175).
+    """
+    if not isinstance(dur, Mapping):
+        return None
+    total = 0.0
+    for key, unit_seconds in _DURATION_COMPONENT_SECONDS:
+        try:
+            total += float(dur.get(key) or 0) * unit_seconds
+        except (TypeError, ValueError):
+            continue
+    return int(total) or None

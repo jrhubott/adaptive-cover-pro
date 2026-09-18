@@ -779,6 +779,12 @@ class CloudSuppressionSlice:
 
     enabled: bool
     hold_time_seconds: int
+    # How long a hold may run before the handler gives up on the cloudy
+    # position and opens the cover fully (issue #175). Seconds, or None for "as
+    # long as the cloud lasts" — the pre-#175 behaviour and what an absent or
+    # all-zero duration normalises to. NOT the hold-time above: that one gates
+    # how fast suppression engages.
+    escalation_delay_seconds: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -878,10 +884,13 @@ class RuntimeConfig:
         here, not redeclared, so a single source of truth governs both this
         loader and any other consumer.
         """
+        from .helpers import duration_seconds_or_none
+
         from .const import (
             CONF_AZIMUTH,
             CONF_CLIMATE_MODE,
             CONF_CLIMATE_TEMP_HOLD_TIME,
+            CONF_CLOUD_ESCALATION_DELAY,
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUD_SUPPRESSION_HOLD_TIME,
             CONF_COMMAND_QUEUE,
@@ -1148,6 +1157,9 @@ class RuntimeConfig:
                         CONF_CLOUD_SUPPRESSION_HOLD_TIME,
                         DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
                     )
+                ),
+                escalation_delay_seconds=duration_seconds_or_none(
+                    options.get(CONF_CLOUD_ESCALATION_DELAY)
                 ),
             ),
             climate_smoothing=ClimateSmoothingSlice(

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..const import (
     DEFAULT_TRACKING_SEASONS,
+    POSITION_OPEN,
     AxisConstraintMode,
     ClimateStrategy,
     ControlMethod,
@@ -59,6 +60,16 @@ class ClimateOptions:
     winter_close_insulation: bool
     summer_close_bypass_sun_floor: bool = False
     cloudy_position: int | None = None
+    # Slat angle commanded alongside ``cloudy_position`` while cloud
+    # suppression holds (issue #175). Surfaced only on cover types whose
+    # policy sets ``CoverTypePolicy.cloud_suppression_includes_tilt`` — the
+    # same gate ``weather_override_tilt`` uses (#1297) — and read through it in
+    # the snapshot builder, so a value left behind by a cover-type switch never
+    # reaches a cover with no slat axis. Has NO default: absent means the
+    # handler names no tilt and the slats hold their current angle, which is
+    # the pre-#175 behaviour (so no config migration). An explicit 0 is a real
+    # answer (slats closed) and is distinguished with ``is not None``.
+    cloudy_tilt: int | None = None
     # Extreme-heat mode (issue #766). ``temp_extreme_heat`` None = feature off.
     # ``extreme_heat_position`` None = use DEFAULT_EXTREME_HEAT_POSITION; an
     # explicit 0 is honored (distinguished with ``is not None``).
@@ -718,6 +729,29 @@ class PipelineSnapshot:
     # exactly as before.
     climate_extreme_heat_active: bool = False
 
+    # Resolved cloud-ESCALATION verdict from CloudSuppressionManager (issue
+    # #175). Same division of labour as ``cloud_suppression_active`` above: the
+    # manager owns the start instant and the derived deadline, the pure handler
+    # reads this one bool. True means the hold has outlived its configured
+    # escalation delay, so ``CloudSuppressionHandler`` answers with
+    # ``unshaded_position`` instead of the cloudy position. It is still gated
+    # behind the whole guard stack, so an escalated clock can never command a
+    # position while the sun is outside the window FOV (#417). Defaults False so
+    # snapshots that don't set it behave exactly as before.
+    cloud_escalation_active: bool = False
+
+    # What "let the sun reach the window" resolves to on THIS cover type —
+    # ``CoverTypePolicy.position_for_intent(sun_through=True)``, computed once
+    # per cycle by the snapshot builder (issue #175). Read by the escalated
+    # cloud branch, which must not spell the answer as a literal 100:
+    # ``CoverAxis.open_blocks_sun`` is True for awnings, where logical 100 is
+    # fully EXTENDED and therefore maximum shade, so a hardcoded 100 would
+    # deploy an awning after two hours of cloud — the exact inverse of the ask.
+    # Defaults to ``POSITION_OPEN``, the answer for every cover family whose
+    # open end lets the sun through (blind / venetian / tilt / shade), so a
+    # snapshot built without the builder still behaves sensibly.
+    unshaded_position: int = POSITION_OPEN
+
 
 # ---------------------------------------------------------------------------
 # Output types
@@ -956,6 +990,18 @@ class PipelineResult:
     # the carriage. Cover-type-agnostic — set by the registry, acted on only
     # inside cover_types/.
     tilt_only_contribution_active: bool = False
+
+    # When True, this result is the cloud-suppression ESCALATION: the hold has
+    # outlived its configured delay and the handler is asking for the unshaded
+    # position rather than the cloudy one (issue #175). Structurally identical
+    # to ``tilt_only_contribution_active`` above — cover-type-agnostic, set by
+    # exactly one writer (``CloudSuppressionHandler``), read only inside
+    # ``cover_types/``, where ``VenetianPolicy`` treats it as a fifth
+    # independent exemption from the tilt-only carriage pin. Without that the
+    # escalation would never reach the hardware on a tilt-only venetian: the
+    # pin rewrites every CLOUD position back to closed, which is precisely what
+    # the reporter's own diagnostics show happening today.
+    cloud_escalation_active: bool = False
 
     # 1-based slot number of the tilt-only contribution that was *applied*
     # (overlaid its slat angle onto the position winner). Set by the registry

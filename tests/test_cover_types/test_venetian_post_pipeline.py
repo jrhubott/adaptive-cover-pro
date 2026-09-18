@@ -1448,3 +1448,112 @@ class TestTiltOnlyScope:
         untouched = VenetianPolicy()
         untouched.attach(**attach_kwargs)
         assert untouched._tilt_only_scope == VENETIAN_TILT_ONLY_SCOPE_ALL
+
+
+class TestCloudEscalationReleasesTheCarriage:
+    """The escalated cloud hold is a fifth independent exemption (issue #175).
+
+    ``test_tilt_only_pins_carriage_for_cloud_winner`` above is the other half
+    of this pair and stays green UNMODIFIED. The two do not contradict each
+    other: a plain CLOUD win is the HOLD phase, and keeping the carriage pinned
+    is precisely what produces "blind stays down, slats open". Only the
+    ESCALATION phase — the hold has outlived its configured delay and the
+    handler is asking for the unshaded position — needs the pin to stand down,
+    and it is gated on a flag ``_make_result`` never sets.
+
+    Without the exemption the feature is inert for exactly the configuration
+    that asked for it: the reporter runs ``venetian_mode = tilt_only`` at the
+    shipped ``all_automatic_control`` scope, and their own diagnostics already
+    show the pin rewriting a CLOUD position of 100 straight back to 0.
+    """
+
+    @staticmethod
+    def _escalated(position: int = 100) -> PipelineResult:
+        """Return an escalated CLOUD result, extending the shared factory."""
+        return replace(
+            _make_result(ControlMethod.CLOUD, position=position),
+            cloud_escalation_active=True,
+        )
+
+    def test_tilt_only_releases_carriage_for_escalated_cloud_winner(self):
+        """At the SHIPPED scope, with no opt-in — that is the whole point.
+
+        #1330's ``sun_tracking_only`` already releases CLOUD wins, but it also
+        releases every climate winner and is documented as a door-access
+        feature. Requiring it here would mean the escalation only works for
+        users who opted into an unrelated behaviour change.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        out = policy.post_pipeline_resolve(
+            self._escalated(position=100), **_non_solar_kwargs()
+        )
+        assert out.position == 100
+        assert "venetian_mode" not in [s.handler for s in out.decision_trace]
+
+    def test_the_flag_is_what_releases_it_not_the_control_method(self):
+        """Same method, same scope, same position — only the flag differs.
+
+        Stated as a pair rather than trusting the two separate tests to stay
+        comparable: ``CLOUD`` itself must keep being pinned, or the hold phase
+        silently loses its held carriage and Layer 1's whole premise goes with
+        it.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        def _resolve(result):
+            policy = _make_policy()
+            policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+            return policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+
+        held = _resolve(_make_result(ControlMethod.CLOUD, position=100))
+        escalated = _resolve(self._escalated(position=100))
+
+        assert held.position == 0
+        assert escalated.position == 100
+
+    @pytest.mark.parametrize(
+        "method",
+        [
+            ControlMethod.SUMMER,
+            ControlMethod.WINTER,
+            ControlMethod.EXTREME_HEAT,
+        ],
+    )
+    def test_the_flag_releases_whatever_carries_it(self, method):
+        """The clause reads the FLAG, deliberately not the control method.
+
+        Mirrors ``tilt_only_contribution_active``, the exemption it is
+        structurally copied from: a single-writer marker, trusted on its own
+        rather than re-checked against the method that is the only one able to
+        carry it. An ``and control_method == CLOUD`` half would be dead
+        defensive code, and would leave this file holding a fourth
+        control-method comparison next to the three it already documents as
+        answering three different questions.
+
+        So these combinations are not shipped states — ``CloudSuppressionHandler``
+        is the only writer, and it only ever pairs the flag with
+        ``ControlMethod.CLOUD``. Pinning the blast radius anyway is the point:
+        a second writer added later has to argue with this test rather than
+        silently gain the power to move a tilt-only carriage.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        out = policy.post_pipeline_resolve(
+            replace(_make_result(method, position=100), cloud_escalation_active=True),
+            **_non_solar_kwargs(),
+        )
+        assert out.position == 100
+
+    def test_position_and_tilt_mode_is_unaffected(self):
+        """A venetian NOT in tilt-only mode never reached the pin anyway."""
+        policy = _make_policy()
+        out = policy.post_pipeline_resolve(
+            self._escalated(position=100), **_non_solar_kwargs()
+        )
+        assert out.position == 100
+        assert "venetian_mode" not in [s.handler for s in out.decision_trace]

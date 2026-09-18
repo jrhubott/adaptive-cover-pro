@@ -17,6 +17,7 @@ from freezegun import freeze_time
 from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    CONF_CLOUDY_TILT,
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_END_OF_WINDOW_POS,
@@ -2165,3 +2166,71 @@ def test_build_gates_the_weather_override_tilt_on_the_policy(cover_type, expecte
         is_sunset_active=False,
     )
     assert snapshot.weather_override_tilt == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("opts", "expected"),
+    [
+        ({CONF_CLOUDY_TILT: 100}, 100),
+        ({CONF_CLOUDY_TILT: 0}, 0),
+        ({}, None),
+    ],
+    ids=["configured", "zero-is-not-unset", "absent"],
+)
+def test_build_climate_options_reads_the_cloudy_tilt(opts, expected):
+    """The cloud slat angle rides onto ClimateOptions beside its position (#175).
+
+    The ``absent`` row is the one that matters: no stored key must produce
+    ``None``, not a default, because ``None`` is what tells the handler to
+    claim no tilt and leave the slats alone — the invariant that lets the
+    option ship with no config migration. The ``0`` row guards the usual
+    optional-percentage trap: closed slats during a cloudy hold are a real
+    privacy setting, not "unset".
+    """
+    builder, _, _ = _make_builder(policy=get_policy("cover_venetian"))
+
+    options = builder.build_climate_options(opts)
+
+    assert options.cloudy_tilt == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("cover_type", "expected"),
+    [
+        ("cover_venetian", 100),
+        ("cover_day_night_shade", None),
+        ("cover_blind", None),
+    ],
+    ids=[
+        "venetian-claims-the-slat-angle",
+        "day-night-shade-drops-it",
+        "blind-drops-it",
+    ],
+)
+def test_build_climate_options_gates_the_cloudy_tilt_on_the_policy(
+    cover_type, expected
+):
+    """A stored cloud slat angle only reaches the pipeline on a type that has slats.
+
+    ``cloud_suppression_includes_tilt`` gates the config-flow field, but the
+    key can still be *stored* on a type that never shows it:
+    ``acp.set_light_cloud`` writes it without a cover-type gate, and a venetian
+    → blind cover-type switch deliberately deletes nothing (#1132).
+
+    Read ungated, that stray 100 would ride out on the winning
+    ``PipelineResult.tilt`` during every cloudy hold, driving a second axis the
+    cover either does not have or already drives through ``cloudy_position`` —
+    with no UI field to see or clear it. Gating the read here rather than in
+    the handler closes all three routes at once (service, type switch,
+    hand-edited options) on the one seam that builds every ``ClimateOptions``.
+
+    The venetian row is the no-change guard: the flag is True there, so
+    ``options.get()`` is reached exactly as it would be ungated.
+    """
+    builder, _, _ = _make_builder(policy=get_policy(cover_type))
+
+    options = builder.build_climate_options({CONF_CLOUDY_TILT: 100})
+
+    assert options.cloudy_tilt == expected

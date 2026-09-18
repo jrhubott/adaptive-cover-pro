@@ -3,6 +3,7 @@
     "sunset_position": "sunset position",
     "default_position": "default position",
     "cloudy_position": "cloudy position",
+    "cloud_escalated_position": "opened fully after the cloud delay",
     "coverage_step": " (coverage step, max {steps})",
     "z_adjusted": " (Z-adjusted)",
     "gate_blocked_by": " (blocked by {entities})",

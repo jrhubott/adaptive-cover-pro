@@ -45,9 +45,11 @@ from .const import (
     CONF_PROFILE_SENSOR_OVERRIDES,
     CONF_CLIMATE_MODE,
     CONF_CLIMATE_TEMP_HOLD_TIME,
+    CONF_CLOUD_ESCALATION_DELAY,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUDY_POSITION,
+    CONF_CLOUDY_TILT,
     CONF_COMMAND_QUEUE,
     CONF_COMMAND_QUEUE_GAP,
     CONF_DAYTIME_GATE_SENSORS,
@@ -293,6 +295,8 @@ from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_name,
     custom_position_slot_sensors,
+    duration_seconds_or_none,
+    format_duration,
     has_configured_window_end,
     is_assumed_state,
     manual_hold_is_unanchored,
@@ -1251,6 +1255,11 @@ LIGHT_CLOUD_SCHEMA = light_cloud_schema()
 # optional_entities() with this list before dict.update() -- see #323 and #392.
 _LIGHT_CLOUD_OPTIONAL_KEYS: list[str] = [
     CONF_CLOUDY_POSITION,
+    # Blank must mean absent, not an all-zero duration (#175) — otherwise the
+    # escalation can never be turned back off from the UI once configured.
+    # Unconditional, unlike the slat angle: this field renders for every cover
+    # type, so there is no form that could collect a stray null for it.
+    CONF_CLOUD_ESCALATION_DELAY,
     CONF_WEATHER_ENTITY,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
@@ -1466,35 +1475,12 @@ def _stringify_templatable(suggested: dict) -> dict:
     return out
 
 
-def _format_duration(dur: dict | int | float | None) -> str:
-    """Format a DurationSelector value (dict or legacy int minutes) as human-readable text.
-
-    A DurationSelector stores ``{"hours": H, "minutes": M, "seconds": S}``.
-    Legacy configs may store a plain number (treated as minutes).
-    Zero-valued components are omitted unless all are zero (returns "0 min").
-    Examples:
-        {"hours": 5, "minutes": 0, "seconds": 0} -> "5 h"
-        {"hours": 2, "minutes": 15, "seconds": 0} -> "2 h 15 min"
-        {"hours": 0, "minutes": 30, "seconds": 0} -> "30 min"
-        {"hours": 0, "minutes": 0, "seconds": 45} -> "45 s"
-        120 (legacy int)                           -> "120 min"
-
-    """
-    if dur is None:
-        return ""
-    if isinstance(dur, int | float):
-        return f"{int(dur)} min"
-    h = int(dur.get("hours", 0) or 0)
-    m = int(dur.get("minutes", 0) or 0)
-    s = int(dur.get("seconds", 0) or 0)
-    parts = []
-    if h:
-        parts.append(f"{h} h")
-    if m:
-        parts.append(f"{m} min")
-    if s:
-        parts.append(f"{s} s")
-    return " ".join(parts) if parts else "0 min"
+# The duration formatter and the all-zero normaliser now live in ``helpers``
+# (issue #175) so ``building_overview`` and ``config_types`` can read a stored
+# duration without importing the config flow. Aliased under the old private
+# name because every call site in this module — and the unit tests that pin the
+# formatter's output — already reads it that way.
+_format_duration = format_duration
 
 
 def _build_cover_capabilities_text(
@@ -1849,15 +1835,28 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "cloud.lux_release": "lux ≥ {release} lx",
     "cloud.irradiance_release": "irradiance ≥ {release} W/m²",
     "cloud.coverage_release": "cloud ≤ {release}%",
+    # Item fragments for the ignored-settings warning below (#175). The
+    # position sibling reuses ``cloud.fallback_cloudy`` rather than gaining a
+    # twin.
+    "cloud.ignored_tilt": "cloudy slat angle {tilt}%",
+    "cloud.ignored_escalation": "open-fully delay {delay}",
+    # Suffix on the rendered cloud line when a delay is configured (#175).
+    # Says what the cover DOES, not what the option is called, because the
+    # summary's job is to describe behaviour.
+    "cloud.escalation": " · opens fully after {delay}",
     "info.light_sensors_off": (
         "📊 Light sensors configured ({names}) but cloud suppression is off."
     ),
     "info.light_lux": "lux",
     "info.light_irradiance": "irradiance",
     "info.light_cloud_coverage": "cloud coverage",
-    "warnings.cloudy_pos_ignored": (
-        "⚠️ Cloudy position ({pos}%) configured but cloud suppression is "
-        "disabled — value will be ignored."
+    # One warning for every Light & Cloud target stranded by the master toggle
+    # (#175), replacing the single-key ``warnings.cloudy_pos_ignored``. The
+    # sentence leads with fixed text so ``{items}`` can carry one item or
+    # several without breaking sentence case. Adding a key to the list is a
+    # rendering change only — this string never changes again.
+    "warnings.cloud_settings_ignored": (
+        "⚠️ Cloud suppression is disabled, so {items} will be ignored."
     ),
     # --- Climate (50) ---
     "rules.climate": ("🌡️ Climate mode: adjusts strategy for heating/cooling{detail}"),
@@ -2981,6 +2980,32 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         )
 
     # Cloud suppression (60)
+    #
+    # Resolved before the toggle branch because both the rendered cloud line
+    # and the ignored-settings warning below need the same value. Gated on the
+    # policy ClassVar, never on the cover-type string: a stored slat angle left
+    # behind by a cover-type switch (#1132 deletes nothing) or written by
+    # ``acp.set_light_cloud`` (no cover-type gate) must not promise slat
+    # movement to a cover with no slat axis — the #1297 rule, applied to #175.
+    cloudy_tilt_cfg = (
+        config.get(CONF_CLOUDY_TILT)
+        if sensor_type is not None
+        and get_policy(sensor_type).cloud_suppression_includes_tilt
+        else None
+    )
+    # Resolved here for the same reason: the cloud line and the warning below
+    # both need it (#175). NOT policy-gated — every cover type can be told to
+    # stop holding a cloudy position. ``duration_seconds_or_none`` is the same
+    # normaliser ``RuntimeConfig`` arms the feature with, so the summary can
+    # never claim an escalation the manager will not run: an all-zero duration
+    # is a blank field, and describing it as "opens fully after 0 min" would be
+    # a promise the code deliberately does not keep.
+    escalation_cfg = config.get(CONF_CLOUD_ESCALATION_DELAY)
+    escalation_delay_text = (
+        _format_duration(escalation_cfg)
+        if duration_seconds_or_none(escalation_cfg) is not None
+        else None
+    )
     if has_cloud:
         cloud_parts = []
         is_sunny_value = config.get(CONF_IS_SUNNY_SENSOR) or (
@@ -3037,6 +3062,18 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         else:
             fallback_label = L["cloud.fallback_default"].format(default_pos=default_pos)
         cloud_line = L["rules.cloud"].format(cloud=cloud_str, fallback=fallback_label)
+        # The slat target, right beside the carriage target it accompanies
+        # (#175). Reuses ``custom.tilt_note`` — the same ", tilt {tilt}%"
+        # fragment the custom-position and weather lines use, because it says
+        # exactly the same thing about the same axis, so the three cannot
+        # drift and DE/FR gain nothing new to translate.
+        if cloudy_tilt_cfg is not None:
+            cloud_line += L["custom.tilt_note"].format(tilt=cloudy_tilt_cfg)
+        # Then when we give up on both of them (#175). Placed after the two
+        # targets it supersedes and before the smoothing suffixes, so the line
+        # reads in the order the behaviour happens.
+        if escalation_delay_text is not None:
+            cloud_line += L["cloud.escalation"].format(delay=escalation_delay_text)
         # Smoothing suffixes (issue #864): a non-zero hold-time and any
         # configured per-trigger hysteresis release edges.
         hold_time = config.get(CONF_CLOUD_SUPPRESSION_HOLD_TIME)
@@ -3092,13 +3129,30 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             L["info.light_sensors_off"].format(names=", ".join(sensor_names)),
         )
 
-    # Warn if cloudy_position set but cloud suppression is disabled
-    cloudy_pos_cfg = config.get(CONF_CLOUDY_POSITION)
-    if cloudy_pos_cfg is not None and not has_cloud:
+    # Warn about every Light & Cloud target that only means something while
+    # suppression is on. ONE guard, ONE line, listing whichever are configured
+    # (#175) — a second and third ``if cfg is not None and not has_cloud``
+    # block would be three ⚠️ lines saying the same thing about the same
+    # disabled toggle. The guard, the join and the line are the shared policy;
+    # the table below is the only part that grows, so a fourth setting is a
+    # tuple rather than a block. ``is not None`` throughout: 0 % is a real
+    # answer on both axes (closed carriage, closed slats).
+    ignored_cloud_settings = [
+        L[label].format(**{placeholder: value})
+        for value, label, placeholder in (
+            (config.get(CONF_CLOUDY_POSITION), "cloud.fallback_cloudy", "pos"),
+            (cloudy_tilt_cfg, "cloud.ignored_tilt", "tilt"),
+            (escalation_delay_text, "cloud.ignored_escalation", "delay"),
+        )
+        if value is not None
+    ]
+    if ignored_cloud_settings and not has_cloud:
         _open_note(
             _prio["cloud_suppression"],
             _HID_ORDER_INDEX["cloud_suppression"],
-            L["warnings.cloudy_pos_ignored"].format(pos=cloudy_pos_cfg),
+            L["warnings.cloud_settings_ignored"].format(
+                items=", ".join(ignored_cloud_settings)
+            ),
         )
 
     # Climate mode (50)
@@ -4065,6 +4119,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_IRRADIANCE_RELEASE_THRESHOLD,
             CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
             CONF_CLOUDY_POSITION,
+            CONF_CLOUDY_TILT,
+            CONF_CLOUD_ESCALATION_DELAY,
             CONF_IS_SUNNY_TEMPLATE_MODE,
         }
     ),
@@ -4089,6 +4145,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_IRRADIANCE_RELEASE_THRESHOLD,
             CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
             CONF_CLOUDY_POSITION,
+            CONF_CLOUDY_TILT,
+            CONF_CLOUD_ESCALATION_DELAY,
             CONF_IS_SUNNY_SENSOR,
             CONF_IS_SUNNY_TEMPLATE,
             CONF_IS_SUNNY_TEMPLATE_MODE,
@@ -4165,6 +4223,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_COVERAGE_THRESHOLD,
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
+            CONF_CLOUDY_TILT,
+            CONF_CLOUD_ESCALATION_DELAY,
             CONF_IS_SUNNY_SENSOR,
             CONF_IS_SUNNY_TEMPLATE,
             CONF_IS_SUNNY_TEMPLATE_MODE,
@@ -6319,14 +6379,26 @@ class OptionsFlowHandler(OptionsFlow):
 
     # ── Custom positions ────────────────────────────────────────────────
 
-    def _custom_position_include_tilt(self) -> bool:
-        """Whether this cover type carries per-slot / global tilt fields."""
+    def _section_adds_extra_fields(self, section: str) -> bool:
+        """Whether this cover type's policy adds any extra field to *section*.
+
+        The one gate behind every ``include_tilt`` kwarg the option steps pass
+        to their schema builder. Written once rather than mirrored per section:
+        the registry-membership guard (an unregistered ``sensor_type`` must
+        answer False rather than raise) and the ``extra_field_keys`` lookup are
+        the same policy in all three places, and only the section differs.
+        Reading ``extra_field_keys`` rather than each ``*_includes_tilt``
+        ClassVar keeps that one method the single seam that decides which
+        cover types surface a second axis in a given step.
+        """
         sensor_type = self.sensor_type
         return sensor_type in POLICY_REGISTRY and bool(
-            get_policy(sensor_type).extra_field_keys(
-                config_fields.SECTION_CUSTOM_POSITION
-            )
+            get_policy(sensor_type).extra_field_keys(section)
         )
+
+    def _custom_position_include_tilt(self) -> bool:
+        """Whether this cover type carries per-slot / global tilt fields."""
+        return self._section_adds_extra_fields(config_fields.SECTION_CUSTOM_POSITION)
 
     async def async_step_custom_position(
         self, user_input: dict[str, Any] | None = None
@@ -6689,11 +6761,7 @@ class OptionsFlowHandler(OptionsFlow):
 
     def _weather_override_include_tilt(self) -> bool:
         """Whether this cover type carries a weather-override tilt slider."""
-        sensor_type = self.sensor_type
-        return (
-            sensor_type in POLICY_REGISTRY
-            and get_policy(sensor_type).weather_override_includes_tilt
-        )
+        return self._section_adds_extra_fields(config_fields.SECTION_WEATHER_OVERRIDE)
 
     async def async_step_weather_override(
         self, user_input: dict[str, Any] | None = None
@@ -7559,17 +7627,33 @@ class OptionsFlowHandler(OptionsFlow):
             },
         )
 
+    def _light_cloud_include_tilt(self) -> bool:
+        """Whether this cover type carries a cloudy slat-angle slider (#175)."""
+        return self._section_adds_extra_fields(config_fields.SECTION_LIGHT_CLOUD)
+
     async def async_step_light_cloud(self, user_input: dict[str, Any] | None = None):
         """Manage light sensors, weather conditions, and cloud suppression."""
         suggested = _stringify_templatable(user_input or self.options)
+        include_tilt = self._light_cloud_include_tilt()
         if user_input is not None:
-            self.optional_entities(_LIGHT_CLOUD_OPTIONAL_KEYS, user_input)
+            # The cloudy slat angle joins the optional-keys list only when it
+            # was rendered — otherwise a single-axis cover would collect a
+            # stray null for a field its form never showed (#175). Without it
+            # in the list a cleared slider silently keeps its previous value,
+            # which is the #323/#377 defect class.
+            optional_keys = (
+                [*_LIGHT_CLOUD_OPTIONAL_KEYS, CONF_CLOUDY_TILT]
+                if include_tilt
+                else _LIGHT_CLOUD_OPTIONAL_KEYS
+            )
+            self.optional_entities(optional_keys, user_input)
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(
             step_id="light_cloud",
             data_schema=self.add_suggested_values_to_schema(
-                light_cloud_schema(self.hass, suggested), suggested
+                light_cloud_schema(self.hass, suggested, include_tilt=include_tilt),
+                suggested,
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides",

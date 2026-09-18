@@ -969,6 +969,37 @@ def test_weather_override_includes_tilt(cover_type: str, expected: bool) -> None
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
+    ("cover_type", "expected"),
+    [
+        ("cover_blind", False),
+        ("cover_awning", False),
+        ("cover_tilt", False),
+        ("cover_venetian", True),
+        ("cover_louvered_roof", False),
+        ("cover_day_night_shade", False),
+        ("cover_dual_panel", False),
+    ],
+)
+def test_cloud_suppression_includes_tilt(cover_type: str, expected: bool) -> None:
+    """The Light & Cloud step surfaces a tilt slider only for venetian (#175).
+
+    A THIRD ClassVar for the same reason #1297 made a second one rather than
+    reusing ``custom_position_includes_tilt``: the questions are different, and
+    the answers are allowed to diverge. ``cover_day_night_shade`` is True for
+    custom position and False here — "what angle do the slats take while a
+    cloud holds" has no fabric-blend meaning. Cover types whose *primary* axis
+    is already the tilt (``cover_tilt``, ``cover_louvered_roof``) stay False
+    too: ``cloudy_position`` is their slat angle, so a second field would be a
+    contradictory duplicate of it.
+
+    Adding an eighth cover type must add a row here, not a branch outside
+    ``cover_types/``.
+    """
+    assert get_policy(cover_type).cloud_suppression_includes_tilt is expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
     ("cover_type", "anchor"),
     [
         ("cover_blind", "Configuration-Vertical"),

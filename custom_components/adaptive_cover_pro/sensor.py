@@ -18,9 +18,11 @@ from homeassistant.const import (
     ATTR_FRIENDLY_NAME,
     MATCH_ALL,
     PERCENTAGE,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
     UnitOfPower,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
@@ -265,27 +267,49 @@ class _ACPRestorableDiagnosticSensor(_ACPDiagnosticSensor, RestoreEntity):
         per_entity = (last.attributes or {}).get("per_entity")
         if not isinstance(per_entity, Mapping):
             per_entity = {}
-        if self._restore_from_attributes(per_entity):
+        # ``last`` rides along beside the dict (issue #175). The
+        # cloud-escalation deadline is a single per-entry instant, so it
+        # persists as the sensor's own STATE rather than as a per-cover
+        # mapping — and a subclass cannot reach it from ``per_entity`` alone.
+        # One hook with an extra argument rather than a second restore seam:
+        # the "read the prior state, rehydrate a manager, write HA state once
+        # if anything came back" shape is identical for all three subclasses,
+        # and only what they read out of it differs.
+        if self._restore_from_attributes(per_entity, last):
             self.async_write_ha_state()
 
-    def _restore_from_attributes(self, per_entity: Mapping[str, Any]) -> bool:
-        """Consume the restored per_entity dict; return True if anything restored."""
+    def _restore_from_attributes(
+        self, per_entity: Mapping[str, Any], state: State | None = None
+    ) -> bool:
+        """Consume the restored state; return True if anything was restored.
+
+        ``state`` defaults to ``None`` so the two pre-#175 subclasses — and
+        every test that calls their hook directly — are unchanged.
+        """
         return False
 
 
-def _parse_restored_expiry(entity_id: str, raw: Any) -> dt.datetime | None:
+def _parse_restored_expiry(
+    subject: str, raw: Any, *, label: str = "manual-override"
+) -> dt.datetime | None:
     """Parse one restored expiry value, or return None if it is unusable (#1273).
 
     Rejects anything ``fromisoformat`` cannot take, and anything it CAN take but
     that comes back naive — a naive value compares fine here and then raises
     ``TypeError`` against the tz-aware ``now`` at the call site, so it has to be
     caught at the parse rather than trusted through.
+
+    ``label`` names the deadline in the warnings, so the cloud-escalation
+    restore (issue #175) reuses this parser instead of growing a second one
+    with the same three traps to fall into. It defaults to ``manual-override``,
+    which renders every message byte-for-byte as it read before.
     """
     if not isinstance(raw, str):
         _LOGGER.warning(
-            "Discarding restored manual-override expiry for %s: expected an "
+            "Discarding restored %s expiry for %s: expected an "
             "ISO-8601 string, got %s",
-            entity_id,
+            label,
+            subject,
             type(raw).__name__,
         )
         return None
@@ -293,16 +317,18 @@ def _parse_restored_expiry(entity_id: str, raw: Any) -> dt.datetime | None:
         parsed = dt.datetime.fromisoformat(raw)
     except ValueError:
         _LOGGER.warning(
-            "Discarding unparseable restored manual-override expiry for %s: %r",
-            entity_id,
+            "Discarding unparseable restored %s expiry for %s: %r",
+            label,
+            subject,
             raw,
         )
         return None
     if parsed.tzinfo is None:
         _LOGGER.warning(
-            "Discarding restored manual-override expiry for %s: %r carries no "
+            "Discarding restored %s expiry for %s: %r carries no "
             "timezone, so its true instant is unknown",
-            entity_id,
+            label,
+            subject,
             raw,
         )
         return None
@@ -312,8 +338,14 @@ def _parse_restored_expiry(entity_id: str, raw: Any) -> dt.datetime | None:
 class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
     """Concrete: rehydrate manual-override manager from per_entity expiry dict."""
 
-    def _restore_from_attributes(self, per_entity: Mapping[str, Any]) -> bool:
+    def _restore_from_attributes(
+        self, per_entity: Mapping[str, Any], _state: State | None = None
+    ) -> bool:
         """Push prior per-entity expiry timestamps back into the manager.
+
+        The restored ``State`` is ignored here: every expiry this sensor owns
+        is per cover and already in ``per_entity``, while its own state is only
+        the max of them.
 
         per_entity maps cover entity_id → ISO-8601 UTC expiry string.
         Entries that are expired or not in the current cover set are dropped.
@@ -352,8 +384,14 @@ class _PositionVerificationSensor(_ACPRestorableDiagnosticSensor):
     detected through the fully-guarded normal path.
     """
 
-    def _restore_from_attributes(self, per_entity: Mapping[str, Any]) -> bool:
+    def _restore_from_attributes(
+        self, per_entity: Mapping[str, Any], _state: State | None = None
+    ) -> bool:
         """Seed each cover's last commanded target back into CoverCommandService.
+
+        The restored ``State`` is ignored here: this sensor's own state is a
+        retry count, and every target it restores is per cover in
+        ``per_entity``.
 
         per_entity maps cover entity_id → its diagnostics dict. Entries not in
         the current cover set, or whose ``target`` is None, are skipped. Each
@@ -376,6 +414,56 @@ class _PositionVerificationSensor(_ACPRestorableDiagnosticSensor):
                 restored_any = True
 
         return restored_any
+
+
+# State strings a TIMESTAMP sensor legitimately persists when it has no value.
+# Dropped SILENTLY rather than warned about (issue #175): "nothing was holding
+# when HA went down" is the normal restart, so warning on it would put a scary
+# line in the log of most installs most of the time.
+_NO_RESTORED_VALUE: frozenset[str] = frozenset({STATE_UNKNOWN, STATE_UNAVAILABLE, ""})
+
+
+class _CloudEscalationEndSensor(_ACPRestorableDiagnosticSensor):
+    """Concrete: rehydrate the cloud-escalation deadline after a restart (#175).
+
+    The one part of the escalation a user cannot debug from the outside — and
+    the one piece of its state that must not be volatile. Cloud suppression
+    deliberately re-engages instantly on reload (#1238's ``seeded=False``), so
+    a clock that restarted with HA would hand an install that reboots daily a
+    fresh full hold every day and the escalation would never fire.
+
+    ``RestoreEntity`` through a diagnostic sensor is the whole persistence
+    story in this integration — there is no ``homeassistant.helpers.storage``
+    ``Store`` anywhere in the component — so this follows
+    ``manual_override_end_time``, the only other restored deadline.
+    """
+
+    def _restore_from_attributes(
+        self, per_entity: Mapping[str, Any], state: State | None = None
+    ) -> bool:
+        """Push the prior escalation deadline back into the manager.
+
+        Reads the sensor's own STATE, not ``per_entity``: the deadline is one
+        instant per config entry, matching ``CloudSuppressionManager`` being
+        coordinator-scoped, so there is nothing to key a mapping on.
+
+        A deadline already in the past is dropped, following the
+        manual-override precedent. It says the escalation had already fired
+        before the restart, and adopting one that could be weeks old would
+        fling the cover open the instant any cloud appeared after a long
+        shutdown. Every other unusable shape is dropped with a warning by the
+        shared parser (#1273) — one bad payload must not break sensor setup.
+        """
+        if state is None or state.state in _NO_RESTORED_VALUE:
+            return False
+        deadline = _parse_restored_expiry(
+            self.entity_id, state.state, label="cloud-escalation"
+        )
+        if deadline is None or deadline <= dt.datetime.now(dt.UTC):
+            return False
+        mgr = self.coordinator._cloud_mgr  # noqa: SLF001
+        mgr.restore_escalation_deadline(deadline)
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -848,6 +936,26 @@ def _manual_override_end_attrs(
         "per_entity": {
             entity_id: expiry.isoformat() for entity_id, expiry in expiries.items()
         }
+    }
+
+
+def _cloud_escalation_end_value(
+    s: _CloudEscalationEndSensor,
+) -> dt.datetime | None:
+    """Return the derived deadline, or None with nothing holding / no delay set."""
+    return s.coordinator._cloud_mgr.escalation_deadline  # noqa: SLF001
+
+
+def _cloud_escalation_end_attrs(
+    s: _CloudEscalationEndSensor,
+) -> Mapping[str, Any] | None:
+    """Publish the phase and the two inputs the deadline is derived from."""
+    mgr = s.coordinator._cloud_mgr  # noqa: SLF001
+    started_at = mgr.suppression_started_at
+    return {
+        "phase": mgr.phase,
+        "delay_seconds": mgr.escalation_delay_seconds,
+        "started_at": None if started_at is None else started_at.isoformat(),
     }
 
 
@@ -1527,6 +1635,15 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         attrs_fn=_manual_override_end_attrs,
     ),
     _SensorSpec(
+        suffix="cloud_escalation_end_time",
+        icon="mdi:timer-sand",
+        translation_key="cloud_escalation_end_time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        should_poll=False,
+        value_fn=_cloud_escalation_end_value,
+        attrs_fn=_cloud_escalation_end_attrs,
+    ),
+    _SensorSpec(
         suffix="position_verification",
         icon="mdi:refresh",
         translation_key="position_verification",
@@ -1608,6 +1725,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
 # Specs that need a non-default class (RestoreEntity hooks etc.).
 _SPEC_OVERRIDES: dict[str, type[_ACPDiagnosticSensor]] = {
     "manual_override_end_time": _ManualOverrideEndSensor,
+    "cloud_escalation_end_time": _CloudEscalationEndSensor,
     "position_verification": _PositionVerificationSensor,
 }
 

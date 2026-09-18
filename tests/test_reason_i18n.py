@@ -60,6 +60,11 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
     (ReasonCode.FRAGMENT_SUNSET_POSITION, {}, "sunset position"),
     (ReasonCode.FRAGMENT_DEFAULT_POSITION, {}, "default position"),
     (ReasonCode.FRAGMENT_CLOUDY_POSITION, {}, "cloudy position"),
+    (
+        ReasonCode.FRAGMENT_CLOUD_ESCALATED_POSITION,
+        {},
+        "opened fully after the cloud delay",
+    ),
     (ReasonCode.FRAGMENT_COVERAGE_STEP, {"steps": 3}, " (coverage step, max 3)"),
     (ReasonCode.FRAGMENT_Z_ADJUSTED, {}, " (Z-adjusted)"),
     (

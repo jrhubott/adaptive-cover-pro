@@ -27,6 +27,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    CONF_CLOUDY_TILT,
     CONF_DEFAULT_HEIGHT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
@@ -3623,7 +3624,16 @@ def test_cloudy_position_zero_is_shown_not_skipped():
 
 
 def test_cloudy_position_set_without_suppression_shows_warning():
-    """⚠️ warning when cloudy_position is set but cloud suppression is disabled."""
+    """⚠️ warning when cloudy_position is set but cloud suppression is disabled.
+
+    Deliberately revised for #175: the single-key ``warnings.cloudy_pos_ignored``
+    became the unified ``warnings.cloud_settings_ignored``, which lists whichever
+    Light & Cloud targets are configured. The behaviour this test guards — a
+    configured cloudy position with the master toggle off warns the user — is
+    unchanged; only the sentence it warns with is. The rendered fragment is now
+    asserted explicitly rather than by substring sniffing, so a future fourth
+    setting cannot quietly drop this one from the list.
+    """
     cfg = {
         CONF_CLOUD_SUPPRESSION: False,
         CONF_CLOUDY_POSITION: 25,
@@ -3631,6 +3641,7 @@ def test_cloudy_position_set_without_suppression_shows_warning():
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "⚠️" in summary
     assert "cloud suppression" in summary.lower()
+    assert "cloudy position 25%" in summary
 
 
 def test_cloudy_position_no_warning_when_suppression_on():
@@ -5275,3 +5286,121 @@ def test_weather_tilt_min_mode_warning_absent_without_a_tilt():
     del cfg[CONF_WEATHER_OVERRIDE_TILT]
     summary = _build_config_summary(cfg, CoverType.VENETIAN)
     assert _WX_TILT_MIN_MODE_PHRASE not in summary
+
+
+# ---------------------------------------------------------------------------
+# cloudy_tilt summary + the unified ignored-settings warning (issue #175)
+# ---------------------------------------------------------------------------
+
+
+def test_cloud_line_shows_the_cloudy_tilt_for_a_venetian():
+    """The slat target rides the cloud line beside the carriage target.
+
+    Reuses ``custom.tilt_note`` — the same ", tilt {tilt}%" fragment the
+    custom-position and weather lines already use, because it says exactly the
+    same thing about the same axis.
+    """
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_CLOUDY_POSITION: 0,
+        CONF_CLOUDY_TILT: 100,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    cloud_line = next(ln for ln in summary.splitlines() if "Cloud suppression" in ln)
+    assert "cloudy position 0%" in cloud_line
+    assert "tilt 100%" in cloud_line
+
+
+def test_cloudy_tilt_of_zero_is_shown_not_skipped():
+    """0% = slats closed, a real privacy setting, not "unset"."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_CLOUDY_POSITION: 100,
+        CONF_CLOUDY_TILT: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    cloud_line = next(ln for ln in summary.splitlines() if "Cloud suppression" in ln)
+    assert "tilt 0%" in cloud_line
+
+
+def test_cloud_line_hides_a_stored_cloudy_tilt_on_a_single_axis_cover():
+    """A stored slat angle must not promise slat movement to a cover with no slats.
+
+    The key survives a venetian → blind cover-type switch (#1132 deletes
+    nothing) and ``acp.set_light_cloud`` has no cover-type gate, so the summary
+    must consult the policy rather than the stored value — the same rule the
+    weather line follows for ``weather_override_tilt`` (#1297).
+    """
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_CLOUDY_POSITION: 0,
+        CONF_CLOUDY_TILT: 100,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    cloud_line = next(ln for ln in summary.splitlines() if "Cloud suppression" in ln)
+    assert "cloudy position 0%" in cloud_line
+    assert "tilt" not in cloud_line
+
+
+def test_cloudy_tilt_set_without_suppression_is_listed_in_the_warning():
+    """The footgun: a slat target configured while the master toggle is off."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: False,
+        CONF_CLOUDY_TILT: 100,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "⚠️" in summary
+    assert "cloudy slat angle 100%" in summary
+
+
+def test_ignored_cloud_settings_share_one_warning_line():
+    """Both targets configured with suppression off → ONE line naming both.
+
+    The unified guard, asserted as a unification rather than as two warnings:
+    three mirrored ``if`` blocks would emit three ⚠️ lines saying the same
+    thing about the same disabled toggle.
+    """
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: False,
+        CONF_CLOUDY_POSITION: 25,
+        CONF_CLOUDY_TILT: 100,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    warning_lines = [
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "cloud suppression" in ln.lower()
+    ]
+    assert len(warning_lines) == 1
+    assert "cloudy position 25%" in warning_lines[0]
+    assert "cloudy slat angle 100%" in warning_lines[0]
+
+
+def test_no_ignored_warning_when_suppression_is_on():
+    """Both targets configured and the toggle on → nothing to warn about."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_CLOUDY_POSITION: 25,
+        CONF_CLOUDY_TILT: 100,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert not [
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "will be ignored" in ln.lower()
+    ]
+
+
+def test_stored_cloudy_tilt_is_not_warned_about_on_a_single_axis_cover():
+    """A cover with no slat axis must not be warned about a field it cannot see.
+
+    The same policy gate as the cloud line: the value is inert for this cover
+    type whether or not suppression is on, and pointing the user at the master
+    toggle would send them looking for a slider their form never renders.
+    """
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: False,
+        CONF_CLOUDY_TILT: 100,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "slat angle" not in summary

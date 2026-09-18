@@ -10,6 +10,7 @@ from ..helpers import (
     compute_default_position,
     compute_default_tilt,
     compute_raw_calculated_position,
+    resolve_cloudy_tilt,
 )
 from ..types import PipelineResult, PipelineSnapshot
 
@@ -37,6 +38,13 @@ class CloudSuppressionHandler(OverrideHandler):
         time-window guards and the cloudy/default/sunset position selection. The
         guards run AHEAD of the resolved-bool gate so suppression can never fire
         while the sun is outside the window FOV (#417).
+
+        The escalation to full open (issue #175) is emitted from HERE and
+        nowhere else, which is what keeps that #417 ordering meaningful: the
+        manager runs the clock, but the moment the sun leaves the FOV this
+        method returns ``None`` and ``DefaultHandler`` takes the seat, so an
+        expired deadline cannot leak a position where suppression has no
+        business acting.
         """
         if not snapshot.in_time_window:
             return None
@@ -76,21 +84,43 @@ class CloudSuppressionHandler(OverrideHandler):
         # Each branch states its own tilt (issue #1214). The two that resolve
         # the position from the effective default pair it with the effective
         # default/sunset tilt; the cloudy_position branch answers with a
-        # configured override, so the slats hold their current angle — the
-        # #1153 rule for hold-type winners. Provenance, not value: a
-        # cloudy_position that happens to equal the default position (0 %
-        # alongside a venetian's default_percentage of 0 %, the #1214
-        # reporter's own config) is still an override.
+        # configured override, so it answers with the configured cloud tilt —
+        # and with nothing when none is configured, leaving the slats where
+        # they are, the #1153 rule for hold-type winners. Provenance, not
+        # value: a cloudy_position that happens to equal the default position
+        # (0 % alongside a venetian's default_percentage of 0 %, the #1214
+        # reporter's own config) is still an override, so it never borrows
+        # default_tilt no matter what the numbers say.
+        #
+        # The escalated branch (issue #175) sits second: below sunset, because
+        # "open fully" is a daytime answer and the user's sunset position still
+        # wins after dark — and ABOVE the ``cloudy is not None`` test, because
+        # "open fully after N hours of cloud" is a complete feature on its own.
+        # Nested inside the cloudy branch it would silently do nothing for
+        # anyone who configured a delay but never a cloudy position, and the
+        # two options are meant to be independently optional.
         cloudy = snapshot.climate_options.cloudy_position
+        # One resolution for the whole cloud-suppression seat, read by both
+        # override branches: "the slats go here while it's cloudy" does not
+        # stop being true when the carriage rises too.
+        cloud_tilt = resolve_cloudy_tilt(snapshot)
+        escalated = False
         tilt: int | None
         if snapshot.is_sunset_active:
             position = compute_default_position(snapshot)
             pos_label = Reason(ReasonCode.FRAGMENT_SUNSET_POSITION)
             tilt = compute_default_tilt(snapshot)
+        elif snapshot.cloud_escalation_active:
+            position = apply_snapshot_limits(
+                snapshot, snapshot.unshaded_position, sun_valid=False
+            )
+            pos_label = Reason(ReasonCode.FRAGMENT_CLOUD_ESCALATED_POSITION)
+            tilt = cloud_tilt
+            escalated = True
         elif cloudy is not None:
             position = apply_snapshot_limits(snapshot, cloudy, sun_valid=False)
             pos_label = Reason(ReasonCode.FRAGMENT_CLOUDY_POSITION)
-            tilt = None
+            tilt = cloud_tilt
         else:
             position = compute_default_position(snapshot)
             pos_label = Reason(ReasonCode.FRAGMENT_DEFAULT_POSITION)
@@ -100,6 +130,10 @@ class CloudSuppressionHandler(OverrideHandler):
             position=position,
             control_method=ControlMethod.CLOUD,
             tilt=tilt,
+            # Only this branch ever sets it, and only ``cover_types/`` reads it
+            # (#175) — the flag is what releases a tilt-only venetian's carriage
+            # pin for the escalation and for nothing else.
+            cloud_escalation_active=escalated,
             reason_payload=Reason(
                 ReasonCode.CLOUD_SUPPRESSION,
                 {
