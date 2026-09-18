@@ -153,6 +153,36 @@ class TestAreaDeviceIds:
     an implementation detail and silently stops intercepting the day HA
     rewrites the wrapper — which is exactly what HA 2026.8 did (issue #1373).
     A real registry tracks the rewrite for free.
+
+    How the coverage splits across the two lanes
+    ----------------------------------------------
+    ``area_device_ids`` does two separable things, and each is pinned where it
+    can be pinned honestly:
+
+    - **Mapping entries → ids, in the accessor's order.** ACP owns this, and
+      it needs no registry — ``test_delegates_to_the_public_area_accessor``
+      covers it in the ``unit`` lane with two devices, and *does* assert
+      order, because preserving the order the accessor hands back is our
+      contract to keep.
+    - **Selectivity — the index really filters by area.** HA owns this, and
+      there is no way to demonstrate it without a real registry: a mock would
+      only replay whatever the test itself fed in. So
+      ``test_returns_device_ids_in_area`` and
+      ``test_unknown_area_returns_empty_list`` are ``integration``-marked by
+      necessity, not by preference, and ``./scripts/test unit`` does not cover
+      them. That is the deliberate trade for deleting the white-box mocks
+      (issue #1373); the alternative was a ``unit`` test that passed no matter
+      what HA's registry did.
+
+    Why the real-registry test sorts both sides
+    ---------------------------------------------
+    ``dr.async_entries_for_area`` makes no ordering promise — the order falls
+    out of whichever index HA maintains internally, which is the same class of
+    detail this change exists to stop depending on. The predecessor test
+    asserted "in index order" against a mock that had been handed a list, so
+    it was only ever restating its own setup. Sorting both sides pins the
+    *set* of devices in the area, which is the behaviour users have; order is
+    pinned one lane up, where ACP actually owns it.
     """
 
     @pytest.mark.integration
@@ -199,18 +229,26 @@ class TestAreaDeviceIds:
         The registry is spec'd to ``dr.DeviceRegistry``, whose ``devices`` is
         annotation-only, so reaching for the index raises here instead of
         quietly auto-vivifying.
+
+        Two devices rather than one, so this also carries the ``unit`` lane's
+        share of the behaviour: every entry the accessor returns contributes
+        its ``id``, and the accessor's order survives. Both are ACP's own
+        contract, so unlike selectivity they can be asserted without a real
+        registry — see the class docstring.
         """
-        device = MagicMock()
-        device.id = "dev1"
+        first = MagicMock()
+        first.id = "dev1"
+        second = MagicMock()
+        second.id = "dev2"
         registry = MagicMock(spec=dr.DeviceRegistry)
 
         with (
             patch(f"{_MOD}.dr.async_get", return_value=registry),
             patch(
-                f"{_MOD}.dr.async_entries_for_area", return_value=[device]
+                f"{_MOD}.dr.async_entries_for_area", return_value=[first, second]
             ) as accessor,
         ):
-            assert area_device_ids(mock_hass, "area_x") == ["dev1"]
+            assert area_device_ids(mock_hass, "area_x") == ["dev1", "dev2"]
 
         accessor.assert_called_once_with(registry, "area_x")
 

@@ -102,10 +102,21 @@ its reach, in rough order of likelihood:
 - ``device_id in dev_reg.devices`` — ``__contains__`` is a mapping read too.
 - ``len(reg.devices)`` and ``dict(reg.devices)`` — any coercion or builtin
   that consumes the mapping without naming one of its methods.
-- Aliasing: ``items = reg.entities`` followed by ``items.values()`` — the
-  scan has no dataflow, only shapes.
+- Aliasing, against **either** matcher: ``items = reg.entities`` followed by
+  ``items.values()`` or ``items.get_entry(...)`` — the scan has no dataflow,
+  only shapes, so once the container is bound to a plain local it is invisible.
 - A registry reached through a subscript or an unconventionally named local
   (``hass.data[SOMETHING].devices.values()``, ``r.devices.values()``).
+- **A patch target written as a string** —
+  ``patch("homeassistant.helpers.device_registry.DeviceRegistryItems.get_devices_for_area_id")``
+  reaches the same internal, but it is an ``ast.Constant``: there is no
+  attribute access to match on.  Matching strings was considered and rejected
+  as unfixably leaky — this module's own docstring quotes
+  ``dev_reg.devices.values()`` as prose, and so does every docstring
+  explaining the rule, so a string scan would flag the guard that defines it.
+  Patching an HA-internal *path* is rarer than mocking an attribute and is a
+  deliberate act rather than a copy-paste, which is why the honest gap is
+  preferable to a matcher that cries wolf.
 
 (``reg.entities.data.values()`` used to be listed here.  The internal-access
 matcher closes it: ``.data`` is flagged as an internal attribute before the
@@ -264,16 +275,27 @@ def _is_mapping_access(node: ast.AST) -> bool:
 
 
 def _is_internal_access(node: ast.AST) -> bool:
-    """Report whether node reaches into a registry-items container's internals.
+    """Report whether node reaches into — or stubs out — a registry-items container.
 
-    Any attribute on ``<registry>.devices`` / ``.entities`` that is not one of
-    the deprecated mapping methods: ``get_devices_for_area_id``, ``get_entry``,
-    ``data``.  ``_is_mapping_access`` owns the deprecated names, so the two
-    matchers partition the surface rather than overlapping on it.
+    Two shapes, both of which pin an HA implementation detail:
 
-    Bare iteration (``for device in reg.devices``) names no attribute at all
-    and so is not an ``ast.Attribute`` here — it stays sanctioned.
+    - **Reading an internal.** An attribute on ``<registry>.devices`` /
+      ``.entities`` that is not one of the deprecated mapping methods:
+      ``get_devices_for_area_id``, ``get_entry``, ``data``.
+      ``_is_mapping_access`` owns the deprecated names, so the two matchers
+      partition the surface rather than overlapping on it.
+    - **Replacing the container.** An assignment *to* it —
+      ``dev_reg_mock.devices = MagicMock(spec=[...])``.  A test that stubs the
+      container has pinned the registry's internal structure without ever
+      naming one of its attributes, so the read half above never sees it.
+      This is the shape #1345 left behind in ``test_global_services`` and
+      #1373 removed.
+
+    Bare iteration (``for device in reg.devices``) names no attribute and
+    assigns nothing, so it stays sanctioned.
     """
+    if isinstance(node, ast.Assign):
+        return any(_is_registry_items(target) for target in node.targets)
     return (
         isinstance(node, ast.Attribute)
         and node.attr not in _MAPPING_METHODS
@@ -396,8 +418,13 @@ def test_matcher_ignores_containers_that_are_not_registries(source):
         ("registry.devices.get_devices_for_area_id(area_id)", True),
         ("dev_reg_mock.devices.get_devices_for_area_id.side_effect = fn", True),
         ("ent_reg.entities.data", True),
+        # Stubbing the container wholesale names no internal attribute, so the
+        # read half of the matcher cannot see it.
+        ('dev_reg_mock.devices = MagicMock(spec=["get_devices_for_area_id"])', True),
+        ("ent_reg.entities = {}", True),
         # ACP's own ``entities`` list — the receiver is not registry-shaped.
         ("coordinator.entities.append(entity_id)", False),
+        ("coordinator.entities = []", False),
         # A bare local, not a registry-items container.
         ("devices.get_devices_for_area_id(area_id)", False),
         # Bare iteration is sanctioned by HA and names no attribute.

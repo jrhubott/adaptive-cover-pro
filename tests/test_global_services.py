@@ -160,7 +160,7 @@ def test_resolve_device_id_maps_to_coordinator():
     fake_device.config_entries = ["entry_abc"]
     fake_device.area_id = None
 
-    dev_reg_mock = MagicMock()
+    dev_reg_mock = MagicMock(spec=dr.DeviceRegistry)
     dev_reg_mock.async_get = MagicMock(return_value=fake_device)
 
     call = _make_call(device_id="device_xyz")
@@ -184,9 +184,8 @@ def test_resolve_entity_id_within_device_coordinator_not_narrowed():
     fake_device.config_entries = ["entry_abc"]
     fake_device.area_id = None
 
-    dev_reg_mock = MagicMock()
+    dev_reg_mock = MagicMock(spec=dr.DeviceRegistry)
     dev_reg_mock.async_get = MagicMock(return_value=fake_device)
-    dev_reg_mock.devices = {}  # no area expansion needed
 
     call = MagicMock()
     call.data = {
@@ -248,7 +247,7 @@ def test_resolve_string_device_id_normalized():
     def _discriminating_get(device_id):
         return fake_device if device_id == full_device_id else None
 
-    dev_reg_mock = MagicMock()
+    dev_reg_mock = MagicMock(spec=dr.DeviceRegistry)
     dev_reg_mock.async_get = MagicMock(side_effect=_discriminating_get)
 
     call = _make_call(device_id=full_device_id, raw=True)
@@ -264,7 +263,18 @@ def test_resolve_string_device_id_normalized():
 
 
 def test_resolve_string_area_id_normalized():
-    """RAW string area_id (not list-wrapped) must expand and resolve correctly."""
+    """RAW string area_id (not list-wrapped) must expand and resolve correctly.
+
+    Scope: this pins *normalization* — the shape in which a raw ``area_id``
+    reaches the expansion — and stops at the seam. The behavioural witness
+    that the expansion really walks a registry is
+    ``test_group_services.py::test_cover_target_resolution_by_area``, which
+    drives this same ``_resolve_targets`` area branch through a real area and
+    device registry (and its empty-area twin alongside it). Breaking
+    ``area_device_ids`` fails that test, so the end-to-end hop is covered; it
+    lives there because this module is deliberately mock-only and has no
+    ``hass``.
+    """
     coord_a = _make_coordinator(["cover.a"])
     hass = _make_hass({"entry_abc": coord_a})
 
