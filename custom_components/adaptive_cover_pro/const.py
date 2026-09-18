@@ -1102,6 +1102,16 @@ CONF_CLOUDY_POSITION = "cloudy_position"  # position while suppressed (0-100)
 # default: absent means the handler names no tilt and the slats are left where
 # the previous cycle put them, which is the pre-#175 behaviour.
 CONF_CLOUDY_TILT = "cloudy_tilt"
+# How long cloud suppression may keep holding before it gives up on the cloudy
+# position/slat angle and opens the cover fully (issue #175). A
+# DurationSelector dict, NOT seconds — the runtime slice converts it. This is
+# NOT the smoothing hold-time below: that one decides how fast suppression
+# ENGAGES, this one decides how long it may STAY engaged. Has NO default:
+# absent — or an all-zero duration, which is what the selector stores for a
+# blank field — means no escalation ever, which is the pre-#175 behaviour (so
+# no config migration). A brief sunny spell resets the clock; the smoothing
+# hold-time below is the debounce for riding out short gaps.
+CONF_CLOUD_ESCALATION_DELAY = "cloud_escalation_delay"
 
 # Smoothing controls (issue #864). All default to today's instantaneous,
 # single-crossing behaviour so an absent key changes nothing on upgrade/rollback.
@@ -2150,6 +2160,11 @@ class ReasonCode(StrEnum):
     FRAGMENT_SUNSET_POSITION = "fragment.sunset_position"
     FRAGMENT_DEFAULT_POSITION = "fragment.default_position"
     FRAGMENT_CLOUDY_POSITION = "fragment.cloudy_position"
+    # The cloudy position's replacement once a hold outlives the configured
+    # escalation delay (issue #175). A separate fragment, not a suffix on
+    # ``fragment.cloudy_position``: the escalated branch fires with no cloudy
+    # position configured at all, so there is nothing for a suffix to attach to.
+    FRAGMENT_CLOUD_ESCALATED_POSITION = "fragment.cloud_escalated_position"
     FRAGMENT_COVERAGE_STEP = "fragment.coverage_step"
     FRAGMENT_Z_ADJUSTED = "fragment.z_adjusted"
     # Names the gate sensors holding sun tracking shut (issue #1359). A
@@ -2974,6 +2989,29 @@ class AxisConstraintMode(StrEnum):
     MIN = "min"
     MAX = "max"
     RANGE = "range"
+
+
+class CloudSuppressionPhase(StrEnum):
+    """How far along a continuous cloud-suppression hold is (issue #175).
+
+    Wire-stable identifiers: published in the diagnostics dump and as an
+    attribute of the ``cloud_escalation_end_time`` sensor, so a triage read can
+    tell "holding the cloudy position" from "gave up and opened" without
+    recomputing a deadline.
+
+    ``IDLE``       Suppression is not resolved-active. The absence of a hold,
+                   not a hold that has run for zero seconds.
+    ``HOLDING``    Suppression is active and either no escalation delay is
+                   configured — hold for as long as the cloud lasts, the
+                   pre-#175 behaviour — or the derived deadline is still ahead.
+    ``ESCALATED``  Suppression has held continuously past the derived deadline,
+                   so the handler answers with the unshaded position instead of
+                   the cloudy one.
+    """
+
+    IDLE = "idle"
+    HOLDING = "holding"
+    ESCALATED = "escalated"
 
 
 class GroupScene(StrEnum):

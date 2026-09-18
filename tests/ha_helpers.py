@@ -266,10 +266,10 @@ def _bare_coordinator(**overrides: Any) -> Any:
     which handle a given test cares about: ``_grace_mgr.cancel_all()``,
     ``_cancel_motion_timeout()``, ``_cancel_weather_timeout()``,
     ``_sensor_health.shutdown()``, ``_repair.shutdown()``, ``_cmd_svc.stop()``,
-    six ``if self._X_unsub is not None: ...`` cancel blocks
+    seven ``if self._X_unsub is not None: ...`` cancel blocks
     (``_forecast_unsub``, ``_forecast_max_unsub``, ``_gate_fallback_unsub``,
     ``_refresh_after_unsub``, ``_custom_position_hold_unsub``,
-    ``_sun_tracking_gate_unsub``), the
+    ``_sun_tracking_gate_unsub``, ``_cloud_escalation_unsub``), the
     ``_external_interlock_tasks`` map (#1138), and the travel-time calibrator
     plus its republish tick handle. Every test
     that exercises ``async_shutdown`` against a from-scratch stub needs all of
@@ -299,6 +299,7 @@ def _bare_coordinator(**overrides: Any) -> Any:
     coord._refresh_after_unsub = None
     coord._custom_position_hold_unsub = None
     coord._sun_tracking_gate_unsub = None
+    coord._cloud_escalation_unsub = None
     coord._external_interlock_tasks = {}
     # Shutdown stands a calibration run down and cancels its republish tick.
     coord._travel_calibrator = MagicMock()

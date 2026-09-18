@@ -520,3 +520,74 @@ def test_outside_temp_source_reads_set_value() -> None:
         {CONF_OUTSIDE_TEMP_SOURCE: "max_of_live_and_forecast"}
     )
     assert rc.outside_temp_source == "max_of_live_and_forecast"
+
+
+# ---------------------------------------------------------------------------
+# Cloud-escalation delay (issue #175)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_cloud_escalation_delay_absent_is_none() -> None:
+    """No key → no escalation, which is every install before #175."""
+    rc = RuntimeConfig.from_options({})
+    assert rc.cloud_suppression.escalation_delay_seconds is None
+
+
+@pytest.mark.unit
+def test_cloud_escalation_delay_converts_the_duration_dict() -> None:
+    """A ``DurationSelector`` stores components; the manager wants seconds."""
+    from custom_components.adaptive_cover_pro.const import CONF_CLOUD_ESCALATION_DELAY
+
+    rc = RuntimeConfig.from_options(
+        {CONF_CLOUD_ESCALATION_DELAY: {"hours": 2, "minutes": 0, "seconds": 0}}
+    )
+    assert rc.cloud_suppression.escalation_delay_seconds == 7200
+
+
+@pytest.mark.unit
+def test_cloud_escalation_delay_sums_every_component() -> None:
+    """Hours, minutes and seconds all count — not just the largest one."""
+    from custom_components.adaptive_cover_pro.const import CONF_CLOUD_ESCALATION_DELAY
+
+    rc = RuntimeConfig.from_options(
+        {CONF_CLOUD_ESCALATION_DELAY: {"hours": 1, "minutes": 30, "seconds": 15}}
+    )
+    assert rc.cloud_suppression.escalation_delay_seconds == 5415
+
+
+@pytest.mark.unit
+def test_cloud_escalation_delay_all_zero_is_none() -> None:
+    """The ``DurationSelector`` footgun: a blank field stores all-zero, not nothing.
+
+    HA's duration control submits ``{"hours": 0, "minutes": 0, "seconds": 0}``
+    for an untouched field, so "absent" and "explicitly nothing" arrive as two
+    different values meaning the same thing. Read literally, zero seconds would
+    mean *escalate the instant a cloud arrives* — the loudest possible
+    misreading of a blank field, and it would fire for everyone who so much as
+    opened the Light & Cloud step.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_CLOUD_ESCALATION_DELAY
+
+    rc = RuntimeConfig.from_options(
+        {CONF_CLOUD_ESCALATION_DELAY: {"hours": 0, "minutes": 0, "seconds": 0}}
+    )
+    assert rc.cloud_suppression.escalation_delay_seconds is None
+
+
+@pytest.mark.unit
+def test_cloud_escalation_delay_empty_dict_is_none() -> None:
+    """An empty dict is the same blank field with the components omitted."""
+    from custom_components.adaptive_cover_pro.const import CONF_CLOUD_ESCALATION_DELAY
+
+    rc = RuntimeConfig.from_options({CONF_CLOUD_ESCALATION_DELAY: {}})
+    assert rc.cloud_suppression.escalation_delay_seconds is None
+
+
+@pytest.mark.unit
+def test_cloud_escalation_delay_explicit_null_is_none() -> None:
+    """``acp.set_light_cloud`` clears the option by writing null."""
+    from custom_components.adaptive_cover_pro.const import CONF_CLOUD_ESCALATION_DELAY
+
+    rc = RuntimeConfig.from_options({CONF_CLOUD_ESCALATION_DELAY: None})
+    assert rc.cloud_suppression.escalation_delay_seconds is None

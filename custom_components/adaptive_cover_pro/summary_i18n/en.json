@@ -126,7 +126,9 @@
     "lux_release": "lux ≥ {release} lx",
     "irradiance_release": "irradiance ≥ {release} W/m²",
     "coverage_release": "cloud ≤ {release}%",
-    "ignored_tilt": "cloudy slat angle {tilt}%"
+    "ignored_tilt": "cloudy slat angle {tilt}%",
+    "ignored_escalation": "open-fully delay {delay}",
+    "escalation": " \u00b7 opens fully after {delay}"
   },
   "info": {
     "light_sensors_off": "📊 Light sensors configured ({names}) but cloud suppression is off.",

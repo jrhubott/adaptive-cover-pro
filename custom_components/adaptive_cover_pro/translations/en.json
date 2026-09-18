@@ -940,6 +940,7 @@
           "cloud_suppression": "Enable cloud suppression (master switch)",
           "cloudy_position": "Cloudy position (optional)",
           "cloudy_tilt": "Cloudy slat angle (optional)",
+          "cloud_escalation_delay": "Open fully after (optional)",
           "lux_release_threshold": "Lux release threshold (optional)",
           "irradiance_release_threshold": "Irradiance release threshold (optional)",
           "cloud_coverage_release_threshold": "Cloud coverage release threshold (optional)",
@@ -962,6 +963,7 @@
           "cloud_suppression": "Master on/off for this entire screen. When **off** (default), every sensor below is ignored and glare control runs as usual. When **on**, any configured sensor (weather state, lux, irradiance, or cloud coverage) that indicates the sun is absent will stop sun-tracking and move the cover to the **Cloudy position** above (or the default position if that is blank). Works on its own — climate mode does not need to be enabled.",
           "cloudy_position": "Position (0-100%) to move covers to when cloud suppression fires (cloudy / low-light conditions). 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Leave blank to use the default position.",
           "cloudy_tilt": "Slat tilt (0-100%) to command while cloud suppression is holding. 0% = slats closed, 100% = slats open. Leave empty to keep the slats where they are, which is the behaviour before this option existed. Only offered on cover types with an independent slat axis.",
+          "cloud_escalation_delay": "This is NOT the smoothing hold time. The smoothing hold time decides how quickly cloud suppression engages; this decides how long it may stay engaged. Once cloud suppression has held continuously for this long, the cover opens fully instead of staying at its cloudy position and slat angle. On a tilt-only venetian the carriage opens too. Leave empty (or all zeros) to hold for as long as the cloud lasts. A brief sunny spell resets this clock — use the smoothing hold time below to ride out short gaps.",
           "lux_release_threshold": "Optional hysteresis edge. Once suppression is active, keep it active until lux rises to at least this value — instead of releasing the moment lux climbs back above the Lux threshold. Set it comfortably higher than the Lux threshold to stop the cover flapping when the reading hovers around a single crossing point. Leave blank to disable hysteresis (release at the Lux threshold). Accepts a fixed number or a Home Assistant Jinja2 template.",
           "irradiance_release_threshold": "Optional hysteresis edge. Once suppression is active, keep it active until irradiance rises to at least this value — instead of releasing the moment it climbs back above the Irradiance threshold. Set it higher than the Irradiance threshold to prevent flapping around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
           "cloud_coverage_release_threshold": "Optional hysteresis edge. Once suppression is active, keep it active until cloud coverage falls to this value or below — instead of releasing the moment it drops below the Cloud coverage threshold. Set it lower than the Cloud coverage threshold to prevent flapping around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
@@ -1300,6 +1302,9 @@
       },
       "manual_override_end_time": {
         "name": "Manual Override End Time"
+      },
+      "cloud_escalation_end_time": {
+        "name": "Cloud Escalation End Time"
       },
       "position_verification": {
         "name": "Position Verification"
@@ -2033,6 +2038,10 @@
         "cloudy_tilt": {
           "name": "Cloudy slat angle",
           "description": "Slat tilt to set while cloud suppression is holding (0\u2013100%). 0% = slats closed, 100% = slats open. Venetian blinds only; null = leave the slats alone."
+        },
+        "cloud_escalation_delay": {
+          "name": "Open fully after",
+          "description": "How long cloud suppression may keep holding before the cover opens fully. Not the smoothing hold time: that one decides how fast suppression engages, this one how long it may stay engaged. Null or all zeros = hold for as long as the cloud lasts."
         },
         "is_sunny_sensor": {
           "name": "Is Sunny binary sensor",

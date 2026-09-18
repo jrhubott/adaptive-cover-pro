@@ -56,6 +56,7 @@ from .const import (
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+    CONF_CLOUD_ESCALATION_DELAY,
     CONF_CLOUDY_POSITION,
     CONF_CLOUDY_TILT,
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
@@ -1629,6 +1630,23 @@ _LIGHT_CLOUD_SPECS = _spec(
         rng=const._RANGE_TILT,
         clearable=True,
         make_selector=_const(position_slider),
+    ),
+    # How long a cloudy hold may run before the cover opens fully (#175).
+    # NO ``default=``, deliberately NOT a copy of the ``default={"hours": 2}``
+    # the manual-override duration spec carries: that literal is already a
+    # duplicate of DEFAULT_MANUAL_OVERRIDE_DURATION, and here it would be
+    # worse than a duplicate — it would turn every existing install's first
+    # visit to this screen into an opt-in to a two-hour escalation nobody
+    # asked for. Clearable, so a blank field is stripped back to absent
+    # rather than stored as an all-zero duration. Unlike the slat angle above
+    # this carries no cover-type gate: "give up on the cloudy hold" means the
+    # same thing on every axis count.
+    FieldSpec(
+        CONF_CLOUD_ESCALATION_DELAY,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.DURATION,
+        clearable=True,
+        make_selector=_const(selector.DurationSelector),
     ),
     FieldSpec(
         CONF_WEATHER_ENTITY, SECTION_LIGHT_CLOUD, ValidatorKind.ENTITY, clearable=True

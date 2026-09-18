@@ -982,6 +982,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._custom_position_hold_unsub: Callable[[], None] | None = None
         self._sun_tracking_gate_unsub: Callable[[], None] | None = None
 
+        # Issue #175: cancel handle for the single ``async_call_later`` wake
+        # that re-runs the update cycle the moment a cloud-suppression hold
+        # outlives its escalation delay. Its OWN handle, deliberately not
+        # ``_refresh_after_unsub``: that one is a single slot already owned by
+        # venetian back-rotate suppression (#756) and cancelled
+        # unconditionally, so sharing it would have the two wakes silently
+        # cancelling each other.
+        self._cloud_escalation_unsub: Callable[[], None] | None = None
+
         # Issue #1138 (re-keyed for #1156 / #1144 item 2): in-flight
         # external-command interlock corrections, keyed by the UNORDERED PAIR
         # of entities the correction moves — not by whichever one's command is
@@ -2546,6 +2555,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             motion_timeout_active=self.is_motion_timeout_active,
             weather_override_active=self.is_weather_override_active,
             cloud_suppression_active=self._cloud_mgr.is_suppression_active,
+            # How long that suppression has been holding, resolved to one bool
+            # by the same manager (#175). Threaded beside the decision itself
+            # rather than recomputed downstream, so the handler stays pure.
+            cloud_escalation_active=self._cloud_mgr.is_escalation_active,
             climate_temp_flags=self._climate_smoothing_mgr.resolved_flags,
             in_time_window=self.check_adaptive_time,
             # The user's clock alone, kept separate from the gate-folded
@@ -2806,6 +2819,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # open to tracking at the exact grace expiry rather than whenever the
         # next incidental update happens to land.
         self._schedule_sun_tracking_gate_wake()
+
+        # Issue #175: and for the cloud-suppression escalation deadline, now
+        # that this cycle's reads have resolved whether suppression is holding
+        # and since when.
+        self._schedule_cloud_escalation_wake()
 
         return AdaptiveCoverData(
             climate_mode_toggle=self.switch_mode,
@@ -4316,6 +4334,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._cloud_mgr.update_config(
             enabled=rc.cloud_suppression.enabled,
             hold_time_seconds=rc.cloud_suppression.hold_time_seconds,
+            escalation_delay_seconds=rc.cloud_suppression.escalation_delay_seconds,
         )
         self._climate_smoothing_mgr.update_config(
             enabled=rc.climate_smoothing.enabled,
@@ -4480,6 +4499,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # indeterminate sighting, and the tap is one — but it also means no
             # hold wake is scheduled here.
             cloud_suppression_active=self._cloud_mgr.is_suppression_active,
+            # Pure property read like the line above — the escalation phase is
+            # derived from a stored instant, so an ad-hoc build advances
+            # nothing (#175).
+            cloud_escalation_active=self._cloud_mgr.is_escalation_active,
             climate_temp_flags=self._climate_smoothing_mgr.resolved_flags,
             in_time_window=self.check_adaptive_time,
             # Same clock/gate split as the update-cycle build — and the user-move
@@ -5260,6 +5283,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             calibrating=self._cmd_svc.calibrating,
             last_cover_action=self.last_cover_action,
             last_skipped_action=self.last_skipped_action,
+            # The escalation clock's live half (#175). Pure property reads —
+            # the phase is a comparison against a derived deadline, so building
+            # a diagnostics snapshot advances nothing.
+            cloud_suppression_phase=self.cloud_suppression_phase,
+            cloud_escalation_deadline=self.cloud_escalation_deadline,
             min_change=self.min_change,
             time_threshold=self.time_threshold,
             switch_mode=self._toggles.switch_mode,
@@ -6268,6 +6296,56 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         await self.async_request_refresh()
 
     @callback
+    def _schedule_cloud_escalation_wake(self) -> None:
+        """Schedule one refresh at the cloud-escalation deadline (issue #175).
+
+        The FOURTH instance of the pattern established by
+        :meth:`_schedule_gate_fallback_wake` (#742),
+        :meth:`_schedule_custom_position_hold_wake` (#1012) and
+        :meth:`_schedule_sun_tracking_gate_wake` (#1167) — one shared
+        cancel-then-arm seam, one handle per caller, no new scheduling code.
+
+        The manager's phase is a pure comparison against a derived deadline, so
+        the escalation would eventually be noticed by any later cycle; this
+        wake is what makes "after two hours" mean two hours rather than two
+        hours plus however long until the next incidental update. A quiet
+        overcast afternoon is exactly when incidental updates are rarest, which
+        is exactly when the escalation matters most.
+
+        ``seconds_until_escalation`` answers ``None`` for all three
+        no-wake-needed cases at once — nothing holding, no delay configured, or
+        already escalated — which is the contract
+        :meth:`_schedule_optional_wake` takes.
+        """
+        self._cloud_escalation_unsub = self._schedule_optional_wake(
+            self._cloud_escalation_unsub,
+            self._cloud_mgr.seconds_until_escalation(),
+            self._on_cloud_escalation_due,
+        )
+
+    async def _on_cloud_escalation_due(self, _now: dt.datetime) -> None:
+        """Fire when a cloud-suppression hold reaches its escalation deadline."""
+        self._cloud_escalation_unsub = None
+        await self.async_request_refresh()
+
+    @property
+    def cloud_suppression_phase(self):
+        """How far along the current cloud-suppression hold is (issue #175).
+
+        A property rather than a direct ``_cloud_mgr`` read at the diagnostics
+        construction site, matching ``automatic_control`` /
+        ``check_adaptive_time`` / ``last_cover_action`` beside it: the
+        coordinator's own read-only surface is what consumers bind to, not the
+        manager it happens to delegate to.
+        """
+        return self._cloud_mgr.phase
+
+    @property
+    def cloud_escalation_deadline(self):
+        """Absolute UTC instant the cloudy hold escalates at, or None (#175)."""
+        return self._cloud_mgr.escalation_deadline
+
+    @callback
     def _schedule_refresh_after(self, secs: float) -> None:
         """Schedule one refresh ``secs`` from now (issue #756).
 
@@ -6396,6 +6474,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._sun_tracking_gate_unsub is not None:
             self._sun_tracking_gate_unsub()
             self._sun_tracking_gate_unsub = None
+
+        # Cancel the cloud-escalation deadline wake (issue #175). The
+        # longest-lived wake in this family by an order of magnitude — the
+        # other three measure grace windows in minutes, this one can be
+        # legitimately pending for hours — so an unload that left it armed
+        # would refresh a coordinator nobody owns any more.
+        if self._cloud_escalation_unsub is not None:
+            self._cloud_escalation_unsub()
+            self._cloud_escalation_unsub = None
 
         # Stand down a calibration run and its republish tick. The run holds
         # ``calibrating`` on the command service, so an unload that left it

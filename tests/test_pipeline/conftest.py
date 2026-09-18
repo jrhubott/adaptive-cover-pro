@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from unittest.mock import MagicMock
 
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import CoverTypePolicy
 from custom_components.adaptive_cover_pro.pipeline.types import (
     ClimateOptions,
@@ -109,6 +110,8 @@ def make_snapshot(
     solar_floor_active: bool = True,
     group_intent=None,
     cloud_suppression_active: bool | None = None,
+    cloud_escalation_active: bool = False,
+    unshaded_position: int | None = None,
     climate_temp_flags=None,
     climate_extreme_heat_active: bool = False,
     # Convenience: configure mock cover
@@ -135,6 +138,11 @@ def make_snapshot(
             direct_sun_valid=direct_sun_valid,
             calculate_percentage_return=calculate_percentage_return,
         )
+    if unshaded_position is None:
+        # Mirrors production, where the snapshot builder resolves this from the
+        # policy rather than assuming a polarity (#175) — so an awning fixture
+        # gets POSITION_CLOSED here without the test having to say so.
+        unshaded_position = get_policy(cover_type).position_for_intent(sun_through=True)
     if cloud_suppression_active is None:
         cloud_suppression_active = bool(
             climate_options is not None
@@ -198,6 +206,8 @@ def make_snapshot(
         solar_floor_active=solar_floor_active,
         group_intent=group_intent,
         cloud_suppression_active=cloud_suppression_active,
+        cloud_escalation_active=cloud_escalation_active,
+        unshaded_position=unshaded_position,
         climate_temp_flags=climate_temp_flags,
         climate_extreme_heat_active=climate_extreme_heat_active,
     )

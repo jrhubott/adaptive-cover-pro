@@ -23,7 +23,8 @@
     "axis_tilt": "inclinaison",
     "gate_blocked_by": " (bloqué par {entities})",
     "gate_blocked_by_template": " (bloqué par le modèle du filtre)",
-    "gate_blocked_by_both": " (bloqué par {entities} et le modèle du filtre)"
+    "gate_blocked_by_both": " (bloqué par {entities} et le modèle du filtre)",
+    "cloud_escalated_position": "ouverture complète après le délai nuageux"
   },
   "solar": {
     "tracking": "soleil dans l'angle d'acceptation — position {position}%{suffix}"

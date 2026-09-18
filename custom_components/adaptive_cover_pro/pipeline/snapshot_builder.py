@@ -789,6 +789,7 @@ class PipelineSnapshotBuilder:
         clock_window_open: bool = True,
         cover_positions: Mapping[str, int | None] | None = None,
         cloud_suppression_active: bool = False,
+        cloud_escalation_active: bool = False,
         climate_temp_flags: ClimateTempFlags | None = None,
         effective_default: int | None = None,
         is_sunset_active: bool | None = None,
@@ -998,5 +999,13 @@ class PipelineSnapshotBuilder:
             solar_floor_active=solar_floor_active,
             time_threshold_minutes=_delta_time_minutes(options.get(CONF_DELTA_TIME)),
             cloud_suppression_active=cloud_suppression_active,
+            cloud_escalation_active=cloud_escalation_active,
+            # "What does fully open mean for me" asked once per cycle, through
+            # the policy method that already answers it for winter heating
+            # (#175). Resolving it here is what keeps the cloud handler — and
+            # every other pipeline consumer — free of a cover-type branch: an
+            # awning's unshaded position is CLOSED, and no handler should have
+            # to know that.
+            unshaded_position=self._policy.position_for_intent(sun_through=True),
             climate_temp_flags=climate_temp_flags,
         )

@@ -1098,6 +1098,11 @@ class TestConfigurationDiagnostics:
             "cloud_suppression_enabled",
             "cloudy_position",
             "cloudy_tilt",
+            # The escalation trio (#175): the stored setting plus the two live
+            # values no options read can reconstruct.
+            "cloud_escalation_delay",
+            "cloud_suppression_phase",
+            "cloud_escalation_deadline",
             "end_of_window_position",
             "is_sunny_source",
             "templated_thresholds",

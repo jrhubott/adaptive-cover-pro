@@ -669,7 +669,7 @@ def light_cloud_schema(
     ``cloud_suppression_includes_tilt``, never a cover-type comparison.
     """
     from .config_fields import FIELD_SPECS
-    from .const import CONF_IRRADIANCE_PLANE
+    from .const import CONF_CLOUD_ESCALATION_DELAY, CONF_IRRADIANCE_PLANE
 
     _irradiance_plane_marker, _irradiance_plane_selector = FIELD_SPECS[
         CONF_IRRADIANCE_PLANE
@@ -698,6 +698,17 @@ def light_cloud_schema(
 
         marker, sel = FIELD_SPECS[CONF_CLOUDY_TILT].to_marker(hass, options)
         schema[marker] = sel
+    # The escalation delay, from the registry for the same single-source
+    # reason (#175). UNGATED — every cover type can be told to stop holding a
+    # cloudy position — so it lands at index 3 behind the venetian slat angle
+    # and at index 2 without it. Either way it stays above every sensor field:
+    # it is a behaviour target, and #364's lesson is that those belong at the
+    # top of this screen rather than beside the smoothing hold-time twelve
+    # pickers down.
+    delay_marker, delay_sel = FIELD_SPECS[CONF_CLOUD_ESCALATION_DELAY].to_marker(
+        hass, options
+    )
+    schema[delay_marker] = delay_sel
     schema.update(
         {
             vol.Optional(

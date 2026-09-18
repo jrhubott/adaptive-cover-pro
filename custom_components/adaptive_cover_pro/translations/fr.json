@@ -944,7 +944,8 @@
           "irradiance_release_threshold": "Seuil de libération du rayonnement (optionnel)",
           "cloud_coverage_release_threshold": "Seuil de libération de la couverture nuageuse (optionnel)",
           "cloud_suppression_hold_time": "Temps de maintien de lissage",
-          "weather_state": "Conditions météorologiques"
+          "weather_state": "Conditions météorologiques",
+          "cloud_escalation_delay": "Ouverture complète après (optionnel)"
         },
         "data_description": {
           "weather_entity": "Intégration météo optionnelle utilisée pour détecter la couverture nuageuse. Quand l'état météo actuel ne figure pas dans la liste sélectionnée ci-dessous, le soleil direct est supposé absent et le contrôle de l'éblouissement est supprimé. Laissez vide pour ignorer l'état météo.",
@@ -965,7 +966,8 @@
           "lux_release_threshold": "Seuil d'hystérésis optionnel. Une fois la suppression active, la maintenir active jusqu'à ce que le lux augmente à au moins cette valeur — au lieu de la désactiver dès que le lux remonte au-dessus du seuil de lux. Définissez-la à une valeur confortablement supérieure au seuil de lux pour éviter que la protection ne clignote quand la lecture oscille autour d'un point de croisement unique. Laissez vide pour désactiver l'hystérésis (libération au seuil de lux). Accepte un nombre fixe ou un modèle Jinja2 Home Assistant.",
           "irradiance_release_threshold": "Seuil d'hystérésis optionnel. Une fois la suppression active, la maintenir active jusqu'à ce que le rayonnement augmente à au moins cette valeur — au lieu de la désactiver dès qu'il remonte au-dessus du seuil de rayonnement. Définissez-le à une valeur supérieure au seuil de rayonnement pour éviter le clignotement autour d'un point de croisement unique. Laissez vide pour désactiver l'hystérésis. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant.",
           "cloud_coverage_release_threshold": "Seuil d'hystérésis optionnel. Une fois la suppression active, la maintenir active jusqu'à ce que la couverture nuageuse tombe à cette valeur ou en dessous — au lieu de la désactiver dès qu'elle passe sous le seuil de couverture nuageuse. Définissez-le à une valeur inférieure au seuil de couverture nuageuse pour éviter le clignotement autour d'un point de croisement unique. Laissez vide pour désactiver l'hystérésis. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant.",
-          "cloud_suppression_hold_time": "Secondes pendant lesquelles un changement dans la décision de suppression doit persister avant de prendre effet. Cela élimine les rebonds des brefs passages nuageux et des brèves éclaircies pour que la protection ne se déplace pas à chaque nuage qui passe. 0 (par défaut) applique les changements immédiatement. Le même délai s'applique dans les deux directions — début et fin de la suppression."
+          "cloud_suppression_hold_time": "Secondes pendant lesquelles un changement dans la décision de suppression doit persister avant de prendre effet. Cela élimine les rebonds des brefs passages nuageux et des brèves éclaircies pour que la protection ne se déplace pas à chaque nuage qui passe. 0 (par défaut) applique les changements immédiatement. Le même délai s'applique dans les deux directions — début et fin de la suppression.",
+          "cloud_escalation_delay": "Ceci n'est PAS le temps de maintien de lissage. Le temps de maintien de lissage détermine la rapidité de la suppression des nuages ; ceci détermine la durée de son maintien. Une fois que la suppression des nuages s'est maintenue de façon continue pendant cette durée, la protection s'ouvre complètement au lieu de rester à sa position nuageuse et son angle de lamelle. Sur un store vénitien à inclinaison seule, le chariot s'ouvre également. Laissez vide (ou tous les zéros) pour maintenir tant que les nuages durent. Un bref ensoleillement réinitialise cette horloge — utilisez le temps de maintien de lissage ci-dessous pour surmonter les courtes pauses."
         }
       },
       "temperature_climate": {
@@ -1405,6 +1407,9 @@
           "failed": "Échoué",
           "cancelled": "Annulé"
         }
+      },
+      "cloud_escalation_end_time": {
+        "name": "Heure de fin d'escalade nuageuse"
       }
     },
     "switch": {
@@ -2037,6 +2042,10 @@
         "is_sunny_sensor": {
           "name": "Capteur binaire « Ensoleillé »",
           "description": "Entité binaire qui rapporte de manière fiable le soleil-sur-fenêtre. ACTIVÉ = ensoleillé, DÉSACTIVÉ = suppression des nuages se déclenche. Indisponible revient à l'état météorologique. Nul = aucun."
+        },
+        "cloud_escalation_delay": {
+          "name": "Ouverture complète après",
+          "description": "Durée pendant laquelle la suppression des nuages peut maintenir avant que la protection s'ouvre complètement. Pas le temps de maintien de lissage : celui-ci détermine la rapidité de l'engagement de la suppression, celui-ci détermine la durée de son maintien. Null ou tous les zéros = maintenir tant que les nuages durent."
         }
       }
     },

@@ -34,6 +34,7 @@ from .const import (
     CONF_CLIMATE_MODE,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
+    CONF_CLOUD_ESCALATION_DELAY,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
     CONF_CLOUDY_TILT,
@@ -99,6 +100,8 @@ from .const import (
 from .cover_types import get_policy
 from .helpers import (
     custom_position_slot_configured,
+    duration_seconds_or_none,
+    format_duration,
     is_template_string,
     manual_hold_is_unanchored,
     motion_entities,
@@ -378,6 +381,19 @@ def _cloudy_slats_note(options: Mapping) -> str:
     return "" if tilt is None else f" / slats {_fmt(tilt)}"
 
 
+def _cloud_escalation_note(options: Mapping) -> str:
+    """Return the open-fully suffix, or "" when no delay is configured (#175).
+
+    Gated on ``duration_seconds_or_none`` rather than on the key being present:
+    a blank duration field is stored as all-zero, and reporting "opens after
+    0 min" would claim an escalation the manager deliberately never runs.
+    """
+    delay = options.get(CONF_CLOUD_ESCALATION_DELAY)
+    if duration_seconds_or_none(delay) is None:
+        return ""
+    return f" / opens after {format_duration(delay)}"
+
+
 def _eff(options: Mapping, key: str, default: Any) -> Any:
     """Effective value: the option, or ``default`` when unset (None/""/[])."""
     value = options.get(key)
@@ -547,6 +563,7 @@ _COMPARISON_SPECS: tuple[_DiffSpec, ...] = (
         lambda r: (
             f"on / {_fmt(_eff(r.options, CONF_CLOUDY_POSITION, None))}"
             + _cloudy_slats_note(r.options)
+            + _cloud_escalation_note(r.options)
             if r.options.get(CONF_CLOUD_SUPPRESSION)
             else "off"
         ),

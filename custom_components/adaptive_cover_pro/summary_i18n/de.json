@@ -126,7 +126,9 @@
     "lux_release": "Lux ≥ {release} lx",
     "irradiance_release": "Bestrahlungsstärke ≥ {release} W/m²",
     "coverage_release": "Bewölkung ≤ {release}%",
-    "ignored_tilt": "bewölkter Lamellenwinkel {tilt}%"
+    "ignored_tilt": "bewölkter Lamellenwinkel {tilt}%",
+    "escalation": " · öffnet sich vollständig nach {delay}",
+    "ignored_escalation": "Vollöffnungs-Verzögerung {delay}"
   },
   "info": {
     "light_sensors_off": "📊 Lichtsensoren konfiguriert ({names}), aber Wolkenunterdrückung ist aus.",

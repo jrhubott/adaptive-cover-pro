@@ -642,6 +642,29 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         than a member of ``_EXPLICIT_USER_POSITION_METHODS``: DEFAULT is not
         explicit user intent, it is the absence of any handler intent.
 
+        Skipped as well once ``result.cloud_escalation_active`` is set — a
+        FIFTH independent, state-gated clause (issue #175). A cloud hold that
+        has outlived its configured escalation delay is asking to open the
+        cover fully, carriage included, and that request is as deliberate as
+        ``DEFAULT`` carrying ``sunset_position``: the user configured a
+        duration and said what should happen when it runs out. Without this
+        the feature is inert for exactly the configuration that asked for it,
+        because a tilt-only venetian at the shipped scope has every CLOUD
+        position rewritten back to closed.
+        A separate condition again, not a ``_EXPLICIT_USER_POSITION_METHODS``
+        membership for ``CLOUD``: that frozenset means "the user just moved
+        this cover by hand", and adding an automatic handler to it would make
+        its name a lie and release the HOLD phase too — where the pin is what
+        produces the held carriage the slats work against. And gated on the
+        FLAG rather than on ``control_method``, mirroring
+        ``tilt_only_contribution_active``: a single-writer marker
+        (``CloudSuppressionHandler``, which only ever pairs it with ``CLOUD``)
+        is trusted on its own, so this file gains no fourth control-method
+        comparison. The flag defaults False, so every existing pin test —
+        all of which build a bare ``PipelineResult`` — stays green untouched,
+        including the ``CLOUD`` characterization lock this feature shares a
+        seat with.
+
         Finally, the whole pin is gated on :meth:`_tilt_only_pin_applies`
         (issue #1330) — a fourth INDEPENDENT, option-gated clause, following
         the #1153 ``DEFAULT`` precedent rather than growing
@@ -665,6 +688,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             or result.control_method in _EXPLICIT_USER_POSITION_METHODS
             or result.control_method == ControlMethod.DEFAULT
             or result.tilt_only_contribution_active
+            or result.cloud_escalation_active
             or not self._tilt_only_pin_applies(result)
         ):
             return position
