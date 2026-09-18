@@ -16,6 +16,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import MAJOR_VERSION, MINOR_VERSION
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
@@ -52,6 +53,21 @@ from custom_components.adaptive_cover_pro.const import (
     DOMAIN,
     CoverType,
 )
+
+# ---------------------------------------------------------------------------
+# Home Assistant version gates
+# ---------------------------------------------------------------------------
+
+# HA 2026.8 moved the device registry to storage v3, where a device belongs to
+# exactly ONE config entry.  ``async_update_device(add_config_entry_id=...)`` is
+# guarded from that release on, and a *test* frame (no custom integration on the
+# stack) gets the ERROR behaviour rather than the LOG one custom integrations
+# get, i.e. a ``RuntimeError`` — so a test that needs a genuinely co-owned device
+# can only run below the threshold.  Lives here rather than in one test module
+# because both ``test_device_association`` and ``test_repairs_duplicate_device``
+# gate on it (issue #1369).
+HA_DEVICE_REGISTRY_V3 = (MAJOR_VERSION, MINOR_VERSION) >= (2026, 8)
+
 
 # ---------------------------------------------------------------------------
 # Minimal valid options for each cover type

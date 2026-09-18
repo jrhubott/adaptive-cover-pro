@@ -283,6 +283,7 @@ from .companion_card import (
     async_get_card_status,
 )
 from .engine.sun_geometry import computed_fov_line, fov_from_reveal
+from .state.device_link import devices_for_entities, resolve_linked_device
 from .i18n_bundle import flatten_bundle, load_bundle_overlay, merge_labels
 from .managers.cover_command.state_store import TravelCalibration
 from .troubleshoot_i18n import load_troubleshoot_labels
@@ -3815,22 +3816,16 @@ def _render_priority_scale(config: dict, policy) -> str:
 async def _get_devices_from_entities(
     hass: HomeAssistant, entity_ids: list[str]
 ) -> dict[str, str]:
-    """Get devices associated with the given cover entity IDs."""
-    entity_reg = er.async_get(hass)
-    device_reg = dr.async_get(hass)
-    devices: dict[str, str] = {}
-    for entity_id in entity_ids:
-        entity_entry = entity_reg.async_get(entity_id)
-        if entity_entry and entity_entry.device_id:
-            device_entry = device_reg.async_get(entity_entry.device_id)
-            if device_entry and entity_entry.device_id not in devices:
-                name = (
-                    device_entry.name_by_user
-                    or device_entry.name
-                    or entity_entry.device_id
-                )
-                devices[entity_entry.device_id] = name
-    return devices
+    """Get ``{device_id: display name}`` for the devices behind the cover entities.
+
+    The entity → device hop itself belongs to ``state/device_link``, which needs
+    exactly the same walk to resolve a stored ``CONF_DEVICE_ID`` against the live
+    registry; this is only the naming layer on top of it.
+    """
+    return {
+        device_id: device.name_by_user or device.name or device_id
+        for device_id, device in devices_for_entities(hass, entity_ids).items()
+    }
 
 
 async def _get_device_name_for_entity(
@@ -5901,11 +5896,25 @@ class OptionsFlowHandler(OptionsFlow):
                 self.options.pop(CONF_DEVICE_ID, None)
             return await self.async_step_init()
 
-        current_device = self.options.get(CONF_DEVICE_ID) or _STANDALONE_SENTINEL
+        # Resolve the same way setup does (issue #1369): the stored id may name
+        # a composite HA has since split, which owns no entities and so is not
+        # in the option list above — the field would open blank and invite the
+        # user to "fix" a link that is already in force. Assigned, not
+        # ``setdefault``: ``self.options`` already carries the stale id, so a
+        # default would never be reached.
+        current_device = (
+            resolved.id
+            if (
+                resolved := resolve_linked_device(
+                    self.hass, self.options, own_entry_id=self._config_entry.entry_id
+                )
+            )
+            else self.options.get(CONF_DEVICE_ID)
+        ) or _STANDALONE_SENTINEL
         schema = _build_cover_entity_schema(self.sensor_type, devices=devices or None)
         suggested = dict(self.options)
         if devices:
-            suggested.setdefault(CONF_DEVICE_ID, current_device)
+            suggested[CONF_DEVICE_ID] = current_device
         return self.async_show_form(
             step_id="cover_entities",
             data_schema=self.add_suggested_values_to_schema(schema, suggested),

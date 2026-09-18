@@ -43,6 +43,19 @@ Two matchers, two failure modes
    works right up until HA rewrites the wrapper — and then silently stops
    intercepting, leaving the mock returning an empty list rather than raising.
 
+One method banned outright (issue #1369)
+-----------------------------------------
+Separately from the mapping rules above, ``<registry>.async_get_device(...)``
+may not be called from anywhere in the repo.  HA 2026.8 reports it with
+``core_behavior=ERROR`` **and** ``core_integration_behavior=ERROR`` and removes
+it in 2027.8.0 — production gets a log line, a test frame gets a
+``RuntimeError`` — and its v3 replacement ``async_get_device_by_identifier``
+does not exist on the HA 2026.3 floor ``hacs.json`` declares.  There is no
+spelling that works on both, so the lookup itself is the thing to avoid:
+``state/device_link.scan_own_devices`` partitions
+``dr.async_entries_for_config_entry`` and matches identifiers in Python, which
+is neither deprecated nor version-specific.
+
 What to use instead
 -------------------
 The registries already maintain purpose-built indexes, and HA exposes them
@@ -200,6 +213,14 @@ _REGISTRY_GETTER = "async_get"
 # ``group_coordinator`` resolves area → *entities* — and is out of scope here.
 _AREA_DEVICE_HOP = ("dr", "async_entries_for_area")
 
+# The device-registry identifier lookup, banned outright — see
+# ``test_no_deprecated_device_identifier_lookups``.  HA 2026.8 reports it with
+# ERROR behaviour for core *and* core-integration frames (i.e. ``RuntimeError``
+# from a test) and removes it in 2027.8.0, while its v3 replacement
+# ``async_get_device_by_identifier`` does not exist on this integration's HA
+# 2026.3 floor — so there is no spelling of it that works on both (issue #1369).
+_DEPRECATED_DEVICE_LOOKUP = "async_get_device"
+
 # The one function allowed to perform that hop — see
 # ``test_area_hop_lives_only_in_area_resolver``.
 _AREA_HOP_HOME = (
@@ -300,6 +321,21 @@ def _is_internal_access(node: ast.AST) -> bool:
         isinstance(node, ast.Attribute)
         and node.attr not in _MAPPING_METHODS
         and _is_registry_items(node.value)
+    )
+
+
+def _is_deprecated_device_lookup(node: ast.AST) -> bool:
+    """Report whether node calls ``<registry>.async_get_device(...)``.
+
+    Matched on the method name alone, with no receiver narrowing: unlike
+    ``devices``/``entities``, ``async_get_device`` is not a word anything in
+    this repo owns, so there is nothing to collide with and a narrowing would
+    only add a way to miss the call.
+    """
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == _DEPRECATED_DEVICE_LOOKUP
     )
 
 
@@ -477,6 +513,60 @@ def test_matcher_misses_these_and_the_docstring_says_so(source):
 def test_area_hop_matcher_is_the_device_registry_one(source, flagged):
     """Only the area → *devices* hop is unified; area → entities is separate."""
     assert _is_area_device_hop(ast.parse(source, mode="eval").body) is flagged
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("source", "flagged"),
+    [
+        ("device_reg.async_get_device(identifiers={(DOMAIN, entry_id)})", True),
+        ("dr.async_get(hass).async_get_device(identifiers=ids)", True),
+        ("registry.async_get_device(connections=connections)", True),
+        # The per-id accessor is a different method and stays sanctioned.
+        ("dev_reg.async_get(device_id)", False),
+        ("dr.async_entries_for_config_entry(dev_reg, entry_id)", False),
+        ("er.async_entries_for_device(ent_reg, device_id)", False),
+    ],
+)
+def test_device_identifier_lookup_matcher(source, flagged):
+    """Only ``async_get_device`` is flagged — not the id accessor beside it.
+
+    The two read almost identically at a glance, which is exactly why the
+    matcher's edges are pinned: a narrowing that accidentally covered
+    ``async_get`` would fail the whole suite, and one that covered neither would
+    pass forever while the real call crept back.
+    """
+    node = ast.parse(source, mode="eval").body
+    assert _is_deprecated_device_lookup(node) is flagged
+
+
+@pytest.mark.unit
+def test_no_deprecated_device_identifier_lookups():
+    """``async_get_device(identifiers=...)`` may not be called from anywhere.
+
+    HA 2026.8 reports it with ``core_behavior=ERROR`` *and*
+    ``core_integration_behavior=ERROR`` and removes it in 2027.8.0: production
+    gets a log line, but a **test** frame — which has no custom integration on
+    the stack — gets a ``RuntimeError``, so the suite breaks before the
+    integration does.  Its v3 replacement, ``async_get_device_by_identifier``,
+    does not exist on the HA 2026.3 floor ``hacs.json`` declares, so there is no
+    version-neutral spelling of the identifier lookup at all.
+
+    Use ``scan_own_devices`` in ``state/device_link.py`` instead: it partitions
+    ``dr.async_entries_for_config_entry`` and matches identifiers in Python,
+    which is neither deprecated nor version-specific.  The repo had exactly one
+    call site (``__init__.py``) and issue #1369 removed it, so this guard costs
+    nothing to keep at zero.
+    """
+    sites = sorted(set(_find_sites(_SCAN_ROOTS, _is_deprecated_device_lookup)))
+
+    assert sites == [], (
+        f"device_registry.async_get_device is called from {sites}.\n"
+        "It is deprecated from HA 2026.8 (RuntimeError from a test frame) and "
+        "removed in 2027.8.0, and its replacement does not exist on this "
+        "integration's HA floor. Resolve the device through "
+        "state/device_link.scan_own_devices instead."
+    )
 
 
 @pytest.mark.unit

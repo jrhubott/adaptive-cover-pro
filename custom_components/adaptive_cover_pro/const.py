@@ -1012,6 +1012,12 @@ ISSUE_COVER_TILT_UNSUPPORTED = (
 # middle rail: unset (or naming a cover outside the instance's list) leaves the
 # shade silently behaving like a plain vertical blind.
 ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET = "day_night_middle_rail_unset"
+# The one *fixable* Repair this integration raises (issue #1369): a device this
+# config entry owns that is neither our service device nor holding any of our
+# entities — the leftover of the duplicate HA 2026.8+ minted before the
+# via_device rework. Namespaced per entry AND per device
+# (`{id}_{entry_id}_{device_id}`) because one instance can have more than one.
+ISSUE_DUPLICATE_DEVICE = "duplicate_device"
 # Generous debounce so integration restarts / device re-adds don't nag before
 # a genuinely dead sensor is flagged.
 DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS = 900.0

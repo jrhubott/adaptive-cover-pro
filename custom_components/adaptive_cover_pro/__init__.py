@@ -9,7 +9,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_CALL_SERVICE, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import TemplateError
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import (
     TrackTemplate,
@@ -31,7 +30,6 @@ from .const import (
     CONF_SUN_TRACKING_GATE_SENSORS,
     CONF_SUN_TRACKING_GATE_TEMPLATE,
     CONF_DEFAULT_HEIGHT,
-    CONF_DEVICE_ID,
     CONF_ENABLE_MY_POSITION_ENTITIES,
     CONF_ENABLE_POSITION_MATCHING,
     CONF_ENABLE_SUN_TRACKING,
@@ -71,7 +69,6 @@ from .const import (
     CUSTOM_POSITION_SLOTS,
     DEFAULT_COMMAND_QUEUE_GAP,
     DIAG_CACHE_KEY,
-    DOMAIN,
     POSITION_CLOSED,
     TIME_STRING_RE,
     _LOGGER,
@@ -81,6 +78,7 @@ from .const import (
     resolve_fov_right,
 )
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
+from .state import device_link
 from .cover_types import get_policy
 from .managers.cover_command.queue import get_command_queue, normalize_queue_name
 from .group_coordinator import GroupCoordinator
@@ -602,6 +600,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     await async_prune_legacy_sensor_entities(hass, entry)
     await async_prune_legacy_sensor_entities_v2(hass, entry)
 
+    # Reclaim the duplicate device HA 2026.8+ minted for installs that ran the
+    # pre-#1369 code, renaming it into this entry's service device with its id
+    # intact. Must happen BEFORE platform forwarding: afterwards the entity
+    # platform has already created a competing device and re-pointed every
+    # entity at it.
+    device_link.adopt_clone_device(hass, entry)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Option-template result trackers register here, after platform forwarding,
@@ -616,34 +621,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     await coordinator.async_config_entry_first_refresh()
     coordinator._check_initial_motion_state()
 
-    device_reg = dr.async_get(hass)
-
-    if entry.options.get(CONF_DEVICE_ID):
-        # Device association is active — remove the old standalone virtual device so it
-        # doesn't appear as an orphaned entry under the integration.
-        old_device = device_reg.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
-        if old_device:
-            _LOGGER.debug(
-                "Removing orphaned standalone device %s after device association",
-                old_device.id,
-            )
-            device_reg.async_remove_device(old_device.id)
-    else:
-        # No device association — remove our config entry from any physical device that
-        # still has it (left over from a previous association that was cleared).
-        # The registry's own config-entry index replaces a full scan of every device
-        # in the install (deprecated, removed in HA 2027.9.0 — issue #1339); it also
-        # makes the old "entry.entry_id in device.config_entries" test redundant, and
-        # it returns a fresh list, so the body may mutate the registry as it goes.
-        for device in dr.async_entries_for_config_entry(device_reg, entry.entry_id):
-            if (DOMAIN, entry.entry_id) not in device.identifiers:
-                _LOGGER.debug(
-                    "Removing stale config entry link from physical device %s",
-                    device.id,
-                )
-                device_reg.async_update_device(
-                    device.id, remove_config_entry_id=entry.entry_id
-                )
+    # Reconcile our own service device against the physical cover: point it at
+    # the linked device with ``via_device_id``, mirror that device's area, and
+    # keep mirroring it while the entry is loaded (issue #1369).  Everything
+    # about our device record lives in ``state/device_link``.
+    entry.async_on_unload(await device_link.async_reconcile_device_link(hass, entry))
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
@@ -694,6 +676,8 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     radio the user is still sharing, which is the original bug.
     """
     hass.data.get(DIAG_CACHE_KEY, {}).pop(entry.entry_id, None)
+    # A removed entry's duplicate-device Repairs have nothing left to point at.
+    device_link.clear_duplicate_device_issues(hass, entry.entry_id)
     policy = get_policy(entry.data.get(CONF_SENSOR_TYPE))
     if policy.controls_cover or policy.is_command_queue:
         return

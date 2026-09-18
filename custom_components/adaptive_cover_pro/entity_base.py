@@ -5,12 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from homeassistant.core import callback
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_DEVICE_ID, CONF_SENSOR_TYPE, DOMAIN
+from .const import CONF_SENSOR_TYPE, DOMAIN
 from .const import CoverType
 
 if TYPE_CHECKING:
@@ -53,17 +52,20 @@ class AdaptiveCoverBaseEntity(CoordinatorEntity["AdaptiveDataUpdateCoordinator"]
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return device information."""
-        linked_device_id = self.config_entry.options.get(CONF_DEVICE_ID)
-        if linked_device_id:
-            device_reg = dr.async_get(self.hass)
-            device_entry = device_reg.async_get(linked_device_id)
-            if device_entry:
-                return DeviceInfo(
-                    identifiers=device_entry.identifiers,
-                    connections=device_entry.connections,
-                )
+        """Return this instance's own service device — always, linked or not.
 
+        Adaptive Cover Pro owns one service device per config entry and never
+        borrows the physical cover's identifiers (issue #1369).  HA 2026.8's
+        storage-v3 device registry scopes ``async_get_or_create``'s identifier
+        lookup by ``config_entry_id``, so registering the physical device's
+        identifiers under *our* entry no longer unions the two records — it
+        mints a duplicate.  The link to the physical device is a
+        ``via_device_id``, written onto this device after platform setup by
+        ``state.device_link.mirror_link``; it deliberately does not appear here
+        because the two HA generations spell it differently in ``DeviceInfo``
+        (``via_device`` before 2026.8, ``via_device_id`` after) while
+        ``async_update_device`` spells it identically on both.
+        """
         type_display = self._get_type_display_name(self._cover_type)
         return DeviceInfo(
             entry_type=DeviceEntryType.SERVICE,
