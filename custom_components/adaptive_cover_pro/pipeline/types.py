@@ -59,6 +59,16 @@ class ClimateOptions:
     winter_close_insulation: bool
     summer_close_bypass_sun_floor: bool = False
     cloudy_position: int | None = None
+    # Slat angle commanded alongside ``cloudy_position`` while cloud
+    # suppression holds (issue #175). Surfaced only on cover types whose
+    # policy sets ``CoverTypePolicy.cloud_suppression_includes_tilt`` — the
+    # same gate ``weather_override_tilt`` uses (#1297) — and read through it in
+    # the snapshot builder, so a value left behind by a cover-type switch never
+    # reaches a cover with no slat axis. Has NO default: absent means the
+    # handler names no tilt and the slats hold their current angle, which is
+    # the pre-#175 behaviour (so no config migration). An explicit 0 is a real
+    # answer (slats closed) and is distinguished with ``is not None``.
+    cloudy_tilt: int | None = None
     # Extreme-heat mode (issue #766). ``temp_extreme_heat`` None = feature off.
     # ``extreme_heat_position`` None = use DEFAULT_EXTREME_HEAT_POSITION; an
     # explicit 0 is honored (distinguished with ``is not None``).

@@ -813,6 +813,16 @@ set_light_cloud:
       description: "If true, suppress solar positioning when cloud coverage exceeds the threshold."
       selector:
         boolean:
+    cloudy_tilt:
+      name: Cloudy slat angle
+      description: "Slat tilt to set while cloud suppression is holding (0–100%). 0% = slats closed, 100% = slats open. Venetian blinds only; null = leave the slats alone."
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
     is_sunny_sensor:
       name: Is Sunny binary sensor
       description: "Binary entity that authoritatively reports sun-on-window. ON = sunny, OFF = cloud suppression fires. Unavailable falls back to weather state. Null = none."

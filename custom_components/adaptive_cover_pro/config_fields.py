@@ -57,6 +57,7 @@ from .const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUDY_POSITION,
+    CONF_CLOUDY_TILT,
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
     CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     CONF_DAY_NIGHT_CONTROL_MODEL,
@@ -1612,6 +1613,23 @@ _LIGHT_CLOUD_SPECS = _spec(
     FieldSpec(
         CONF_CLOUDY_POSITION, SECTION_LIGHT_CLOUD, ValidatorKind.NONE, clearable=True
     ),
+    # Slat angle while cloud suppression holds (#175). Venetian-only —
+    # surfaced via CoverTypePolicy.cloud_suppression_includes_tilt. Clearable
+    # with NO default: absent => None => the handler names no tilt and the
+    # slats are left alone, which is the pre-#175 behaviour (so no config
+    # migration). Carries make_selector (unlike its dynamic siblings in this
+    # section) because the generic extra_field_keys loop in cover_types/base.py
+    # skips specs without one. ValidatorKind.RANGE rather than the NONE its
+    # position sibling above carries: bounds validation on a percentage is
+    # worth having, and having it makes the ``set_light_cloud`` seat mandatory.
+    FieldSpec(
+        CONF_CLOUDY_TILT,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TILT,
+        clearable=True,
+        make_selector=_const(position_slider),
+    ),
     FieldSpec(
         CONF_WEATHER_ENTITY, SECTION_LIGHT_CLOUD, ValidatorKind.ENTITY, clearable=True
     ),
@@ -2550,6 +2568,7 @@ _POSITION_ROLES: dict[str, PositionRole] = {
     CONF_MIN_TILT: PositionRole.TILT,
     CONF_MAX_TILT: PositionRole.TILT,
     CONF_WEATHER_OVERRIDE_TILT: PositionRole.TILT,
+    CONF_CLOUDY_TILT: PositionRole.TILT,
     # ---- percentages that are not travel positions -----------------------
     # Magnitudes and hardware-frame thresholds. A type switch changes which end
     # of the axis shades the window; it does not renumber the axis, so a delta,

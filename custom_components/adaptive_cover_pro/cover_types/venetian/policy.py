@@ -275,6 +275,11 @@ class VenetianPolicy(CoverTypePolicy, register=True):
     # are the one type that can be told what angle to take during a weather
     # retraction (#1297).
     weather_override_includes_tilt: ClassVar[bool] = True
+    # ...and, for the same reason, the one type that can be told what angle to
+    # take while cloud suppression holds the carriage down (#175). In tilt-only
+    # mode this is the only axis that reaches the hardware at all, which is why
+    # a cloudy hold used to leave the room dark.
+    cloud_suppression_includes_tilt: ClassVar[bool] = True
     # Venetians carry the same window geometry (width + reveal depth) and fov
     # sliders as vertical blinds, so they get the "Generate FOV from
     # measurements" button too (#565). The toggle is inserted by the shared

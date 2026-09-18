@@ -811,6 +811,7 @@
           "cloud_suppression": "Wolkenunterdrückung aktivieren (Hauptschalter)",
           "weather_state": "Wetterbedingungen",
           "cloudy_position": "Bewölkungsposition (optional)",
+          "cloudy_tilt": "Bewölkter Lamellenwinkel (optional)",
           "is_sunny_sensor": "Binärsensor \"Sonne scheint\" (optional)",
           "is_sunny_template": "Vorlage \"Is Sunny\" (optional)",
           "is_sunny_template_mode": "Logik der Vorlage \"Is Sunny\"",
@@ -831,6 +832,7 @@
           "cloud_coverage_threshold": "Wolkenbedeckung in Prozent, ab der die Blendschutzregelung unterdrückt wird. Beispiel: 75 bedeutet, dass die Beschattung die Sonnennachführung stoppt, wenn der Himmel zu 75 % oder mehr bedeckt ist. Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
           "cloud_suppression": "Hauptein/Ausschaltung für diesen gesamten Bildschirm. Wenn **aus** (Standard), werden alle Sensoren unten ignoriert und die Blendungskontrolle läuft wie gewohnt. Wenn **ein**, zeigt ein beliebiger konfigurierter Sensor (Wetterzustand, Lux, Strahlung oder Bewölkung) an, dass die Sonne abwesend ist, stoppt die Sonnenverfolgung und fährt die Beschattung zur **Wolkenposition** oben (oder zur Standardposition, wenn diese leer ist). Funktioniert eigenständig — der Klimamodus muss nicht aktiviert sein.",
           "cloudy_position": "Position (0-100%), zu der Beschattungen verschoben werden, wenn Wolkenunterdrückung aktiv ist (bewölkt / niedriges Licht). 0% = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100% = offen (Jalousien hochgezogen / Markise ausgefahren). Leer lassen, um die Standardposition zu verwenden.",
+          "cloudy_tilt": "Lamellen-Neigung (0-100%), um sie bei aktiver Wolkenunterdrückung anzuwenden. 0% = Lamellen geschlossen, 100% = Lamellen offen. Leer lassen, um die Lamellen dort zu behalten, wo sie sind, dies ist das Verhalten vor dieser Option. Wird nur bei Beschattungstypen mit unabhängiger Lamellenachse angeboten.",
           "is_sunny_sensor": "Optionaler Binärsensor, input_boolean, Schalter oder Zeitplan, der angibt, ob die Sonne auf das Fenster scheint. Bei EIN wird Sonneneinstrahlung angenommen; bei AUS wird Wolkenunterdrückung unabhängig vom Wetterzustand aktiviert. Bei Nicht verfügbar oder Unbekannt fällt die Integration auf die nachstehende Wetter-Entität/Wetterbedingungen-Logik zurück. Verwenden Sie diese Option, wenn Sie die Sonneneinstrahlung auf das Fenster upstream berechnen (z. B. Azimut-geregelte Bestrahlung) und Adaptive Cover Pro ein eindeutiges Boolesches Signal geben möchten.",
           "is_sunny_template": "Optionale Home-Assistant-Jinja2-Vorlage, die entscheidet, ob die Sonne auf das Fenster fällt. Wenn sie als wahr (on/true/1) ausgewertet wird, wird angenommen, dass die Sonne vorhanden ist; wenn sie als falsch ausgewertet wird, wird angenommen, dass sie abwesend ist und die Wolkenunterdrückung wird ausgelöst. Wie sie sich mit dem Binärsensor \"Is Sunny\" oben kombiniert (OR oder AND), wird durch die Einstellung \"Logik der Vorlage 'Is Sunny'\" unten definiert; sie kann auch ohne Sensor allein verwendet werden. Beispiel: ein Azimut-/Höhenvergleich oder ein Lux-Schwellenwert. Eine Vorlage, die leer ist oder nicht gerendert werden kann, äußert sich nicht, sodass die Integration auf den Sensor und dann auf die Wetterentität/Wetterbedingungen zurückgreift. Lassen Sie leer, um zu deaktivieren.",
           "is_sunny_template_mode": "Wie die Vorlage \"Is Sunny\" sich mit dem Binärsensor \"Is Sunny\" oben kombiniert. \"OR\" (Standard) – sonnig, wenn die Vorlage wahr ist ODER der Sensor eingeschaltet ist. \"AND\" – sonnig nur, wenn die Vorlage wahr ist UND der Sensor eingeschaltet ist. Ohne einen konfigurierten Sensor entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Vorlage \"Is Sunny\" festgelegt ist.",
@@ -1979,6 +1981,30 @@
     "set_light_cloud": {
       "description": "Aktualisiert Wetter-Entity, Sonnig-Status-Filter, Lux-/Bestrahlungs-/Bewölkungs-Schwellwerte und Bewölkungs-Suppression.",
       "fields": {
+        "weather_entity": {
+          "description": "Wetter-Entity für Bedingungslesestoff. Null = kein.",
+          "name": "Wetter-Entity"
+        },
+        "weather_state": {
+          "description": "Wetterzustände, die 'Sonne ist draußen' bedeuten. Dient als Fallback, wenn kein Sensor/keine Vorlage für 'Sonne scheint' konfiguriert ist.",
+          "name": "Sonnige Wetterzustände"
+        },
+        "lux_entity": {
+          "description": "Lichtsensor-Entity. Null = kein.",
+          "name": "Lux-Sensor"
+        },
+        "lux_threshold": {
+          "description": "Lux-Wert oberhalb dessen die Beschattung in direktem Sonnenlicht ist.",
+          "name": "Lux-Schwellwert"
+        },
+        "irradiance_entity": {
+          "description": "Solar-Bestrahlungssensor-Entity. Null = kein.",
+          "name": "Bestrahlungssensor"
+        },
+        "irradiance_threshold": {
+          "description": "W/m² oberhalb dessen die Beschattung in direktem Sonnenlicht ist.",
+          "name": "Bestrahlung-Schwellwert"
+        },
         "cloud_coverage_entity": {
           "description": "Sensor meldet Bewölkungsprozentsatz. Null = kein.",
           "name": "Bewölkungssensor"
@@ -1991,29 +2017,9 @@
           "description": "Sonnenpositionierung unterdrücken wenn Bewölkung Schwellwert überschreitet.",
           "name": "Bewölkungs-Suppression aktivieren"
         },
-        "irradiance_entity": {
-          "description": "Solar-Bestrahlungssensor-Entity. Null = kein.",
-          "name": "Bestrahlungssensor"
-        },
-        "irradiance_threshold": {
-          "description": "W/m² oberhalb dessen die Beschattung in direktem Sonnenlicht ist.",
-          "name": "Bestrahlung-Schwellwert"
-        },
-        "lux_entity": {
-          "description": "Lichtsensor-Entity. Null = kein.",
-          "name": "Lux-Sensor"
-        },
-        "lux_threshold": {
-          "description": "Lux-Wert oberhalb dessen die Beschattung in direktem Sonnenlicht ist.",
-          "name": "Lux-Schwellwert"
-        },
-        "weather_entity": {
-          "description": "Wetter-Entity für Bedingungslesestoff. Null = kein.",
-          "name": "Wetter-Entity"
-        },
-        "weather_state": {
-          "description": "Wetterzustände, die 'Sonne ist draußen' bedeuten. Dient als Fallback, wenn kein Sensor/keine Vorlage für 'Sonne scheint' konfiguriert ist.",
-          "name": "Sonnige Wetterzustände"
+        "cloudy_tilt": {
+          "name": "Bewölkter Lamellenwinkel",
+          "description": "Lamellen-Neigung zum Einstellen während der Wolkenunterdrückung (0–100%). 0% = Lamellen geschlossen, 100% = Lamellen offen. Nur Jalousien; null = Lamellen unverändert lassen."
         },
         "is_sunny_sensor": {
           "name": "Binärsensor \"Sonne scheint\"",

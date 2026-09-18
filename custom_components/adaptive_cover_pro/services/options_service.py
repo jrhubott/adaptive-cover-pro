@@ -44,6 +44,7 @@ from ..const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUD_SUPPRESSION_PRIORITY,
+    CONF_CLOUDY_TILT,
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
     CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     CONF_DAY_NIGHT_CONTROL_MODEL,
@@ -674,6 +675,11 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_CLOUD_COVERAGE_ENTITY: _entity_v(),
     CONF_CLOUD_COVERAGE_THRESHOLD: _templatable_num(CONF_CLOUD_COVERAGE_THRESHOLD),
     CONF_CLOUD_SUPPRESSION: _bool_v(),
+    # The cloud slat angle (#175). Its position sibling ``cloudy_position``
+    # is ValidatorKind.NONE and carries no entry here, so it is not
+    # service-settable — a historical accident this deliberately does not
+    # copy: bounds validation on a percentage field is worth having.
+    CONF_CLOUDY_TILT: _range(CONF_CLOUDY_TILT),
     # Smoothing controls (issue #864): symmetric hold-time + per-trigger
     # hysteresis release edges. Release thresholds are number-or-template like
     # their activate counterparts above.
@@ -847,6 +853,9 @@ _SECTION_LIGHT_CLOUD = frozenset(
         CONF_CLOUD_COVERAGE_ENTITY,
         CONF_CLOUD_COVERAGE_THRESHOLD,
         CONF_CLOUD_SUPPRESSION,
+        # Has a FIELD_VALIDATORS entry, so it must be service-settable too —
+        # else the validator is dead code and the key silently dropped (#175).
+        CONF_CLOUDY_TILT,
         CONF_CLOUD_SUPPRESSION_HOLD_TIME,
         CONF_LUX_RELEASE_THRESHOLD,
         CONF_IRRADIANCE_RELEASE_THRESHOLD,

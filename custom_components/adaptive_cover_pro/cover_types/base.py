@@ -508,6 +508,18 @@ class CoverTypePolicy(ABC):
     # field there would be a contradictory duplicate.
     weather_override_includes_tilt: ClassVar[bool] = False
 
+    # Whether the Light & Cloud config step surfaces a slat-angle slider to
+    # command while cloud suppression holds the seat (#175). A THIRD ClassVar
+    # for the same reason #1297 added a second one instead of reusing
+    # ``custom_position_includes_tilt``: the three questions are different and
+    # their answers are allowed to diverge. ``DayNightShadePolicy`` is True for
+    # custom position and False here — "what angle do the slats take under a
+    # cloud" has no fabric-blend (sheer ↔ blackout) meaning. Cover types whose
+    # *primary* axis is the tilt (``cover_tilt``, ``cover_louvered_roof``) stay
+    # False too: ``cloudy_position`` already sets their slat angle, so a second
+    # field would be a contradictory duplicate of it.
+    cloud_suppression_includes_tilt: ClassVar[bool] = False
+
     # Whether the sun-tracking step exposes the "Generate FOV from measurements"
     # button (#565) — a toggle that fills fov_left/right from the window width +
     # reveal depth. Set on the cover types that carry window geometry (vertical
@@ -1635,15 +1647,15 @@ class CoverTypePolicy(ABC):
         ``BlindPolicy`` adds to sun tracking, or the tilt fields a dual-axis
         type adds to custom position and weather override.
 
-        The two tilt branches live here rather than on each dual-axis subclass
-        so "which cover types carry a second axis in the UI" is stated exactly
-        once — as the ``*_includes_tilt`` ClassVars — instead of being
+        The three tilt branches live here rather than on each dual-axis
+        subclass so "which cover types carry a second axis in the UI" is stated
+        exactly once — as the ``*_includes_tilt`` ClassVars — instead of being
         re-derived by every policy that happens to have one. Subclasses with
         extras of their own (``BlindPolicy``) add their branch and then
         ``super()`` through to these.
         """
         from .. import config_fields as cf
-        from ..const import CONF_WEATHER_OVERRIDE_TILT
+        from ..const import CONF_CLOUDY_TILT, CONF_WEATHER_OVERRIDE_TILT
 
         if section == cf.SECTION_CUSTOM_POSITION and self.custom_position_includes_tilt:
             return cf.CUSTOM_POSITION_TILT_KEYS
@@ -1652,6 +1664,8 @@ class CoverTypePolicy(ABC):
             and self.weather_override_includes_tilt
         ):
             return (CONF_WEATHER_OVERRIDE_TILT,)
+        if section == cf.SECTION_LIGHT_CLOUD and self.cloud_suppression_includes_tilt:
+            return (CONF_CLOUDY_TILT,)
         return ()
 
     def build_section_schema(

@@ -36,6 +36,7 @@ from .const import (
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    CONF_CLOUDY_TILT,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
     CONF_SUN_TRACKING_GATE_SENSORS,
@@ -367,6 +368,16 @@ class _DiffSpec:
     extract: Callable[[_CoverRecord], str]
 
 
+def _cloudy_slats_note(options: Mapping) -> str:
+    """Return the cloud slat-angle suffix, or "" when none is configured (#175).
+
+    ``is not None`` rather than truthiness: a cloudy tilt of 0 means the slats
+    are commanded closed, which is a real setting and must show up as one.
+    """
+    tilt = options.get(CONF_CLOUDY_TILT)
+    return "" if tilt is None else f" / slats {_fmt(tilt)}"
+
+
 def _eff(options: Mapping, key: str, default: Any) -> Any:
     """Effective value: the option, or ``default`` when unset (None/""/[])."""
     value = options.get(key)
@@ -529,8 +540,13 @@ _COMPARISON_SPECS: tuple[_DiffSpec, ...] = (
     ),
     _DiffSpec(
         "Cloud suppression",
+        # One spec extended in place rather than a second row for the slat
+        # angle (#175): two covers whose carriage target matches but whose slat
+        # target differs must still read as a difference, and that only works
+        # if both live in the same comparable string.
         lambda r: (
             f"on / {_fmt(_eff(r.options, CONF_CLOUDY_POSITION, None))}"
+            + _cloudy_slats_note(r.options)
             if r.options.get(CONF_CLOUD_SUPPRESSION)
             else "off"
         ),

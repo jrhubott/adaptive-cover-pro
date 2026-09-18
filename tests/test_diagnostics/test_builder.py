@@ -1097,6 +1097,7 @@ class TestConfigurationDiagnostics:
             "enabled_toggle",
             "cloud_suppression_enabled",
             "cloudy_position",
+            "cloudy_tilt",
             "end_of_window_position",
             "is_sunny_source",
             "templated_thresholds",
@@ -1581,6 +1582,28 @@ class TestCloudyPositionDiagnostics:
         """configuration.cloudy_position is None when option is not configured."""
         diag, _ = builder.build(_base_ctx(config_options={}))
         assert diag["configuration"]["cloudy_position"] is None
+
+    def test_configuration_includes_cloudy_tilt_when_set(
+        self, builder: DiagnosticsBuilder
+    ):
+        """configuration.cloudy_tilt surfaces the configured slat angle (#175).
+
+        The reporter's own evidence for this issue reached us as a diagnostics
+        dump, so the new target has to be visible there or the next report of
+        "my slats do not move under clouds" is undiagnosable.
+        """
+        from custom_components.adaptive_cover_pro.const import CONF_CLOUDY_TILT
+
+        options = {CONF_CLOUD_SUPPRESSION: True, CONF_CLOUDY_TILT: 100}
+        diag, _ = builder.build(_base_ctx(config_options=options))
+        assert diag["configuration"]["cloudy_tilt"] == 100
+
+    def test_configuration_cloudy_tilt_none_when_absent(
+        self, builder: DiagnosticsBuilder
+    ):
+        """configuration.cloudy_tilt is None when the option is not configured."""
+        diag, _ = builder.build(_base_ctx(config_options={}))
+        assert diag["configuration"]["cloudy_tilt"] is None
 
     def test_configuration_includes_cloud_suppression_enabled(
         self, builder: DiagnosticsBuilder

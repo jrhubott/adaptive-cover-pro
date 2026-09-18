@@ -939,6 +939,7 @@
           "cloud_coverage_threshold": "Seuil de couverture nuageuse",
           "cloud_suppression": "Activer la suppression des nuages (interrupteur principal)",
           "cloudy_position": "Position nuageux (optionnel)",
+          "cloudy_tilt": "Inclinaison nuageuse des lamelles (optionnel)",
           "lux_release_threshold": "Seuil de libération de lux (optionnel)",
           "irradiance_release_threshold": "Seuil de libération du rayonnement (optionnel)",
           "cloud_coverage_release_threshold": "Seuil de libération de la couverture nuageuse (optionnel)",
@@ -960,6 +961,7 @@
           "cloud_coverage_threshold": "Pourcentage de couverture nuageuse à partir duquel la suppression de l'éblouissement est désactivée. Par exemple, 75 signifie que la protection cesse de suivre le soleil quand le ciel est couvert à 75 % ou plus. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "cloud_suppression": "Interrupteur principal de cet écran entier. Lorsqu'il est **désactivé** (par défaut), tous les capteurs ci-dessous sont ignorés et le contrôle de l'éblouissement fonctionne normalement. Lorsqu'il est **activé**, tout capteur configuré (état météorologique, luminosité, rayonnement ou couverture nuageuse) indiquant l'absence du soleil arrêtera le suivi du soleil et déplacera la protection vers la **position nuageuse** ci-dessus (ou la position par défaut si celle-ci est vide). Fonctionne seul — le mode climatique n'a pas besoin d'être activé.",
           "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut.",
+          "cloudy_tilt": "Inclinaison des lamelles (0-100%) pour commander lors de la suppression nuageuse. 0% = lamelles fermées, 100% = lamelles ouvertes. Laissez vide pour conserver l'inclinaison actuelle des lamelles, ce qui est le comportement avant cette option. Proposé uniquement sur les types de protection avec un axe de lamelles indépendant.",
           "lux_release_threshold": "Seuil d'hystérésis optionnel. Une fois la suppression active, la maintenir active jusqu'à ce que le lux augmente à au moins cette valeur — au lieu de la désactiver dès que le lux remonte au-dessus du seuil de lux. Définissez-la à une valeur confortablement supérieure au seuil de lux pour éviter que la protection ne clignote quand la lecture oscille autour d'un point de croisement unique. Laissez vide pour désactiver l'hystérésis (libération au seuil de lux). Accepte un nombre fixe ou un modèle Jinja2 Home Assistant.",
           "irradiance_release_threshold": "Seuil d'hystérésis optionnel. Une fois la suppression active, la maintenir active jusqu'à ce que le rayonnement augmente à au moins cette valeur — au lieu de la désactiver dès qu'il remonte au-dessus du seuil de rayonnement. Définissez-le à une valeur supérieure au seuil de rayonnement pour éviter le clignotement autour d'un point de croisement unique. Laissez vide pour désactiver l'hystérésis. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant.",
           "cloud_coverage_release_threshold": "Seuil d'hystérésis optionnel. Une fois la suppression active, la maintenir active jusqu'à ce que la couverture nuageuse tombe à cette valeur ou en dessous — au lieu de la désactiver dès qu'elle passe sous le seuil de couverture nuageuse. Définissez-le à une valeur inférieure au seuil de couverture nuageuse pour éviter le clignotement autour d'un point de croisement unique. Laissez vide pour désactiver l'hystérésis. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant.",
@@ -2027,6 +2029,10 @@
         "cloud_suppression": {
           "name": "Activer la suppression des nuages",
           "description": "Supprimer le positionnement solaire lorsque la couverture nuageuse dépasse le seuil."
+        },
+        "cloudy_tilt": {
+          "name": "Inclinaison nuageuse des lamelles",
+          "description": "Inclinaison des lamelles à définir lors de la suppression nuageuse (0–100%). 0% = lamelles fermées, 100% = lamelles ouvertes. Stores vénitiens uniquement ; null = ne pas modifier les lamelles."
         },
         "is_sunny_sensor": {
           "name": "Capteur binaire « Ensoleillé »",

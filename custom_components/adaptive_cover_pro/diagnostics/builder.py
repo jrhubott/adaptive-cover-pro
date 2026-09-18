@@ -1259,6 +1259,7 @@ class DiagnosticsBuilder:
             CONF_AZIMUTH,
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
+            CONF_CLOUDY_TILT,
             CONF_ENABLE_BLIND_SPOT,
             CONF_ENABLE_MAX_POSITION,
             CONF_ENABLE_MIN_POSITION,
@@ -1351,6 +1352,10 @@ class DiagnosticsBuilder:
                 "enabled_toggle": ctx.enabled_toggle,
                 "cloud_suppression_enabled": options.get(CONF_CLOUD_SUPPRESSION, False),
                 "cloudy_position": options.get(CONF_CLOUDY_POSITION),
+                # Read raw, ungated (#175): the dump's job is to show what
+                # is STORED, and a value the policy currently drops is
+                # exactly what a triage read needs to see.
+                "cloudy_tilt": options.get(CONF_CLOUDY_TILT),
                 # issue #625: raw config value (None when disabled).
                 "end_of_window_position": options.get(CONF_END_OF_WINDOW_POS),
                 "is_sunny_source": (

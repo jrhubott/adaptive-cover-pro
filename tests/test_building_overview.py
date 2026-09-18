@@ -6,6 +6,8 @@ drive the builders with lightweight stub entries — no ``hass`` required.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from custom_components.adaptive_cover_pro.building_overview import (
     build_building_overview,
     build_override_records,
@@ -506,3 +508,60 @@ def test_overridden_empty_value_reads_none():
         profile.options, cover.options, [CONF_WEATHER_WIND_SPEED_SENSOR]
     )
     assert "Wind speed: `(none)` — overridden (profile: `sensor.wind`)" in out
+
+
+class TestCloudSuppressionOverviewRow:
+    """The multi-cover overview row names both cloud targets (#175).
+
+    One ``_DiffSpec`` and one lambda extended in place, not a second row: the
+    overview's job is "how do these covers differ", and a carriage target that
+    matches while the slat target differs must still read as a difference.
+    """
+
+    def test_row_shows_position_and_slat_angle(self):
+        from custom_components.adaptive_cover_pro.building_overview import (
+            _COMPARISON_SPECS,
+        )
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_CLOUD_SUPPRESSION,
+            CONF_CLOUDY_POSITION,
+            CONF_CLOUDY_TILT,
+        )
+
+        spec = next(s for s in _COMPARISON_SPECS if s.label == "Cloud suppression")
+        row = SimpleNamespace(
+            options={
+                CONF_CLOUD_SUPPRESSION: True,
+                CONF_CLOUDY_POSITION: 100,
+                CONF_CLOUDY_TILT: 100,
+            }
+        )
+        rendered = spec.extract(row)
+        assert "100" in rendered
+        assert "slats 100" in rendered
+
+    def test_row_omits_the_slat_angle_when_unset(self):
+        """No configured tilt → the row reads exactly as it did before #175."""
+        from custom_components.adaptive_cover_pro.building_overview import (
+            _COMPARISON_SPECS,
+        )
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_CLOUD_SUPPRESSION,
+            CONF_CLOUDY_POSITION,
+        )
+
+        spec = next(s for s in _COMPARISON_SPECS if s.label == "Cloud suppression")
+        row = SimpleNamespace(
+            options={CONF_CLOUD_SUPPRESSION: True, CONF_CLOUDY_POSITION: 100}
+        )
+        assert "slats" not in spec.extract(row)
+
+    def test_row_still_reads_off_when_suppression_is_disabled(self):
+        from custom_components.adaptive_cover_pro.building_overview import (
+            _COMPARISON_SPECS,
+        )
+        from custom_components.adaptive_cover_pro.const import CONF_CLOUDY_TILT
+
+        spec = next(s for s in _COMPARISON_SPECS if s.label == "Cloud suppression")
+        row = SimpleNamespace(options={CONF_CLOUDY_TILT: 100})
+        assert spec.extract(row) == "off"

@@ -1095,6 +1095,13 @@ CONF_CLOUD_COVERAGE_ENTITY = "cloud_coverage_entity"  # cloud-cover % sensor
 CONF_CLOUD_COVERAGE_THRESHOLD = "cloud_coverage_threshold"
 CONF_CLOUD_SUPPRESSION = "cloud_suppression"  # master enable
 CONF_CLOUDY_POSITION = "cloudy_position"  # position while suppressed (0-100)
+# Slat angle commanded alongside that position while suppression holds (range
+# 0-100, issue #175). Surfaced only on cover types whose policy sets
+# CoverTypePolicy.cloud_suppression_includes_tilt — venetians today, because
+# they are the only type with a slat axis independent of the carriage. Has NO
+# default: absent means the handler names no tilt and the slats are left where
+# the previous cycle put them, which is the pre-#175 behaviour.
+CONF_CLOUDY_TILT = "cloudy_tilt"
 
 # Smoothing controls (issue #864). All default to today's instantaneous,
 # single-crossing behaviour so an absent key changes nothing on upgrade/rollback.

@@ -2846,6 +2846,110 @@ async def test_create_flow_geometry_rerender_keeps_typed_azimuth() -> None:
 
 
 @pytest.mark.integration
+async def test_cloudy_tilt_saves_and_clears(hass: HomeAssistant) -> None:
+    """The venetian cloud tilt round-trips, and clearing it really clears (#175).
+
+    The clear half is the load-bearing one. The slider is a bare
+    ``vol.Optional`` with no default, so voluptuous omits it from
+    ``user_input`` when the user empties it — and unless
+    ``async_step_light_cloud`` names it in its optional-keys list, the previous
+    value silently survives a clear. That is the #323/#377/#1267 defect class,
+    and a user who cannot clear this field cannot get back to "leave my slats
+    alone under clouds".
+
+    The schema assertion also proves the new policy gate is wired through the
+    real options flow, not just callable in isolation: the Light & Cloud step
+    had no cover-type gate at all before this change.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_CLOUDY_TILT
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {
+            "current_position": 100,
+            "current_tilt_position": 50,
+            "supported_features": 143,
+        },
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Cloud Tilt", CONF_SENSOR_TYPE: CoverType.VENETIAN},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="cloud_tilt_01",
+        title="Cloud Tilt",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    async def _submit_light_cloud(user_input: dict) -> None:
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        assert result["type"] == "menu"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "light_cloud"}
+        )
+        assert result["step_id"] == "light_cloud"
+        assert CONF_CLOUDY_TILT in {str(k) for k in result["data_schema"].schema}
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "done"}
+        )
+        assert result["type"] == "create_entry"
+        await hass.async_block_till_done()
+
+    await _submit_light_cloud({CONF_CLOUDY_TILT: 100})
+    assert entry.options[CONF_CLOUDY_TILT] == 100
+
+    # A deliberate 0 is a real answer (slats closed), not a cleared field.
+    await _submit_light_cloud({CONF_CLOUDY_TILT: 0})
+    assert entry.options[CONF_CLOUDY_TILT] == 0
+
+    # Re-enter and submit WITHOUT the key — the shape voluptuous produces when
+    # the user empties the slider.
+    await _submit_light_cloud({})
+    assert entry.options[CONF_CLOUDY_TILT] is None
+
+
+@pytest.mark.integration
+async def test_cloudy_tilt_is_not_offered_to_a_single_axis_cover(
+    hass: HomeAssistant,
+) -> None:
+    """A vertical blind never sees the slat slider (#175 / G3).
+
+    The gate lives on the policy, so this is the assertion that a cover with no
+    independent slat axis is not asked "what angle should the slats take" — the
+    thing #1297's two-ClassVars reasoning exists to prevent.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_CLOUDY_TILT
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Blind No Tilt", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="cloud_tilt_blind_01",
+        title="Blind No Tilt",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "light_cloud"}
+    )
+    assert result["step_id"] == "light_cloud"
+    assert CONF_CLOUDY_TILT not in {str(k) for k in result["data_schema"].schema}
+
+
+@pytest.mark.integration
 async def test_weather_override_tilt_saves_and_clears(hass: HomeAssistant) -> None:
     """The venetian weather tilt round-trips, and clearing it really clears (#1297).
 

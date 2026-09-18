@@ -83,8 +83,15 @@
   "warnings": {
     "custom_position_bound_conflict": "⚠️ {label} : le maximum ({max}%) est inférieur au minimum ({min}%) — le minimum l'emporte et le maximum est ignoré.",
     "custom_tilt_only_conflict": "⚠️ {label} : inclinaison seulement est activé — Utiliser comme minimum / Utiliser ma position sont ignorés pour cet emplacement.",
+    "custom_tilt_only_bounds_discarded": "⚠️ {label} : lamelle fixée à {slat}% — les limites d'inclinaison configurées sont ignorées pour cet emplacement.",
+    "custom_tilt_only_no_effect": "⚠️ {label} : inclinaison seulement est activé sans angle de lamelle et sans limite d'inclinaison configurée — cet emplacement n'a aucun effet.",
+    "custom_outside_window_no_bounds": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais cet emplacement ne configure aucun minimum ni maximum — le réglage n'a aucun effet. Seules les limites min/max restent actives là-bas ; une position exacte jamais.",
+    "custom_outside_window_redundant": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais la priorité 100 agit déjà hors de la plage horaire (et passe outre le contrôle automatique et les seuils delta) — le réglage ne change rien ici.",
+    "custom_scope_to_window_no_fixed_claim": "⚠️ {label} : appliquer uniquement dans la plage horaire est activé, mais cet emplacement ne nomme aucune position exacte et n'utilise pas Ma position — le réglage n'a aucun effet. Il limite la revendication de position exacte uniquement ; le fait qu'une limite min/max survive à la fenêtre est décidé par garder les limites actives hors de la plage horaire à la place.",
+    "custom_scope_to_window_safety_ignored": "⚠️ {label} : appliquer uniquement dans la plage horaire est activé, mais la priorité 100 est sécurité — agir hors de la fenêtre est ce que signifie cette priorité, donc le réglage est ignoré ici.",
+    "custom_scope_to_window_needs_return": "⚠️ {label} : « Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte » est désactivé — l'emplacement se désactive à l'heure de fin et rien ne repositionne le store, donc il reste là où l'emplacement l'a laissé. Activez cette bascule.",
     "motion_hold_no_sensors": "Aucun capteur d'occupation configuré. La détection d'occupation est désactivée.",
-    "cloudy_pos_ignored": "⚠️ Position nuageux ({pos}%) configurée mais suppression de nuages est désactivée — la valeur sera ignorée.",
+    "cloud_settings_ignored": "⚠️ La suppression nuageuse est désactivée, donc {items} sera ignorée.",
     "sun_track_min_below_floor": "⚠️ Min suivi solaire {sun_min}% < position min {min_pos}% — le plancher toujours actif domine ; le plancher suivi solaire sera relevé à {min_pos}%.",
     "mode2_min_position": "⚠️ Inclinaison MODE2 + position min {min_pos}% — en MODE2 l'angle de lamelle ouvert (horizontal) EST 50%, donc toute position min ≥ 50 réduit à néant chaque décision de contrôle climatique/éblouissement au plancher et le store cesse de bloquer la chaleur.",
     "somfy_my_unset": "⚠️ Préréglage Somfy My est activé pour une ou plusieurs cibles mais Valeur du préréglage My n'est pas définie — revient au % configuré.",
@@ -93,13 +100,6 @@
     "group_empty": "⚠️ Ce groupe n'a pas de membres — il ne commandera rien.",
     "forecast_source_no_weather_entity": "⚠️ La source de température extérieure est basée sur les prévisions mais aucune entité météo n'est configurée — les prévisions vont silencieusement revenir au relevé en direct. Configurez une entité météo dans Météo, lumière & nuages.",
     "travel_time_unmeasurable": "⚠️ {entities} signalent un état supposé, donc leur temps de course ne peut pas être mesuré et aucun n'a été entré — les tableaux de bord ne les montreront pas en mouvement. Entrez une durée sous Étalonnage → Temps de course.",
-    "custom_tilt_only_bounds_discarded": "⚠️ {label} : lamelle fixée à {slat}% — les limites d'inclinaison configurées sont ignorées pour cet emplacement.",
-    "custom_tilt_only_no_effect": "⚠️ {label} : inclinaison seulement est activé sans angle de lamelle et sans limite d'inclinaison configurée — cet emplacement n'a aucun effet.",
-    "custom_outside_window_no_bounds": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais cet emplacement ne configure aucun minimum ni maximum — le réglage n'a aucun effet. Seules les limites min/max restent actives là-bas ; une position exacte jamais.",
-    "custom_outside_window_redundant": "⚠️ {label} : garder les limites actives hors de la plage horaire est activé, mais la priorité 100 agit déjà hors de la plage horaire (et passe outre le contrôle automatique et les seuils delta) — le réglage ne change rien ici.",
-    "custom_scope_to_window_no_fixed_claim": "⚠️ {label} : appliquer uniquement dans la plage horaire est activé, mais cet emplacement ne nomme aucune position exacte et n'utilise pas Ma position — le réglage n'a aucun effet. Il limite la revendication de position exacte uniquement ; le fait qu'une limite min/max survive à la fenêtre est décidé par garder les limites actives hors de la plage horaire à la place.",
-    "custom_scope_to_window_safety_ignored": "⚠️ {label} : appliquer uniquement dans la plage horaire est activé, mais la priorité 100 est sécurité — agir hors de la fenêtre est ce que signifie cette priorité, donc le réglage est ignoré ici.",
-    "custom_scope_to_window_needs_return": "⚠️ {label} : « Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte » est désactivé — l'emplacement se désactive à l'heure de fin et rien ne repositionne le store, donc il reste là où l'emplacement l'a laissé. Activez cette bascule.",
     "weather_window_scoped": "⚠️ La sécurité météo n'agit qu'à l'intérieur de la plage horaire — en dehors, le store suit la position de fin de plage / coucher du soleil, et la météo ne le protégera pas la nuit.",
     "weather_tilt_min_mode": "⚠️ Une inclinaison de dérogation météo est définie mais le mode de position minimale est activé — en mode de position minimale la météo ne relève que le plancher de position pour une autre règle à satisfaire et ne règle jamais les lamelles, donc l'inclinaison est ignorée."
   },
@@ -125,7 +125,8 @@
     "release": " · libération quand {parts}",
     "lux_release": "lux ≥ {release} lx",
     "irradiance_release": "rayonnement ≥ {release} W/m²",
-    "coverage_release": "couverture nuageuse ≤ {release}%"
+    "coverage_release": "couverture nuageuse ≤ {release}%",
+    "ignored_tilt": "inclinaison nuageuse des lamelles {tilt}%"
   },
   "info": {
     "light_sensors_off": "📊 Détecteurs de lumière configurés ({names}) mais suppression de nuages est désactivée.",

@@ -656,9 +656,18 @@ def weather_override_schema(
 
 
 def light_cloud_schema(
-    hass: HomeAssistant | None = None, options: dict | None = None
+    hass: HomeAssistant | None = None,
+    options: dict | None = None,
+    *,
+    include_tilt: bool = False,
 ) -> vol.Schema:
-    """Light/cloud schema. Lux/irradiance thresholds accept number or template."""
+    """Light/cloud schema. Lux/irradiance thresholds accept number or template.
+
+    ``include_tilt`` adds the cloudy slat angle (#175). Off by default so the
+    module-level ``LIGHT_CLOUD_SCHEMA`` and every single-axis cover type render
+    exactly as before; callers pass the value of the policy's
+    ``cloud_suppression_includes_tilt``, never a cover-type comparison.
+    """
     from .config_fields import FIELD_SPECS
     from .const import CONF_IRRADIANCE_PLANE
 
@@ -677,64 +686,83 @@ def light_cloud_schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(
-            CONF_WEATHER_ENTITY, default=vol.UNDEFINED
-        ): selector.EntitySelector(
-            selector.EntityFilterSelectorConfig(domain="weather")
-        ),
-        vol.Optional(CONF_IS_SUNNY_SENSOR, default=vol.UNDEFINED): binary_on_selector(),
-        **_condition_template_schema(
-            CONF_IS_SUNNY_TEMPLATE, CONF_IS_SUNNY_TEMPLATE_MODE
-        ),
-        vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): numeric_selector(
-            device_class="illuminance"
-        ),
-        vol.Optional(CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED): numeric_selector(
-            device_class="irradiance"
-        ),
-        # Which plane the sensor above measures (#1237) — rendered immediately
-        # after it, from the field registry so the options and default stay
-        # single-sourced. Affects only the estimated-solar-gain figure; the
-        # cloud-suppression threshold reads the same entity unchanged.
-        _irradiance_plane_marker: _irradiance_plane_selector,
-        vol.Optional(
-            CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
-        ): numeric_selector(),
-        vol.Optional(
-            CONF_WEATHER_STATE, default=DEFAULT_WEATHER_STATE
-        ): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                multiple=True,
-                sort=False,
-                options=list(_WEATHER_STATES),
-            )
-        ),
-        vol.Optional(CONF_LUX_THRESHOLD, default="1000"): _threshold_selector(),
-        vol.Optional(CONF_IRRADIANCE_THRESHOLD, default="300"): _threshold_selector(),
-        vol.Optional(
-            CONF_CLOUD_COVERAGE_THRESHOLD,
-            default=str(DEFAULT_CLOUD_COVERAGE_THRESHOLD),
-        ): _threshold_selector(),
-        # Smoothing controls (issue #864). Optional per-trigger hysteresis
-        # release edges (blank = off) accept a number or template like the
-        # activate thresholds above; the symmetric hold-time debounces the
-        # aggregate decision.
-        vol.Optional(CONF_LUX_RELEASE_THRESHOLD): _threshold_selector(),
-        vol.Optional(CONF_IRRADIANCE_RELEASE_THRESHOLD): _threshold_selector(),
-        vol.Optional(CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD): _threshold_selector(),
-        vol.Optional(
-            CONF_CLOUD_SUPPRESSION_HOLD_TIME,
-            default=DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0,
-                max=3600,
-                step=30,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="s",
-            )
-        ),
     }
+    if include_tilt:
+        # Straight from the registry so the marker's clearable/no-default shape
+        # and the slider config are stated once, in the FieldSpec — the same
+        # single-source idiom the irradiance plane below uses. Rendered here,
+        # at index 2: immediately after the carriage target it accompanies and
+        # ABOVE every sensor field, which is #364's lesson about behaviour
+        # targets belonging at the top of this screen.
+        from .const import CONF_CLOUDY_TILT
+
+        marker, sel = FIELD_SPECS[CONF_CLOUDY_TILT].to_marker(hass, options)
+        schema[marker] = sel
+    schema.update(
+        {
+            vol.Optional(
+                CONF_WEATHER_ENTITY, default=vol.UNDEFINED
+            ): selector.EntitySelector(
+                selector.EntityFilterSelectorConfig(domain="weather")
+            ),
+            vol.Optional(
+                CONF_IS_SUNNY_SENSOR, default=vol.UNDEFINED
+            ): binary_on_selector(),
+            **_condition_template_schema(
+                CONF_IS_SUNNY_TEMPLATE, CONF_IS_SUNNY_TEMPLATE_MODE
+            ),
+            vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): numeric_selector(
+                device_class="illuminance"
+            ),
+            vol.Optional(
+                CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED
+            ): numeric_selector(device_class="irradiance"),
+            # Which plane the sensor above measures (#1237) — rendered immediately
+            # after it, from the field registry so the options and default stay
+            # single-sourced. Affects only the estimated-solar-gain figure; the
+            # cloud-suppression threshold reads the same entity unchanged.
+            _irradiance_plane_marker: _irradiance_plane_selector,
+            vol.Optional(
+                CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
+            ): numeric_selector(),
+            vol.Optional(
+                CONF_WEATHER_STATE, default=DEFAULT_WEATHER_STATE
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    multiple=True,
+                    sort=False,
+                    options=list(_WEATHER_STATES),
+                )
+            ),
+            vol.Optional(CONF_LUX_THRESHOLD, default="1000"): _threshold_selector(),
+            vol.Optional(
+                CONF_IRRADIANCE_THRESHOLD, default="300"
+            ): _threshold_selector(),
+            vol.Optional(
+                CONF_CLOUD_COVERAGE_THRESHOLD,
+                default=str(DEFAULT_CLOUD_COVERAGE_THRESHOLD),
+            ): _threshold_selector(),
+            # Smoothing controls (issue #864). Optional per-trigger hysteresis
+            # release edges (blank = off) accept a number or template like the
+            # activate thresholds above; the symmetric hold-time debounces the
+            # aggregate decision.
+            vol.Optional(CONF_LUX_RELEASE_THRESHOLD): _threshold_selector(),
+            vol.Optional(CONF_IRRADIANCE_RELEASE_THRESHOLD): _threshold_selector(),
+            vol.Optional(CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD): _threshold_selector(),
+            vol.Optional(
+                CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+                default=DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=3600,
+                    step=30,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="s",
+                )
+            ),
+        }
+    )
     return vol.Schema(schema)
 
 

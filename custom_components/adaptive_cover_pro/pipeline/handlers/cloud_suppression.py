@@ -10,6 +10,7 @@ from ..helpers import (
     compute_default_position,
     compute_default_tilt,
     compute_raw_calculated_position,
+    resolve_cloudy_tilt,
 )
 from ..types import PipelineResult, PipelineSnapshot
 
@@ -76,11 +77,13 @@ class CloudSuppressionHandler(OverrideHandler):
         # Each branch states its own tilt (issue #1214). The two that resolve
         # the position from the effective default pair it with the effective
         # default/sunset tilt; the cloudy_position branch answers with a
-        # configured override, so the slats hold their current angle — the
-        # #1153 rule for hold-type winners. Provenance, not value: a
-        # cloudy_position that happens to equal the default position (0 %
-        # alongside a venetian's default_percentage of 0 %, the #1214
-        # reporter's own config) is still an override.
+        # configured override, so it answers with the configured cloud tilt —
+        # and with nothing when none is configured, leaving the slats where
+        # they are, the #1153 rule for hold-type winners. Provenance, not
+        # value: a cloudy_position that happens to equal the default position
+        # (0 % alongside a venetian's default_percentage of 0 %, the #1214
+        # reporter's own config) is still an override, so it never borrows
+        # default_tilt no matter what the numbers say.
         cloudy = snapshot.climate_options.cloudy_position
         tilt: int | None
         if snapshot.is_sunset_active:
@@ -90,7 +93,7 @@ class CloudSuppressionHandler(OverrideHandler):
         elif cloudy is not None:
             position = apply_snapshot_limits(snapshot, cloudy, sun_valid=False)
             pos_label = Reason(ReasonCode.FRAGMENT_CLOUDY_POSITION)
-            tilt = None
+            tilt = resolve_cloudy_tilt(snapshot)
         else:
             position = compute_default_position(snapshot)
             pos_label = Reason(ReasonCode.FRAGMENT_DEFAULT_POSITION)

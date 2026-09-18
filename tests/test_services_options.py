@@ -1715,6 +1715,41 @@ class TestSetLightCloud:
         new_opts = mock_update.call_args[1]["options"]
         assert new_opts["weather_state"] == new_states
 
+    async def test_cloudy_tilt_round_trips_and_clears(self, hass: HomeAssistant):
+        """The #175 slat angle is settable, and ``None`` clears it.
+
+        It carries a ``FIELD_VALIDATORS`` entry, so the service seat is not
+        optional — without it the validator would be dead code and the key
+        silently dropped by ``_build_patch``. The clear leg matters as much as
+        the set leg: ``None`` is what returns the cover to "leave my slats
+        alone", and it must not be coerced to 0 (which means slats closed).
+        ``apply_options_patch`` clears by *removing* the key, so absence — not
+        a stored ``None`` — is what the service leaves behind.
+        """
+        from custom_components.adaptive_cover_pro.const import CONF_CLOUDY_TILT
+
+        await _setup(hass, entry_id="lc_tilt_01", cover_type=CoverType.VENETIAN)
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_light_cloud", {CONF_CLOUDY_TILT: 100})
+        assert mock_update.call_args[1]["options"][CONF_CLOUDY_TILT] == 100
+
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_light_cloud", {CONF_CLOUDY_TILT: 0})
+        assert mock_update.call_args[1]["options"][CONF_CLOUDY_TILT] == 0
+
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_light_cloud", {CONF_CLOUDY_TILT: None})
+        assert CONF_CLOUDY_TILT not in mock_update.call_args[1]["options"]
+
 
 class TestSetClimate:
     """Integration tests for set_climate service."""

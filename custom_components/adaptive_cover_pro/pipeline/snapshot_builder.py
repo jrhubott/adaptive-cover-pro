@@ -46,6 +46,7 @@ from ..const import (
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    CONF_CLOUDY_TILT,
     CONF_DEFAULT_TILT,
     CONF_DELTA_TIME,
     CONF_DEVICE_ID,
@@ -743,6 +744,22 @@ class PipelineSnapshotBuilder:
                 options.get(CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR, False)
             ),
             cloudy_position=options.get(CONF_CLOUDY_POSITION),
+            # Gated on the policy, unlike its position sibling above (#175).
+            # The field is venetian-only in the UI, but the key can still be
+            # STORED on a type that never shows it: ``acp.set_light_cloud`` has
+            # no cover-type gate and a venetian → blind switch deliberately
+            # deletes nothing (#1132). Read ungated, a stray value would ride
+            # out on the winning result's tilt every cloudy hold, driving an
+            # axis the cover either lacks or already drives through
+            # ``cloudy_position`` — with no UI field to see or clear it. Gating
+            # the one seam that builds every ClimateOptions closes the service,
+            # type-switch and hand-edited routes at once. Mirrors the
+            # ``weather_override_tilt`` read in ``build`` below.
+            cloudy_tilt=(
+                options.get(CONF_CLOUDY_TILT)
+                if self._policy.cloud_suppression_includes_tilt
+                else None
+            ),
             temp_extreme_heat=options.get(CONF_TEMP_EXTREME_HEAT),
             extreme_heat_position=options.get(CONF_EXTREME_HEAT_POSITION),
             # Absent / None falls back to all-seasons (unchanged behaviour for
