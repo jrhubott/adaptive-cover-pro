@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 from ..const import DOMAIN
 from ..helpers import usable_coordinator
+from ..state.area_resolver import area_device_ids
 from .diagnostics_service import async_handle_get_diagnostics
 from .group_service import GROUP_SERVICE_NAMES, register_group_services
 from .engage_manual_override_service import (
@@ -202,15 +203,8 @@ def _resolve_targets(
     device_ids: list[str] = cv.ensure_list(call.data.get("device_id"))
     area_ids: list[str] = cv.ensure_list(call.data.get("area_id"))
 
-    # Expand area_ids → device_ids via the registry's own area index. Scanning
-    # every device in the install is deprecated and stops working in HA
-    # 2027.9.0 (issue #1339); the index also makes an area_id re-check redundant.
-    if area_ids:
-        dev_reg = dr.async_get(hass)
-        for area_id in area_ids:
-            device_ids.extend(
-                device.id for device in dr.async_entries_for_area(dev_reg, area_id)
-            )
+    for area_id in area_ids:
+        device_ids.extend(area_device_ids(hass, area_id))
 
     # No target at all → all coordinators, no filter
     if not entity_ids and not device_ids and not area_ids:

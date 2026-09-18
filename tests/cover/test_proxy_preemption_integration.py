@@ -62,9 +62,8 @@ async def _setup_proxy(hass, *, source: str = "cover.living_room"):
     reg = er.async_get(hass)
     proxy_eid = next(
         e.entity_id
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id
-        and e.unique_id.startswith(f"{entry.entry_id}_proxy_")
+        for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.unique_id.startswith(f"{entry.entry_id}_proxy_")
     )
     return entry, coordinator, proxy_eid
 

@@ -61,9 +61,8 @@ def _proxy_states(hass, entry_id: str):
     reg = er.async_get(hass)
     proxy_eids = {
         e.entity_id
-        for e in reg.entities.values()
-        if e.config_entry_id == entry_id
-        and e.unique_id.startswith(f"{entry_id}_proxy_")
+        for e in er.async_entries_for_config_entry(reg, entry_id)
+        if e.unique_id.startswith(f"{entry_id}_proxy_")
     }
     return [hass.states.get(eid) for eid in proxy_eids if hass.states.get(eid)]
 
@@ -94,9 +93,14 @@ async def test_proxy_unique_id_format(hass) -> None:
     )
     reg = er.async_get(hass)
     expected = f"{entry.entry_id}_proxy_{slugify('cover.living_room')}"
-    matches = [e for e in reg.entities.values() if e.unique_id == expected]
-    assert matches, f"unique_id {expected!r} not found in registry"
-    assert matches[0].entity_id.startswith("cover.")
+    # The unique-id index answers this directly, and asking it for the
+    # ``cover`` domain folds in what the old ``startswith("cover.")`` assertion
+    # checked separately: a hit proves the id exists AND landed in that domain.
+    entity_id = reg.async_get_entity_id("cover", DOMAIN, expected)
+    assert entity_id, (
+        f"no cover entity with unique_id {expected!r} — the proxy unique-id "
+        "format changed, or the entity landed in another domain"
+    )
 
 
 async def test_proxy_name_single_cover(hass) -> None:
@@ -149,9 +153,7 @@ async def test_proxy_device_info_matches_acp_entry_device(hass) -> None:
     e_reg = er.async_get(hass)
     d_reg = dr.async_get(hass)
     # Look up an ACP sensor created by the same entry to find the virtual device
-    own_entities = [
-        ent for ent in e_reg.entities.values() if ent.config_entry_id == entry.entry_id
-    ]
+    own_entities = er.async_entries_for_config_entry(e_reg, entry.entry_id)
     assert own_entities, "no entities registered for entry"
     devices = {ent.device_id for ent in own_entities if ent.device_id}
     assert (

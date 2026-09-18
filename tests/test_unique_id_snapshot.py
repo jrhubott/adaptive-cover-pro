@@ -155,9 +155,7 @@ async def test_unique_id_snapshot_max_config(hass: HomeAssistant) -> None:
 
     reg = er.async_get(hass)
     actual_uids = sorted(
-        e.unique_id
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id
+        e.unique_id for e in er.async_entries_for_config_entry(reg, entry.entry_id)
     )
     expected_uids = sorted(
         f"{ENTRY_ID}_{suffix}" for suffix in EXPECTED_UNIQUE_ID_SUFFIXES

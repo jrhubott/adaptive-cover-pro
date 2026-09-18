@@ -18,6 +18,11 @@ from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
 pytestmark = pytest.mark.integration
 
+# The entry ``_setup_no_sources`` builds.  Named because the assertion in
+# ``test_setup_returns_when_sources_empty`` has to look the same entry up by id
+# — the registry is queried per config entry, not scanned whole.
+_EMPTY_SOURCES_ENTRY_ID = "proxy_cov_empty"
+
 
 async def _setup_no_sources(hass) -> None:
     """Proxy enabled, but ``CONF_ENTITIES`` is empty — no proxies are created."""
@@ -30,7 +35,7 @@ async def _setup_no_sources(hass) -> None:
         domain=DOMAIN,
         data={"name": "Empty Sources", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
-        entry_id="proxy_cov_empty",
+        entry_id=_EMPTY_SOURCES_ENTRY_ID,
         title="Empty Sources",
     )
     entry.add_to_hass(hass)
@@ -47,8 +52,8 @@ async def test_setup_returns_when_sources_empty(hass) -> None:
     reg = er.async_get(hass)
     proxies = [
         e
-        for e in reg.entities.values()
-        if e.unique_id.startswith("proxy_cov_empty_proxy_")
+        for e in er.async_entries_for_config_entry(reg, _EMPTY_SOURCES_ENTRY_ID)
+        if e.unique_id.startswith(f"{_EMPTY_SOURCES_ENTRY_ID}_proxy_")
     ]
     assert proxies == []
 
@@ -89,9 +94,8 @@ async def _setup_unavail_proxy(hass):
     reg = er.async_get(hass)
     proxy_eid = next(
         e.entity_id
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id
-        and e.unique_id.startswith(f"{entry.entry_id}_proxy_")
+        for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.unique_id.startswith(f"{entry.entry_id}_proxy_")
     )
 
     # Flip the source to unavailable AFTER setup so the proxy is alive but blind.
@@ -165,9 +169,8 @@ async def test_tilt_command_dropped_when_source_lacks_tilt_capability(hass) -> N
     reg = er.async_get(hass)
     proxy_eid = next(
         e.entity_id
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id
-        and e.unique_id.startswith(f"{entry.entry_id}_proxy_")
+        for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.unique_id.startswith(f"{entry.entry_id}_proxy_")
     )
 
     # Use the proxy's own method directly — HA's framework would reject the
@@ -215,9 +218,8 @@ async def test_properties_when_source_state_object_missing(hass) -> None:
     reg = er.async_get(hass)
     proxy_eid = next(
         e.entity_id
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id
-        and e.unique_id.startswith(f"{entry.entry_id}_proxy_")
+        for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.unique_id.startswith(f"{entry.entry_id}_proxy_")
     )
     proxy = next(
         e

@@ -1,4 +1,4 @@
-"""Static backstop: no integration code may treat a registry's items as a mapping.
+"""Static backstop: nothing here may treat a registry's items as a mapping.
 
 Home Assistant's device and entity registries expose their contents through
 ``registry.devices`` / ``registry.entities``, which are ``BaseRegistryItems``
@@ -9,10 +9,39 @@ Home Assistant 2027.9.0** (issue #1339).  HA's ``helpers/frame.py`` reports the
 usage today and removes the mapping surface at that version.
 
 This test parses every ``.py`` file under ``custom_components/adaptive_cover_pro``
-with the ``ast`` module, enumerates each such mapping access, and compares the
-discovered ``<relative/path.py>::<enclosing_function>`` names against a
-hard-coded exemption list.  That list is empty: issue #1339 converted the last
-four sites, and nothing in the integration may reintroduce the pattern.
+**and under ``tests/``** with the ``ast`` module, enumerates each such access,
+and compares the discovered ``<repo/relative/path.py>::<enclosing_function>``
+names against a hard-coded exemption list.  That list is empty: issue #1339
+converted the last four production sites, issue #1373 converted the test-side
+ones, and nothing in the repo may reintroduce the pattern.
+
+Why ``tests/`` is in scope (issue #1373)
+------------------------------------------
+Production was cleared by #1339, so the only place the deprecated surface could
+still hide was the test suite — and it did, in a dozen files.  The consequences
+there are worse, not better, than in production:
+
+- HA's deprecation reporter grades by *frame*.  A custom integration gets
+  ``ReportBehavior.LOG``; a test frame has no custom integration on the stack,
+  so ``helpers/frame.py`` classifies it as core and raises ``RuntimeError``
+  instead.  The suite breaks **before** production does, not after.
+- A test that reaches for a registry internal pins an HA implementation detail
+  as though it were a contract.  When HA reimplements it, the test fails for a
+  reason that has nothing to do with this integration — the exact churn #1373
+  was filed to stop.
+
+Two matchers, two failure modes
+---------------------------------
+1. **Mapping access** — ``<registry>.devices.values()`` and friends.  The
+   deprecated read, in production or in a test.
+2. **Internal access** — any *other* attribute on a registry-items container:
+   ``registry.devices.get_devices_for_area_id``, ``.get_entry``, ``.data``.
+   These are not deprecated, they are simply not public.  Mocking one is how a
+   test comes to depend on the current body of a public helper rather than on
+   the helper itself: ``dr.async_entries_for_area`` is a one-line wrapper over
+   ``devices.get_devices_for_area_id`` *today*, so patching the inner call
+   works right up until HA rewrites the wrapper — and then silently stops
+   intercepting, leaving the mock returning an empty list rather than raising.
 
 What to use instead
 -------------------
@@ -27,6 +56,14 @@ through module-level ``@callback`` helpers that are *not* deprecated:
 - ``registry.async_get(device_id)`` / ``registry.async_get(entity_id)`` for a
   single known id — this is the sanctioned replacement for
   ``registry.devices.get(...)`` and ``registry.devices[...]``.
+- ``registry.async_get_entity_id(domain, platform, unique_id)`` for the
+  unique-id index.
+
+In a test, prefer the real thing over a mock of any of the above: the
+``device_registry``, ``entity_registry`` and ``area_registry`` fixtures
+``pytest_homeassistant_custom_component`` ships are real registries, so they
+track whatever HA does to the internals.  When a mock really is the right tool,
+spec it (``MagicMock(spec=dr.DeviceRegistry)``) and patch the *public* helper.
 
 ⚠️  ``dr.async_entries_for_area`` / ``er.async_entries_for_area`` apply **no**
 ``disabled_by`` filter, but ``er.async_entries_for_device`` defaults to
@@ -34,19 +71,20 @@ through module-level ``@callback`` helpers that are *not* deprecated:
 two accessors are asymmetric — pass the kwarg explicitly when a full-mapping
 scan is what you are replacing.
 
-Why bare iteration is not flagged (and still not used here)
-------------------------------------------------------------
+Why bare iteration is not flagged (and still not used in production)
+----------------------------------------------------------------------
 ``for device in registry.devices:`` is sanctioned by HA and is deliberately not
-flagged by this scan.  This repo still avoids it: ``UserDict.__iter__`` yields
-*keys*, so every hit needs a follow-up ``registry.async_get(key)`` — an O(n)
-scan plus O(n) redundant lookups, strictly worse than the O(1)-per-hit indexed
-accessors above.
+flagged by either matcher.  Production still avoids it: ``UserDict.__iter__``
+yields *keys*, so every hit needs a follow-up ``registry.async_get(key)`` — an
+O(n) scan plus O(n) redundant lookups, strictly worse than the O(1)-per-hit
+indexed accessors above.
 
 Why the container must sit on something registry-shaped
 ---------------------------------------------------------
 The scan flags ``<receiver>.devices`` / ``<receiver>.entities`` only when the
 receiver itself looks like a registry: a name or attribute ending in ``reg`` /
-``registry`` (``dev_reg``, ``ent_reg``, ``self._registry``), or a call to
+``registry`` (``dev_reg``, ``ent_reg``, ``self._registry``) or in the mock
+spellings ``reg_mock`` / ``registry_mock`` (``dev_reg_mock``), or a call to
 ``async_get`` (``er.async_get(hass).entities``).  Both narrowings matter.
 Dropping the receiver test entirely would flag a bare ``devices[key] = ...``
 local dict — ``config_flow.py`` builds two of those.  Accepting *any*
@@ -64,26 +102,42 @@ its reach, in rough order of likelihood:
 - ``device_id in dev_reg.devices`` — ``__contains__`` is a mapping read too.
 - ``len(reg.devices)`` and ``dict(reg.devices)`` — any coercion or builtin
   that consumes the mapping without naming one of its methods.
-- ``reg.entities.data.values()`` — the receiver attribute is ``data``, so the
-  ``devices``/``entities`` test never sees it.
-- Aliasing: ``items = reg.entities`` followed by ``items.values()`` — the
-  scan has no dataflow, only shapes.
+- Aliasing, against **either** matcher: ``items = reg.entities`` followed by
+  ``items.values()`` or ``items.get_entry(...)`` — the scan has no dataflow,
+  only shapes, so once the container is bound to a plain local it is invisible.
 - A registry reached through a subscript or an unconventionally named local
   (``hass.data[SOMETHING].devices.values()``, ``r.devices.values()``).
+- **A patch target written as a string** —
+  ``patch("homeassistant.helpers.device_registry.DeviceRegistryItems.get_devices_for_area_id")``
+  reaches the same internal, but it is an ``ast.Constant``: there is no
+  attribute access to match on.  Matching strings was considered and rejected
+  as unfixably leaky — this module's own docstring quotes
+  ``dev_reg.devices.values()`` as prose, and so does every docstring
+  explaining the rule, so a string scan would flag the guard that defines it.
+  Patching an HA-internal *path* is rarer than mocking an attribute and is a
+  deliberate act rather than a copy-paste, which is why the honest gap is
+  preferable to a matcher that cries wolf.
 
-Closing these needs type inference and is not worth it: the realistic
+(``reg.entities.data.values()`` used to be listed here.  The internal-access
+matcher closes it: ``.data`` is flagged as an internal attribute before the
+``.values()`` ever matters.)
+
+Closing the rest needs type inference and is not worth it: the realistic
 regression is someone copy-pasting the old ``dev_reg.devices.values()`` line,
 which the scan does catch.  HA's own runtime deprecation warning stays the
-backstop for the rest.
+backstop for the remainder.
 
 How to respond when this test fails
 -------------------------------------
 1. Find the reported ``path.py::function``.  It contains a new
-   ``registry.devices``/``registry.entities`` mapping access.
-2. Replace it with the matching indexed accessor from the list above.  If you
-   need every entity for a device, remember the ``include_disabled_entities``
-   asymmetry.
-3. Only if no accessor fits, add the ``path.py::function`` string to
+   ``registry.devices``/``registry.entities`` access.
+2. **Mapping access** — replace it with the matching indexed accessor from the
+   list above.  If you need every entity for a device, remember the
+   ``include_disabled_entities`` asymmetry.
+3. **Internal access** — in production, call the public helper that wraps it.
+   In a test, patch the public helper instead of its innards, or drop the mock
+   for the real registry fixture.
+4. Only if no accessor fits, add the ``path.py::function`` string to
    ``MAPPING_SCAN_EXEMPTIONS`` below **with a comment saying why** — and know
    that the exemption expires when HA 2027.9.0 removes the mapping surface.
 """
@@ -92,6 +146,7 @@ from __future__ import annotations
 
 import ast
 import pathlib
+from collections.abc import Callable, Iterator
 
 import pytest
 
@@ -99,12 +154,14 @@ import pytest
 # Exemptions
 # ---------------------------------------------------------------------------
 
-# Every ``<relative/path.py>::<enclosing_function>`` in the integration that is
-# allowed to access ``registry.devices`` / ``registry.entities`` as a mapping.
-# Empty since issue #1339 converted the last four sites.  The constant stays so
-# a future author who genuinely needs an exception has a documented place to
-# justify it — one entry, one comment saying why — instead of deleting the
-# guard.  Any exemption expires when HA 2027.9.0 removes the mapping surface.
+# Every ``<repo/relative/path.py>::<enclosing_function>`` in the repo that is
+# allowed to access ``registry.devices`` / ``registry.entities`` as a mapping,
+# or to reach into one of its internals.  Empty since issue #1339 converted the
+# last four production sites and #1373 converted the test-side ones.  The
+# constant stays so a future author who genuinely needs an exception has a
+# documented place to justify it — one entry, one comment saying why — instead
+# of deleting the guard.  Any exemption expires when HA 2027.9.0 removes the
+# mapping surface.
 MAPPING_SCAN_EXEMPTIONS: frozenset[str] = frozenset()
 
 
@@ -112,9 +169,13 @@ MAPPING_SCAN_EXEMPTIONS: frozenset[str] = frozenset()
 # AST helpers
 # ---------------------------------------------------------------------------
 
-_INTEGRATION_ROOT = (
-    pathlib.Path(__file__).parent.parent / "custom_components" / "adaptive_cover_pro"
-)
+_REPO_ROOT = pathlib.Path(__file__).parent.parent
+
+_INTEGRATION_ROOT = _REPO_ROOT / "custom_components" / "adaptive_cover_pro"
+
+# Production *and* the test suite — see "Why ``tests/`` is in scope" above.
+# Hit keys are relative to the repo root, so the two are unambiguous.
+_SCAN_ROOTS = (_INTEGRATION_ROOT, _REPO_ROOT / "tests")
 
 # ``UserDict`` methods that HA's deprecation covers.  Bare iteration is absent
 # deliberately — see the module docstring.
@@ -124,12 +185,26 @@ _MAPPING_METHODS = frozenset({"values", "items", "keys", "get"})
 _REGISTRY_ITEMS_ATTRS = frozenset({"devices", "entities"})
 
 # What a registry is called when it is a local, an argument or an attribute:
-# ``dev_reg``, ``ent_reg``, ``device_reg``, ``registry``, ``self._registry``.
-_REGISTRY_NAME_SUFFIXES = ("reg", "registry")
+# ``dev_reg``, ``ent_reg``, ``device_reg``, ``registry``, ``self._registry`` —
+# plus the two test spellings, ``dev_reg_mock`` / ``device_registry_mock``.
+_REGISTRY_NAME_SUFFIXES = ("reg", "registry", "reg_mock", "registry_mock")
 
 # ...and how one is produced inline, where there is no name to match on:
 # ``dr.async_get(hass).devices`` / ``er.async_get(hass).entities``.
 _REGISTRY_GETTER = "async_get"
+
+# The device-registry area hop, as ``(module alias, function)``.  ``dr`` is
+# HA's universal alias for ``homeassistant.helpers.device_registry`` and the
+# only spelling this repo uses.  The entity-registry twin
+# (``er.async_entries_for_area``) is a different hop with a different owner —
+# ``group_coordinator`` resolves area → *entities* — and is out of scope here.
+_AREA_DEVICE_HOP = ("dr", "async_entries_for_area")
+
+# The one function allowed to perform that hop — see
+# ``test_area_hop_lives_only_in_area_resolver``.
+_AREA_HOP_HOME = (
+    "custom_components/adaptive_cover_pro/state/area_resolver.py::area_device_ids"
+)
 
 
 def _enclosing_function(node: ast.AST, tree: ast.Module) -> str | None:
@@ -199,19 +274,74 @@ def _is_mapping_access(node: ast.AST) -> bool:
     return False
 
 
-def _find_mapping_scan_sites() -> list[str]:
-    """Return ``<relative/path.py>::<function>`` for every registry mapping access."""
-    hits: list[str] = []
+def _is_internal_access(node: ast.AST) -> bool:
+    """Report whether node reaches into — or stubs out — a registry-items container.
 
-    for path in sorted(_INTEGRATION_ROOT.rglob("*.py")):
-        tree = ast.parse(path.read_text())
-        for node in ast.walk(tree):
-            if not _is_mapping_access(node):
-                continue
-            relative = path.relative_to(_INTEGRATION_ROOT).as_posix()
-            hits.append(f"{relative}::{_enclosing_function(node, tree)}")
+    Two shapes, both of which pin an HA implementation detail:
 
-    return hits
+    - **Reading an internal.** An attribute on ``<registry>.devices`` /
+      ``.entities`` that is not one of the deprecated mapping methods:
+      ``get_devices_for_area_id``, ``get_entry``, ``data``.
+      ``_is_mapping_access`` owns the deprecated names, so the two matchers
+      partition the surface rather than overlapping on it.
+    - **Replacing the container.** An assignment *to* it —
+      ``dev_reg_mock.devices = MagicMock(spec=[...])``.  A test that stubs the
+      container has pinned the registry's internal structure without ever
+      naming one of its attributes, so the read half above never sees it.
+      This is the shape #1345 left behind in ``test_global_services`` and
+      #1373 removed.
+
+    Bare iteration (``for device in reg.devices``) names no attribute and
+    assigns nothing, so it stays sanctioned.
+    """
+    if isinstance(node, ast.Assign):
+        return any(_is_registry_items(target) for target in node.targets)
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr not in _MAPPING_METHODS
+        and _is_registry_items(node.value)
+    )
+
+
+def _is_area_device_hop(node: ast.AST) -> bool:
+    """Report whether node is a ``dr.async_entries_for_area(...)`` call."""
+    module, function = _AREA_DEVICE_HOP
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == function
+        and isinstance(func.value, ast.Name)
+        and func.value.id == module
+    )
+
+
+def _walk_sources(
+    roots: tuple[pathlib.Path, ...],
+) -> Iterator[tuple[str, ast.Module]]:
+    """Yield ``(repo-relative path, parsed tree)`` for every ``.py`` under roots.
+
+    The single file-walking implementation in this module: every scan below
+    goes through it, so widening or narrowing the sweep is a one-line change
+    in one place.
+    """
+    for root in roots:
+        for path in sorted(root.rglob("*.py")):
+            yield path.relative_to(_REPO_ROOT).as_posix(), ast.parse(path.read_text())
+
+
+def _find_sites(
+    roots: tuple[pathlib.Path, ...],
+    predicate: Callable[[ast.AST], bool],
+) -> list[str]:
+    """Return ``<repo/relative/path.py>::<function>`` for every matching node."""
+    return [
+        f"{relative}::{_enclosing_function(node, tree)}"
+        for relative, tree in _walk_sources(roots)
+        for node in ast.walk(tree)
+        if predicate(node)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -220,8 +350,18 @@ def _find_mapping_scan_sites() -> list[str]:
 
 
 def _matches(source: str) -> bool:
-    """Whether the matcher flags ``source``, parsed as a single expression."""
+    """Whether the mapping matcher flags ``source``, parsed as an expression."""
     return _is_mapping_access(ast.parse(source, mode="eval").body)
+
+
+def _matches_internal(source: str) -> bool:
+    """Whether the internal-access matcher flags any node in ``source``.
+
+    Parsed as a module rather than an expression: the flagged shapes nest
+    inside calls and assignments, and the sanctioned ``for d in reg.devices:``
+    shape is a statement, so this one has to walk.
+    """
+    return any(_is_internal_access(node) for node in ast.walk(ast.parse(source)))
 
 
 @pytest.mark.unit
@@ -236,6 +376,8 @@ def _matches(source: str) -> bool:
         "DEVICE_REG.devices[device_id]",
         "er.async_get(hass).entities.values()",
         "dr.async_get(self.hass).devices[device_id]",
+        "dev_reg_mock.devices.values()",
+        "ent_reg_mock.entities.get(entity_id)",
     ],
 )
 def test_matcher_flags_every_way_a_registry_scan_is_written(source):
@@ -271,6 +413,37 @@ def test_matcher_ignores_containers_that_are_not_registries(source):
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
+    ("source", "flagged"),
+    [
+        ("registry.devices.get_devices_for_area_id(area_id)", True),
+        ("dev_reg_mock.devices.get_devices_for_area_id.side_effect = fn", True),
+        ("ent_reg.entities.data", True),
+        # Stubbing the container wholesale names no internal attribute, so the
+        # read half of the matcher cannot see it.
+        ('dev_reg_mock.devices = MagicMock(spec=["get_devices_for_area_id"])', True),
+        ("ent_reg.entities = {}", True),
+        # ACP's own ``entities`` list — the receiver is not registry-shaped.
+        ("coordinator.entities.append(entity_id)", False),
+        ("coordinator.entities = []", False),
+        # A bare local, not a registry-items container.
+        ("devices.get_devices_for_area_id(area_id)", False),
+        # Bare iteration is sanctioned by HA and names no attribute.
+        ("for device in dev_reg.devices: pass", False),
+    ],
+)
+def test_matcher_flags_internal_accessors_on_registry_items(source, flagged):
+    """Reaching past the public helper into the registry's own index is a hit.
+
+    This is the half of the guard that catches a *test* pinning an HA
+    implementation detail — ``registry.devices.get_devices_for_area_id`` is
+    what ``dr.async_entries_for_area`` happens to call today, and mocking it
+    silently stops intercepting the day HA rewrites the wrapper (issue #1373).
+    """
+    assert _matches_internal(source) is flagged
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
     "source",
     [
         "hass.data[DOMAIN].devices.values()",
@@ -279,29 +452,44 @@ def test_matcher_ignores_containers_that_are_not_registries(source):
         "device_id in dev_reg.devices",
         "len(dev_reg.devices)",
         "dict(dev_reg.devices)",
-        "ent_reg.entities.data.values()",
     ],
 )
 def test_matcher_misses_these_and_the_docstring_says_so(source):
     """Pin the accepted blind spots so the module docstring stays honest.
 
     Each of these is a real registry mapping read the scan cannot see — an
-    unrecognised receiver, an alias, ``__contains__``, a builtin, or the
-    underlying ``.data`` dict.  Listed in the docstring's "What this guard
-    does NOT catch"; if you ever close one, delete its line from both.
+    unrecognised receiver, an alias, ``__contains__`` or a builtin.  Listed in
+    the docstring's "What this guard does NOT catch"; if you ever close one,
+    delete its line from both.
     """
     assert not _matches(source)
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("source", "flagged"),
+    [
+        ("dr.async_entries_for_area(dev_reg, area_id)", True),
+        # The entity-registry twin is a different hop with a different owner.
+        ("er.async_entries_for_area(ent_reg, area_id)", False),
+    ],
+)
+def test_area_hop_matcher_is_the_device_registry_one(source, flagged):
+    """Only the area → *devices* hop is unified; area → entities is separate."""
+    assert _is_area_device_hop(ast.parse(source, mode="eval").body) is flagged
+
+
+@pytest.mark.unit
 def test_no_registry_mapping_scans_outside_the_exemption_list():
-    """No integration code may read ``registry.devices``/``.entities`` as a mapping.
+    """No code here may read ``registry.devices``/``.entities`` as a mapping.
 
     If this test fails, a new ``.values()``/``.items()``/``.keys()``/``.get()``
-    call or a ``[...]`` subscript was added against a registry-items container.
-    Follow the instructions in the module docstring to resolve the failure.
+    call, a ``[...]`` subscript, or a reach into a registry internal was added
+    against a registry-items container.  Follow the instructions in the module
+    docstring to resolve the failure.
     """
-    discovered = set(_find_mapping_scan_sites())
+    discovered = set(_find_sites(_SCAN_ROOTS, _is_mapping_access))
+    internal = sorted(set(_find_sites(_SCAN_ROOTS, _is_internal_access)))
 
     unknown = discovered - MAPPING_SCAN_EXEMPTIONS
     stale = MAPPING_SCAN_EXEMPTIONS - discovered
@@ -319,5 +507,33 @@ def test_no_registry_mapping_scans_outside_the_exemption_list():
             f"Exempted sites no longer scan a registry as a mapping: {sorted(stale)}.\n"
             "Remove the stale entries from MAPPING_SCAN_EXEMPTIONS in this file."
         )
+    if internal:
+        messages.append(
+            f"Registry internals read directly: {internal}.\n"
+            "These are HA implementation details, not API. In production call "
+            "the public helper that wraps them (dr.async_entries_for_area / "
+            "dr.async_entries_for_config_entry / er.async_entries_for_*). In a "
+            "test, patch that public helper instead of its innards, or use the "
+            "real device_registry / entity_registry / area_registry fixtures."
+        )
 
     assert not messages, "\n\n".join(messages)
+
+
+@pytest.mark.unit
+def test_area_hop_lives_only_in_area_resolver():
+    """``area_device_ids`` is the one place production expands an area to devices.
+
+    ``services/__init__.py`` and ``services/group_service.py`` each used to
+    carry their own copy of the expansion — nine identical lines, comment
+    included — which is how the same HA change breaks three call sites at once
+    (issue #1373).  ``state/area_resolver`` owns the device<->area registry hop
+    in both directions; every other caller delegates to it.
+    """
+    sites = sorted(set(_find_sites((_INTEGRATION_ROOT,), _is_area_device_hop)))
+
+    assert sites == [_AREA_HOP_HOME], (
+        f"dr.async_entries_for_area is called from {sites}.\n"
+        "Only state/area_resolver.py::area_device_ids may perform the area → "
+        "devices hop; call area_device_ids(hass, area_id) instead."
+    )

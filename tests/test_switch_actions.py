@@ -440,8 +440,8 @@ async def test_glare_zone_switches_created_when_configured(hass) -> None:
     reg = er.async_get(hass)
     switch_entities = [
         e
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id and e.domain == "switch"
+        for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.domain == "switch"
     ]
     switch_names = [e.unique_id for e in switch_entities]
     # Should have 2 glare zone switches (2 named zones)
@@ -540,8 +540,8 @@ async def test_climate_switches_created_when_climate_mode_with_entities(hass) ->
     reg = er.async_get(hass)
     switch_entities = [
         e
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id and e.domain == "switch"
+        for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.domain == "switch"
     ]
     # Should have more switches than the base count (temp toggle added)
     assert len(switch_entities) >= 3

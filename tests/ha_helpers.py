@@ -321,8 +321,8 @@ def get_entity_ids_for_entry(
     reg = er.async_get(hass)
     return [
         e.entity_id
-        for e in reg.entities.values()
-        if e.config_entry_id == entry.entry_id and e.domain == platform
+        for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.domain == platform
     ]
 
 
