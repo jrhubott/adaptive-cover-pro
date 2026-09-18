@@ -355,6 +355,25 @@ CUSTOM_POSITION_CLAIM_KEYS: tuple[str, ...] = (
 )
 
 
+def custom_position_slot_claims_tilt_only(
+    options: Mapping, slot_keys: Mapping[str, str]
+) -> bool:
+    """Return True when a slot claims the tilt axis via a fixed tilt-only tilt.
+
+    A tilt-only slot pins the slat angle through its ``tilt`` value alone and
+    deliberately leaves the position axis for solar to resolve, so it carries no
+    entry from :data:`CUSTOM_POSITION_CLAIM_KEYS`. The pipeline honours exactly
+    this shape — ``gather_tilt_only_contributions`` (``pipeline/tilt_axis.py``)
+    contributes a slot whose ``tilt_only`` flag is set and that has a configured
+    ``tilt`` value — so the participation gate must recognise it too, or the slot
+    is dropped before the pipeline ever sees it.
+    """
+    return (
+        bool(options.get(slot_keys["tilt_only"], DEFAULT_CUSTOM_POSITION_TILT_ONLY))
+        and options.get(slot_keys["tilt"]) is not None
+    )
+
+
 def custom_position_slot_configured(
     options: Mapping, slot_keys: Mapping[str, str]
 ) -> bool:
@@ -362,15 +381,16 @@ def custom_position_slot_configured(
 
     Single source of truth for the "slot participates" gate: a slot needs a
     trigger (at least one sensor, or a condition template) and at least one
-    claim on an axis — a `position`, or one of the axis constraints added by
-    issue #943. A trigger alone still contributes nothing.
+    claim on an axis — a `position`, one of the axis constraints added by
+    issue #943, or a fixed tilt-only slat angle. A trigger alone still
+    contributes nothing.
     """
     has_trigger = bool(
         custom_position_slot_sensors(options, slot_keys)
     ) or is_template_string(options.get(slot_keys["template"]))
     has_claim = any(
         options.get(slot_keys[sub]) is not None for sub in CUSTOM_POSITION_CLAIM_KEYS
-    )
+    ) or custom_position_slot_claims_tilt_only(options, slot_keys)
     return has_trigger and has_claim
 
 

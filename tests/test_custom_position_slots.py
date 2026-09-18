@@ -338,6 +338,42 @@ class TestSlotConfiguredWithConstraintsOnly:
         }
         assert custom_position_slot_configured(options, keys) is True
 
+    def test_trigger_plus_tilt_only_angle_is_configured(self) -> None:
+        """A tilt-only slot (fixed slat angle, no position) participates.
+
+        gather_tilt_only_contributions honours exactly this shape, so the gate
+        must not drop it. Regression for the window-vent tilt-only slot.
+        """
+        keys = const.CUSTOM_POSITION_SLOTS[1]
+        options = {
+            keys["sensors"]: ["binary_sensor.window"],
+            keys["tilt_only"]: True,
+            keys["tilt"]: 15,
+        }
+        assert custom_position_slot_configured(options, keys) is True
+
+    def test_tilt_value_without_tilt_only_is_not_a_claim(self) -> None:
+        """A bare tilt value on a non-tilt-only slot claims nothing.
+
+        The pipeline only contributes a fixed tilt for tilt_only slots, so the
+        gate must stay precise and not treat every tilt value as a claim.
+        """
+        keys = const.CUSTOM_POSITION_SLOTS[2]
+        options = {
+            keys["sensors"]: ["binary_sensor.window"],
+            keys["tilt"]: 15,
+        }
+        assert custom_position_slot_configured(options, keys) is False
+
+    def test_tilt_only_without_tilt_value_is_not_a_claim(self) -> None:
+        """tilt_only alone, with no tilt angle, contributes nothing."""
+        keys = const.CUSTOM_POSITION_SLOTS[3]
+        options = {
+            keys["sensors"]: ["binary_sensor.window"],
+            keys["tilt_only"]: True,
+        }
+        assert custom_position_slot_configured(options, keys) is False
+
 
 class TestBuildHandlersConstraintOnlySlot:
     """build_handlers must tolerate a slot with no position claim."""
@@ -365,6 +401,36 @@ class TestBuildHandlersConstraintOnlySlot:
             h for h in build_handlers(options) if h.name == "custom_position_7"
         )
         assert handler._position is None  # noqa: SLF001
+
+    def test_tilt_only_slot_builds_handler(self) -> None:
+        """A tilt-only slot (fixed slat angle, no position) gets its handler.
+
+        Regression for the window-vent slot: before recognising the tilt-only
+        claim it never reached build_handlers, so the vent silently never fired.
+        """
+        options = {
+            "custom_position_sensors_8": ["binary_sensor.window"],
+            "custom_position_tilt_only_8": True,
+            "custom_position_tilt_8": 15,
+        }
+        assert "custom_position_8" in [h.name for h in build_handlers(options)]
+
+    def test_tilt_only_slot_carries_tilt_and_no_position_sentinel(self) -> None:
+        """A tilt-only slot forwards its tilt and keeps position None.
+
+        Same phantom-0 hazard as the constraint-only case (audit finding 3):
+        the slot names no position, so it must stay None rather than 0.
+        """
+        options = {
+            "custom_position_sensors_8": ["binary_sensor.window"],
+            "custom_position_tilt_only_8": True,
+            "custom_position_tilt_8": 15,
+        }
+        handler = next(
+            h for h in build_handlers(options) if h.name == "custom_position_8"
+        )
+        assert handler._position is None  # noqa: SLF001
+        assert handler._tilt == 15  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------
