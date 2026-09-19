@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 from ..const import DOMAIN
 from ..helpers import usable_coordinator
 from ..state.area_resolver import area_device_ids
+from ..state.device_link import device_config_entry_ids
 from .diagnostics_service import async_handle_get_diagnostics
 from .group_service import GROUP_SERVICE_NAMES, register_group_services
 from .engage_manual_override_service import (
@@ -218,7 +219,7 @@ def _resolve_targets(
         for device_id in device_ids:
             device = dev_reg.async_get(device_id)
             if device:
-                for entry_id in device.config_entries:
+                for entry_id in device_config_entry_ids(device):
                     if entry_id in all_coordinators:
                         coord = all_coordinators[entry_id]
                         result.setdefault(coord, None)

@@ -73,6 +73,47 @@ def _noop() -> None:
 
 
 @callback
+def device_config_entry_ids(device: DeviceEntry) -> set[str]:
+    """Return the config entry ids that own *device*, on either registry model.
+
+    The one place anything in this integration asks a device who owns it.
+    Below HA 2026.8 a device genuinely belongs to several config entries and
+    ``DeviceEntry.config_entries`` is the stored set.  From 2026.8 it belongs to
+    exactly one, ``config_entry_id`` is the stored field, and ``config_entries``
+    survives only as a compatibility property HA *reports*: ``ERROR`` for core
+    and core-integration frames — a ``RuntimeError`` out of a bare test frame —
+    and a deprecation log line for ours, removed outright in 2027.10.
+    ``config_entry_id`` does not exist on the HA 2026.3 floor ``hacs.json``
+    declares, so no single spelling works on both and the capability is probed.
+
+    Probed with ``hasattr`` rather than by testing the value, so the deprecated
+    property is never reached on a registry that reports it — a falsy-value gate
+    would fall through to it on exactly the version where that raises.  The
+    value cannot actually be absent here: ``config_entry_id`` is a mandatory
+    ``str`` on a live ``DeviceEntry``, and only ``DeletedDeviceEntry`` (which
+    nothing in this integration handles) may carry ``None``.  The empty set is
+    what HA's own compatibility property answers for that one, so it is what
+    this answers too.
+
+    Faithful on both models.  Pre-v3 every owner is kept, which is what
+    :func:`classify_own_device`'s sole-ownership comparison is written against;
+    on v3 the answer is the single owner.  The one v3 device whose
+    ``config_entries`` is *wider* than ``{config_entry_id}`` is the read-only
+    composite ``async_get`` synthesizes for a pre-migration id, which reports
+    the union of its splits (and is exempt from the deprecation report for that
+    reason).  It is out of reach here: registry enumeration never yields one,
+    and the v3 migration re-points every entity's ``device_id`` off one, so the
+    only call site that can be handed one is
+    :func:`resolve_linked_device`'s stored-id fallback — which refuses it one
+    clause later on ``composite_device_id`` either way.
+    """
+    if hasattr(device, "config_entry_id"):
+        entry_id = device.config_entry_id
+        return {entry_id} if entry_id else set()
+    return set(device.config_entries)
+
+
+@callback
 def devices_for_entities(
     hass: HomeAssistant, entity_ids: Iterable[str]
 ) -> dict[str, DeviceEntry]:
@@ -135,7 +176,7 @@ def resolve_linked_device(
         return None
 
     for device in devices_for_entities(hass, options.get(CONF_ENTITIES) or []).values():
-        if own_entry_id in device.config_entries:
+        if own_entry_id in device_config_entry_ids(device):
             continue
         if wanted in (device.id, getattr(device, "composite_device_id", None)):
             return device
@@ -143,7 +184,7 @@ def resolve_linked_device(
     device = dr.async_get(hass).async_get(wanted)
     if (
         device is not None
-        and own_entry_id not in device.config_entries
+        and own_entry_id not in device_config_entry_ids(device)
         and getattr(device, "composite_device_id", None) != device.id
     ):
         return device
@@ -222,7 +263,7 @@ def classify_own_device(
     adopt over it would re-home every one of them onto a fresh service device —
     the id churn adoption exists to prevent.
     """
-    if device.config_entries != {entry_id}:
+    if device_config_entry_ids(device) != {entry_id}:
         return OwnDeviceRole.SHARED
     if (DOMAIN, entry_id) in device.identifiers:
         return OwnDeviceRole.OWN
@@ -426,12 +467,13 @@ def _reconcile_stale_devices(hass: HomeAssistant, entry: ConfigEntry) -> OwnDevi
 
     for device in scan.shared:
         # Pre-v3 only, with no version check and none wanted: from HA 2026.8 a
-        # device belongs to exactly one config entry, so ``config_entries`` is
-        # always ``{entry_id}``, ``shared`` is always empty, and the guard on
-        # ``remove_config_entry_id`` (ERROR for core and core-integration
-        # frames) is never reached.  Do not "simplify" this into a version
-        # check, and do not reach for ``new_config_entry_id``: that MOVES the
-        # device to us rather than releasing it.
+        # device belongs to exactly one config entry, so
+        # ``device_config_entry_ids`` always answers ``{entry_id}`` for a record
+        # this entry's own index yielded, ``shared`` is always empty, and the
+        # guard on ``remove_config_entry_id`` (ERROR for core and
+        # core-integration frames) is never reached.  Do not "simplify" this
+        # into a version check, and do not reach for ``new_config_entry_id``:
+        # that MOVES the device to us rather than releasing it.
         _LOGGER.debug(
             "Removing stale config entry link from physical device %s", device.id
         )

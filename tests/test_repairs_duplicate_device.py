@@ -27,6 +27,9 @@ from custom_components.adaptive_cover_pro.const import (
     duplicate_device_issue_id,
 )
 from custom_components.adaptive_cover_pro.repairs import async_create_fix_flow
+from custom_components.adaptive_cover_pro.state.device_link import (
+    device_config_entry_ids,
+)
 from tests.ha_helpers import setup_integration
 
 
@@ -337,7 +340,7 @@ async def test_fix_flow_refuses_our_own_device_that_holds_no_entities(hass):
         identifiers={(DOMAIN, bare.entry_id)},
         name="Service Device",
     )
-    assert bare_own.config_entries == {bare.entry_id}
+    assert device_config_entry_ids(bare_own) == {bare.entry_id}
     assert not er.async_entries_for_device(
         er.async_get(hass), bare_own.id, include_disabled_entities=True
     )

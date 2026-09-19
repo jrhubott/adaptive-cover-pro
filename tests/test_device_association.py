@@ -22,6 +22,9 @@ from custom_components.adaptive_cover_pro.const import (
     CoverType,
     duplicate_device_issue_id,
 )
+from custom_components.adaptive_cover_pro.state.device_link import (
+    device_config_entry_ids,
+)
 from tests.ha_helpers import (
     HA_DEVICE_REGISTRY_V3,
     VERTICAL_OPTIONS,
@@ -502,7 +505,7 @@ async def test_linked_setup_creates_own_device_via_physical(hass):
     assert own is not None
     assert own.via_device_id == physical.id
     assert physical.identifiers == {("demo", "physical-1")}
-    assert acp_entry.entry_id not in physical.config_entries
+    assert acp_entry.entry_id not in device_config_entry_ids(physical)
     assert len(_acp_devices(hass, acp_entry.entry_id)) == 1
 
     ent_reg = er.async_get(hass)
@@ -784,7 +787,9 @@ async def _setup_acp_entry_coowning_device(
         name="Physical Cover",
     )
     device_reg.async_update_device(device.id, add_config_entry_id=acp_entry.entry_id)
-    assert acp_entry.entry_id in device_reg.async_get(device.id).config_entries
+    assert acp_entry.entry_id in device_config_entry_ids(
+        device_reg.async_get(device.id)
+    )
     if hold_acp_entity:
         _bind_acp_entity(hass, acp_entry, device.id, "coowned_probe")
 
@@ -817,7 +822,7 @@ async def test_stale_config_entry_link_removed_from_physical_device(hass):
     )
 
     device = dr.async_get(hass).async_get(device_id)
-    assert acp_entry.entry_id not in device.config_entries
+    assert acp_entry.entry_id not in device_config_entry_ids(device)
 
 
 @pytest.mark.asyncio
@@ -1288,6 +1293,75 @@ async def test_repair_cleared_when_leftover_reclassifies(hass):
     assert scan.strays == ()
 
 
+class _V3ShapedDevice:
+    """A v3 device whose deprecated compatibility property is a landmine.
+
+    HA's real one is not this loud — for a custom-integration frame it only
+    logs — but the whole point of the probe is that the property is never
+    reached on a registry that has ``config_entry_id``, and "never" is easier
+    to assert against something that raises than against a log record.
+    """
+
+    config_entry_id = "entry_a"
+
+    @property
+    def config_entries(self) -> set[str]:
+        raise AssertionError(
+            "device_config_entry_ids read the deprecated `config_entries` "
+            "property on a device that carries `config_entry_id`"
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("device", "expected"),
+    [
+        (SimpleNamespace(config_entry_id="entry_a"), {"entry_a"}),
+        (SimpleNamespace(config_entry_id=None), set()),
+        (
+            SimpleNamespace(config_entries={"entry_a", "entry_b"}),
+            {"entry_a", "entry_b"},
+        ),
+        (_V3ShapedDevice(), {"entry_a"}),
+    ],
+    ids=["v3-sole-owner", "v3-ownerless", "pre-v3-co-owned", "v3-never-falls-through"],
+)
+def test_config_entry_ids_spans_both_registry_models(device, expected):
+    """The ownership probe answers both registry models, and only reads one.
+
+    Four shapes, one per branch and one per trap.  ``v3-ownerless`` is the
+    ``None`` that only a ``DeletedDeviceEntry`` can carry — pinned because it is
+    the case a falsy-value gate would answer by falling through to the
+    deprecated property, i.e. by raising on exactly the HA version that reports
+    it.  ``v3-never-falls-through`` proves it does not: that stand-in blows up
+    if ``config_entries`` is so much as touched.
+    """
+    from custom_components.adaptive_cover_pro.state.device_link import (
+        device_config_entry_ids as probe,
+    )
+
+    assert probe(device) == expected
+
+
+@pytest.mark.asyncio
+async def test_config_entry_ids_answers_the_owner_of_a_real_device(hass):
+    """...and against a real registry entry on whichever HA version is running.
+
+    The stand-ins above pin both branches but cannot say which one the
+    *installed* registry needs.  This one can, and it is the test that fails if
+    the probe ever picks the wrong spelling — without it, every "our entry does
+    not own that device" assertion in this file would keep passing against an
+    empty set.
+    """
+    owner = MockConfigEntry(domain="demo", entry_id="accessor_owner")
+    owner.add_to_hass(hass)
+    device = _make_physical_device(
+        hass, owner=owner, identifiers={("demo", "accessor-1")}
+    )
+
+    assert device_config_entry_ids(device) == {owner.entry_id}
+
+
 @pytest.mark.asyncio
 async def test_scan_classifies_a_coowned_device_as_shared(hass):
     """Sole ownership is checked before anything else, on every HA version.
@@ -1302,7 +1376,12 @@ async def test_scan_classifies_a_coowned_device_as_shared(hass):
     property derived from the stored single ``config_entry_id``, so passing it
     as a constructor kwarg is a ``TypeError`` — on the very CI leg this test
     exists to cover.  ``scan_own_devices`` reads three attributes off a device
-    (``config_entries``, ``identifiers``, ``id``) and this carries all three.
+    (ownership, ``identifiers``, ``id``) and this carries all three.
+
+    It carries **no** ``config_entry_id``, deliberately: that is what sends
+    ``device_config_entry_ids`` down its pre-v3 branch and keeps both owners
+    visible.  A v3 device cannot answer two, so a stand-in that spoke the v3
+    spelling could not express the shape this test exists to pin.
     """
     from custom_components.adaptive_cover_pro.state.device_link import scan_own_devices
 

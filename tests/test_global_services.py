@@ -25,6 +25,7 @@ from custom_components.adaptive_cover_pro.services import (
     async_unload_services,
     loaded_coordinators,
 )
+from tests.ha_helpers import device_owned_by
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -156,9 +157,7 @@ def test_resolve_device_id_maps_to_coordinator():
     coord_a = _make_coordinator(["cover.a"])
     hass = _make_hass({"entry_abc": coord_a})
 
-    fake_device = MagicMock()
-    fake_device.config_entries = ["entry_abc"]
-    fake_device.area_id = None
+    fake_device = device_owned_by("entry_abc", area_id=None)
 
     dev_reg_mock = MagicMock(spec=dr.DeviceRegistry)
     dev_reg_mock.async_get = MagicMock(return_value=fake_device)
@@ -180,9 +179,7 @@ def test_resolve_entity_id_within_device_coordinator_not_narrowed():
     coord_a = _make_coordinator(["cover.a", "cover.b"])
     hass = _make_hass({"entry_abc": coord_a})
 
-    fake_device = MagicMock()
-    fake_device.config_entries = ["entry_abc"]
-    fake_device.area_id = None
+    fake_device = device_owned_by("entry_abc", area_id=None)
 
     dev_reg_mock = MagicMock(spec=dr.DeviceRegistry)
     dev_reg_mock.async_get = MagicMock(return_value=fake_device)
@@ -240,9 +237,7 @@ def test_resolve_string_device_id_normalized():
 
     full_device_id = "device_xyz"
 
-    fake_device = MagicMock()
-    fake_device.config_entries = ["entry_abc"]
-    fake_device.area_id = None
+    fake_device = device_owned_by("entry_abc", area_id=None)
 
     def _discriminating_get(device_id):
         return fake_device if device_id == full_device_id else None
@@ -279,9 +274,7 @@ def test_resolve_string_area_id_normalized():
     hass = _make_hass({"entry_abc": coord_a})
 
     # Config entry device
-    config_device = MagicMock()
-    config_device.config_entries = ["entry_abc"]
-    config_device.area_id = None
+    config_device = device_owned_by("entry_abc", area_id=None)
 
     # Spec'd to the real class: ``DeviceRegistry.devices`` is annotation-only,
     # so a spec'd mock raises on any reach for the registry's own index rather

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 from collections.abc import Mapping
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -67,6 +68,32 @@ from custom_components.adaptive_cover_pro.const import (
 # because both ``test_device_association`` and ``test_repairs_duplicate_device``
 # gate on it (issue #1369).
 HA_DEVICE_REGISTRY_V3 = (MAJOR_VERSION, MINOR_VERSION) >= (2026, 8)
+
+
+def device_owned_by(config_entry_id: str, **attrs: Any) -> SimpleNamespace:
+    """Build a single-owner device stand-in, spelled for the installed registry.
+
+    A stand-in for a device the registry handed back must speak exactly ONE of
+    the two ownership spellings, because
+    ``state.device_link.device_config_entry_ids`` probes for
+    ``config_entry_id`` and falls back to ``config_entries``.  A bare
+    ``MagicMock`` speaks both — it auto-vivifies ``config_entry_id`` on every HA
+    version — so the probe always takes the v3 branch and always answers a
+    ``Mock`` instead of an entry id.  This picks the spelling the *installed*
+    registry uses, so a stub exercises the same branch production does on the
+    same CI leg.
+
+    Single-owner only, deliberately: several owners is a pre-v3-only shape that
+    the v3 registry cannot represent at all, so a test that needs one is pinning
+    behaviour below the threshold and should hand-build it beside the assertion
+    that explains why (see ``test_scan_classifies_a_coowned_device_as_shared``).
+    """
+    ownership: dict[str, Any] = (
+        {"config_entry_id": config_entry_id}
+        if HA_DEVICE_REGISTRY_V3
+        else {"config_entries": {config_entry_id}}
+    )
+    return SimpleNamespace(**ownership, **attrs)
 
 
 # ---------------------------------------------------------------------------

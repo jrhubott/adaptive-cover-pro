@@ -21,6 +21,7 @@ from voluptuous.validators import Coerce, Range
 
 from ..const import DOMAIN, GROUP_SCENE_SELECT_AUTO, GroupScene
 from ..state.area_resolver import area_device_ids
+from ..state.device_link import device_config_entry_ids
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
@@ -108,7 +109,7 @@ def resolve_group_targets(
             device = dev_reg.async_get(device_id)
             if device is None:
                 continue
-            for entry_id in device.config_entries:
+            for entry_id in device_config_entry_ids(device):
                 if entry_id in groups:
                     resolved[entry_id] = groups[entry_id]
 
