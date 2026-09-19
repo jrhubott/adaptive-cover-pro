@@ -36,6 +36,20 @@
     "day_night_middle_rail_unset": {
       "title": "Tag/Nacht-Mittelschiene nicht ausgewählt",
       "description": "**{name}** ist als zweigeteiltes Tag/Nacht-Rollo konfiguriert, aber seine Mittelschienen-Beschattung ist nicht ausgewählt – oder verweist auf eine Beschattung, die nicht in der Beschattungsliste dieser Instanz enthalten ist. Beide Schienen erhalten dieselbe Position, daher verhält sich das Rollo wie eine normale Jalousie und die Mischung aus transparent und Verdunkelung wird nie angewendet. Wählen Sie die Mittelschienen-Beschattung in den Optionen der Beschattung aus, und stellen Sie sicher, dass sie auch als eine der gesteuerten Beschattungen aufgeführt ist."
+    },
+    "duplicate_device": {
+      "title": "Altgerät aus einer früheren Version",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Altgerät entfernen",
+            "description": "Das Gerät **{device_name}** gehört zu **{name}**, enthält aber keine seiner Entitäten mehr. Ältere Versionen von Adaptive Cover Pro hinterließen diesen Datensatz, als sie eine Beschattung mit ihrem physischen Gerät verknüpften; **{name}** hat jetzt sein eigenes Gerät, und alles wurde bereits dorthin verschoben. Das Entfernen von **{device_name}** löscht nur den leeren Datensatz – keine Entität, Automatisierung oder Dashboard-Karte ist betroffen. Falls sich doch etwas noch daran angehängt hat, wird dieser Vorgang unterbrochen und informiert Sie, anstatt etwas zu entfernen."
+          }
+        },
+        "abort": {
+          "device_in_use": "Das Gerät wurde nicht entfernt: Es entspricht nicht mehr dem, was diese Reparatur erwartet hat. Entweder wurde es bereits gelöscht, es enthält jetzt Entitäten, oder es gehört zu einer anderen Integration. Es wurde nichts geändert. Laden Sie Adaptive Cover Pro neu, um es erneut zu prüfen, und diese Warnung wird automatisch gelöscht, sobald das Altgerät weg ist."
+        }
+      }
     }
   },
   "config": {

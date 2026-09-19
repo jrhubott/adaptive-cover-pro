@@ -36,6 +36,20 @@
     "day_night_middle_rail_unset": {
       "title": "Barre intermédiaire du store jour/nuit non sélectionnée",
       "description": "**{name}** est configuré comme store jour/nuit à deux barres, mais la protection de la barre intermédiaire n'est pas sélectionnée — ou fait référence à une protection qui ne figure pas dans la liste des protections de cette instance. Les deux barres reçoivent la même position, le store se comporte donc comme une simple protection et le mélange voilage/occultant ne sera jamais appliqué. Sélectionnez la protection de la barre intermédiaire dans les options de cette protection, et assurez-vous qu'elle figure aussi parmi les protections contrôlées."
+    },
+    "duplicate_device": {
+      "title": "Appareil résiduel d'une version antérieure",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Supprimer l'appareil résiduel",
+            "description": "L'appareil **{device_name}** appartient à **{name}** mais ne contient plus aucune de ses entités. Les versions antérieures d'Adaptive Cover Pro ont laissé cet enregistrement lorsqu'elles ont lié une protection à son appareil physique ; **{name}** dispose maintenant de son propre appareil, et tout y a déjà été transféré. La suppression de **{device_name}** ne supprime que l'enregistrement vide — aucune entité, automatisation ou carte de tableau de bord n'est affectée. S'il s'avère que quelque chose est toujours attaché, ce processus s'arrêtera et vous l'indiquera au lieu de supprimer quoi que ce soit."
+          }
+        },
+        "abort": {
+          "device_in_use": "L'appareil n'a pas été supprimé : il ne correspond plus à ce que cette réparation attendait. Soit il a déjà été supprimé, soit il contient maintenant des entités, soit il appartient à une autre intégration. Rien n'a été modifié. Rechargez Adaptive Cover Pro pour le revérifier, et cet avertissement disparaît de lui-même une fois que l'élément résiduel est supprimé."
+        }
+      }
     }
   },
   "config": {

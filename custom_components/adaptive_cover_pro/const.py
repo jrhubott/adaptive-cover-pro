@@ -1012,6 +1012,46 @@ ISSUE_COVER_TILT_UNSUPPORTED = (
 # middle rail: unset (or naming a cover outside the instance's list) leaves the
 # shade silently behaving like a plain vertical blind.
 ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET = "day_night_middle_rail_unset"
+# The one *fixable* Repair this integration raises (issue #1369): a device this
+# config entry owns that is neither our service device nor holding any of our
+# entities — the leftover of the duplicate HA 2026.8+ minted before the
+# via_device rework. Namespaced per entry AND per device
+# (`{id}_{entry_id}_{device_id}`) because one instance can have more than one.
+ISSUE_DUPLICATE_DEVICE = "duplicate_device"
+# Keys of that Repair's stored payload. Written in state/device_link when the
+# issue is raised and read back in repairs.py when the user confirms the fix —
+# two files, so the spelling lives here rather than in either of them.
+ISSUE_DATA_ENTRY_ID = "entry_id"
+ISSUE_DATA_DEVICE_ID = "device_id"
+
+
+def duplicate_device_issue_id(entry_id: str, device_id: str = "") -> str:
+    """Return the duplicate-device Repair id for *device_id* under *entry_id*.
+
+    Single source of truth for the ``{id}_{entry_id}_{device_id}`` shape (issue
+    #1369), which is raised in ``state/device_link``, swept there, and matched
+    by tests in two more files. With no ``device_id`` it returns the per-entry
+    prefix every such id starts with — exactly what the sweep in
+    ``clear_duplicate_device_issues`` matches on, so the prefix and the ids it
+    is meant to catch cannot drift to different shapes.
+    """
+    return f"{ISSUE_DUPLICATE_DEVICE}_{entry_id}_{device_id}"
+
+
+def is_duplicate_device_issue(issue_id: str) -> bool:
+    """Say whether *issue_id* is one of the ids :func:`duplicate_device_issue_id` builds.
+
+    The repairs dispatcher has to answer "is this issue mine to fix" from the
+    raw issue id alone — it is handed no ``entry_id``, so it cannot ask the
+    builder for a prefix the way ``clear_duplicate_device_issues`` does.  The
+    test therefore lives here, beside the builder and off the same
+    ``ISSUE_DUPLICATE_DEVICE`` leading segment, rather than as a third
+    hand-spelled ``startswith`` in ``repairs.py``: that module asks the
+    question and never learns the shape of the answer.
+    """
+    return issue_id.startswith(ISSUE_DUPLICATE_DEVICE)
+
+
 # Generous debounce so integration restarts / device re-adds don't nag before
 # a genuinely dead sensor is flagged.
 DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS = 900.0
