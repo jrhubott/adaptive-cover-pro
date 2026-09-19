@@ -1237,6 +1237,58 @@ async def test_repair_cleared_when_leftover_gone(hass):
 
 
 @pytest.mark.asyncio
+async def test_repair_cleared_when_leftover_reclassifies(hass):
+    """A leftover that gains somebody else's entity loses its Repair, not itself.
+
+    The other half of the sweep, and the one no deletion covers: the device is
+    still there, still ours, still carrying foreign identifiers — only its
+    *role* moved, from ``STRAY`` (safe to delete, so worth a fixable Repair) to
+    ``ENTANGLED`` (removing it would take the helper's registry row with it, so
+    no Repair can be offered).  Raising nothing for it on the next load is not
+    enough on its own: the issue registry is persisted, so the Repair raised
+    before the helper was attached would sit there offering a delete button the
+    flow now refuses.  The prefix sweep is what drops it.
+    """
+    from custom_components.adaptive_cover_pro.state.device_link import scan_own_devices
+
+    acp_entry, _physical, leftover_id = await _setup_with_acp_owned_device(
+        hass,
+        entry_id="repair_reclassified",
+        leftover_identifiers={("demo", "reclassified-leftover")},
+    )
+    assert _duplicate_device_issues(hass, acp_entry.entry_id) == {
+        duplicate_device_issue_id(acp_entry.entry_id, leftover_id)
+    }
+
+    helper = MockConfigEntry(
+        domain="input_number", entry_id="repair_reclassified_helper"
+    )
+    helper.add_to_hass(hass)
+    _bind_foreign_entity(hass, helper, leftover_id, "helper_on_reclassified")
+
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_reload(acp_entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert _duplicate_device_issues(hass, acp_entry.entry_id) == set()
+
+    leftover = dr.async_get(hass).async_get(leftover_id)
+    assert leftover is not None
+    assert leftover.identifiers == {("demo", "reclassified-leftover")}
+
+    ent_reg = er.async_get(hass)
+    helper_id = ent_reg.async_get_entity_id(
+        "sensor", "input_number", "helper_on_reclassified"
+    )
+    assert helper_id is not None
+    assert ent_reg.async_get(helper_id).device_id == leftover_id
+
+    scan = scan_own_devices(hass, acp_entry)
+    assert [device.id for device in scan.entangled] == [leftover_id]
+    assert scan.strays == ()
+
+
+@pytest.mark.asyncio
 async def test_scan_classifies_a_coowned_device_as_shared(hass):
     """Sole ownership is checked before anything else, on every HA version.
 

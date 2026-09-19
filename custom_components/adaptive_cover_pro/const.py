@@ -1038,6 +1038,20 @@ def duplicate_device_issue_id(entry_id: str, device_id: str = "") -> str:
     return f"{ISSUE_DUPLICATE_DEVICE}_{entry_id}_{device_id}"
 
 
+def is_duplicate_device_issue(issue_id: str) -> bool:
+    """Say whether *issue_id* is one of the ids :func:`duplicate_device_issue_id` builds.
+
+    The repairs dispatcher has to answer "is this issue mine to fix" from the
+    raw issue id alone — it is handed no ``entry_id``, so it cannot ask the
+    builder for a prefix the way ``clear_duplicate_device_issues`` does.  The
+    test therefore lives here, beside the builder and off the same
+    ``ISSUE_DUPLICATE_DEVICE`` leading segment, rather than as a third
+    hand-spelled ``startswith`` in ``repairs.py``: that module asks the
+    question and never learns the shape of the answer.
+    """
+    return issue_id.startswith(ISSUE_DUPLICATE_DEVICE)
+
+
 # Generous debounce so integration restarts / device re-adds don't nag before
 # a genuinely dead sensor is flagged.
 DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS = 900.0

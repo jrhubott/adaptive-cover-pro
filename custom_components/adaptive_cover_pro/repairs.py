@@ -26,7 +26,7 @@ from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
 from .const import (
     ISSUE_DATA_DEVICE_ID,
     ISSUE_DATA_ENTRY_ID,
-    ISSUE_DUPLICATE_DEVICE,
+    is_duplicate_device_issue,
 )
 from .state import device_link
 
@@ -76,10 +76,12 @@ async def async_create_fix_flow(
 ) -> RepairsFlow:
     """Return the fix flow for *issue_id*.
 
-    Dispatches on the duplicate-device prefix only — the per-entry, per-device
+    Dispatches on the duplicate-device family only — the per-entry, per-device
     suffix makes an exact match impossible — so every informational issue keeps
-    the side-effect-free confirm flow it has always had.
+    the side-effect-free confirm flow it has always had.  The family test is
+    ``const.is_duplicate_device_issue``, beside the builder that produces these
+    ids, so nothing here restates their shape.
     """
-    if issue_id.startswith(ISSUE_DUPLICATE_DEVICE):
+    if is_duplicate_device_issue(issue_id):
         return DuplicateDeviceRepairFlow(data)
     return ConfirmRepairFlow()
