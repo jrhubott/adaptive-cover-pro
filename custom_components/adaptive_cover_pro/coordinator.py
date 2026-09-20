@@ -5861,21 +5861,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         *,
         force: bool = False,
         bypass_auto_control: bool = False,
+        entities: list[str] | None = None,
+        on_resolved: Callable[[int], None] | None = None,
     ) -> int:
         """Clamp, re-frame and fan out a pipeline-bypassing default (issue #1376).
 
-        The ONE dispatch loop for every seam that broadcasts a configured
-        default position off the main pipeline — the end-of-window
+        The ONE dispatch loop shared by the two seams that fan out a
+        configured default position off the main pipeline — the end-of-window
         return-to-default and the switch's auto-control-OFF return-to-default
         both call this rather than each stating the clamp/frame/order rule
         (:meth:`_resolve_broadcast_dispatch`) and the per-entity remap
-        (:meth:`_entity_target`) again at their own call site. Before this
-        existed, the switch seam dispatched the raw logical value with a
-        hardcoded ``inverted=False`` instead of asking
-        ``self._inverse_state`` — a true statement about the end-of-window
-        broadcast's frame, but a false one about an inverse-state install's,
-        since both broadcast the SAME configured option
-        (``CONF_DEFAULT_HEIGHT``) and must agree on the wire number for it.
+        (:meth:`_entity_target`) again at their own call site. (The sunset
+        broadcast is NOT a third caller of this loop — it shares only the
+        resolve half, :meth:`_resolve_sunset_dispatch` /
+        :meth:`_resolve_broadcast_dispatch`, and fans out on its own in
+        ``state/window_transition_tracker.py``. Two seams share this loop;
+        three share the resolve.) Before this existed, the switch seam
+        dispatched the raw logical value with a hardcoded ``inverted=False``
+        instead of asking ``self._inverse_state`` — a true statement about
+        the end-of-window broadcast's frame, but a false one about an
+        inverse-state install's, since both broadcast the SAME configured
+        option (``CONF_DEFAULT_HEIGHT``) and must agree on the wire number
+        for it.
 
         ``force`` and ``bypass_auto_control`` are forwarded to
         :meth:`_build_position_context` unchanged for every entity in the
@@ -5883,13 +5890,30 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ran above), the switch seam wants both (a sanctioned one-shot
         transition, issue #293).
 
+        ``entities`` defaults to ``self.entities`` — both current callers
+        broadcast to every cover on the instance — but is accepted rather
+        than hardcoded so a caller that ever needs a subset gets that subset
+        ordered through the same rule instead of silently replaced by the
+        whole instance (the exact affordance :meth:`_resolve_broadcast_dispatch`
+        documents on its own ``entities`` parameter).
+
+        ``on_resolved``, when given, is called with the resolved wire value
+        immediately after the clamp/re-frame/order step and BEFORE the first
+        ``apply_position`` dispatch. A caller that records the decision which
+        causes the dispatches (an event, a log line) passes it here so that
+        record lands ahead of the ``cover_command_sent`` events the dispatches
+        themselves write into the same ring — otherwise the ring lists effects
+        before the cause.
+
         Returns the wire value dispatched (``pos_to_send``), so a caller that
-        logs or records it (the end-of-window seam's ``logger.info`` /
-        ``end_time_default_sent`` event) does not have to re-derive it.
+        logs or records it after the fact does not have to re-derive it.
         """
+        resolve_entities = entities if entities is not None else self.entities
         _logical, pos_to_send, ordered = self._resolve_broadcast_dispatch(
-            position, options, self.entities
+            position, options, resolve_entities
         )
+        if on_resolved is not None:
+            on_resolved(pos_to_send)
         for cover in ordered:
             ctx = self._build_position_context(
                 cover, options, force=force, bypass_auto_control=bypass_auto_control
@@ -5963,6 +5987,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 return
             options = self.config_entry.options
             effective_pos, is_sunset = self._compute_current_effective_default(options)
+
             # #895's sharp edge (issue #943 item B). This path bypasses the
             # pipeline and sends a POSITION-ONLY default, and a constraint-only
             # slot never becomes the winner, so ``_pipeline_has_active_override``
@@ -5984,27 +6009,42 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # correct without a branch.
             #
             # Clamp, re-frame, order and fan out in one call — shared with the
-            # sunset broadcast AND the switch's auto-control-OFF return-to-default
-            # (issue #1376), so the three seams that broadcast a configured
-            # default off the main pipeline cannot state the rule apart.
-            pos_to_send = await self._broadcast_default_position(
-                effective_pos, options, "end_time_default"
-            )
-            self.logger.info(
-                "End time reached — sending effective default %s%% "
-                "(sunset_active=%s) to %s cover(s)",
-                pos_to_send,
-                is_sunset,
-                len(self.entities),
-            )
-            self._event_buffer.record(
-                {
-                    "ts": dt.datetime.now(dt.UTC).isoformat(),
-                    "event": "end_time_default_sent",
-                    "position": pos_to_send,
-                    "sunset_active": is_sunset,
-                    "cover_count": len(self.entities),
-                }
+            # switch's auto-control-OFF return-to-default (issue #1376). The
+            # sunset broadcast is NOT a third caller of this loop: it shares
+            # only the resolve half (_resolve_broadcast_dispatch) and fans out
+            # on its own in state/window_transition_tracker.py. Two seams
+            # share this loop; three share the resolve — stating either rule
+            # apart is the two-site mirror that let #1376 happen.
+            #
+            # The record of THIS decision (the event below) must land in the
+            # ring before the ``cover_command_sent`` events the dispatches
+            # inside the call below write — otherwise the ring lists the
+            # effects ahead of the cause. ``on_resolved`` runs at the resolve
+            # step, before any dispatch, so the event/log stay at this call
+            # site (as originally planned) while still landing first.
+            def _record_end_time_default_sent(resolved_pos: int) -> None:
+                self.logger.info(
+                    "End time reached — sending effective default %s%% "
+                    "(sunset_active=%s) to %s cover(s)",
+                    resolved_pos,
+                    is_sunset,
+                    len(self.entities),
+                )
+                self._event_buffer.record(
+                    {
+                        "ts": dt.datetime.now(dt.UTC).isoformat(),
+                        "event": "end_time_default_sent",
+                        "position": resolved_pos,
+                        "sunset_active": is_sunset,
+                        "cover_count": len(self.entities),
+                    }
+                )
+
+            await self._broadcast_default_position(
+                effective_pos,
+                options,
+                "end_time_default",
+                on_resolved=_record_end_time_default_sent,
             )
             # Trigger a normal refresh so sensor state and diagnostics reflect
             # the commands just dispatched above. Distinct from the #1241

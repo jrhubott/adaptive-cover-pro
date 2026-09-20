@@ -474,6 +474,48 @@ class TestEndTimeDefaultSentEvent:
         assert ev["cover_count"] == 2
         assert ev["sunset_active"] is True
 
+    @pytest.mark.asyncio
+    async def test_end_time_default_sent_precedes_cover_command_sent_in_ring(
+        self,
+    ) -> None:
+        """Issue #1376 audit item 1 — causal order: resolve event before dispatch events.
+
+        ``_broadcast_default_position``'s dispatch loop calls ``apply_position``
+        once per cover, and the REAL ``apply_position`` writes its own
+        ``cover_command_sent`` event into the SAME ring. The
+        ``end_time_default_sent`` event describes the resolve step that CAUSES
+        those dispatches, so it must appear before them — an event ring that
+        lists the dispatches first and the decision that caused them second
+        has inverted causality.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        buf = EventBuffer(maxlen=50)
+        coord = self._make_end_time_coord(buf, n_entities=2)
+
+        async def _apply_and_record(entity, position, reason, context=None):
+            # Mirrors what the REAL CoverCommandService.apply_position does:
+            # writes a cover_command_sent event into the same ring the resolve
+            # step's event goes into.
+            buf.record({"event": "cover_command_sent", "entity_id": entity})
+            return ("sent", "")
+
+        coord._cmd_svc.apply_position = _apply_and_record
+
+        await AdaptiveDataUpdateCoordinator._check_time_window_transition(
+            coord, dt.datetime.now(dt.UTC)
+        )
+
+        order = _event_types(buf)
+        resolved_index = order.index("end_time_default_sent")
+        sent_indices = [i for i, e in enumerate(order) if e == "cover_command_sent"]
+        assert sent_indices, "expected at least one cover_command_sent event"
+        assert resolved_index < min(
+            sent_indices
+        ), f"end_time_default_sent must precede cover_command_sent, got order {order}"
+
 
 # ===========================================================================
 # Sunset window opened event

@@ -667,7 +667,9 @@ def _rail_context(policy, *, inverse: bool = False):
     )
 
 
-def _auto_control_off_switch(cmd_svc, policy, *, default_position: int):
+def _auto_control_off_switch(
+    cmd_svc, policy, *, default_position: int, inverse: bool = False
+):
     """Build the real auto-control switch over a real cmd_svc + Model C policy.
 
     Reproduces the return-to-default seam end to end: the switch shares
@@ -675,6 +677,13 @@ def _auto_control_off_switch(cmd_svc, policy, *, default_position: int):
     broadcasts (issue #1376) — clamp, re-frame ``inverted=self._inverse_state``,
     order and dispatch both rails through ``apply_position``, the chokepoint
     the travel gate hangs off.
+
+    ``inverse`` mirrors ``_rail_harness(inverse=...)`` — both current callers
+    pass ``inverse=True`` (issue #1118's frame-consistency guard needs the
+    seam's own frame and the install flag ``_build_position_context`` stamps
+    onto the context below to match), but it is a parameter rather than a
+    hardcoded ``True`` so a future non-inverse caller does not get silently
+    inverted.
     """
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
@@ -690,10 +699,7 @@ def _auto_control_off_switch(cmd_svc, policy, *, default_position: int):
     coord._policy = policy
     coord._cmd_svc = cmd_svc
     coord.return_to_default_toggle = True
-    # Both current callers build an inverse-state install (issue #1118) — the
-    # seam's own frame must match the install flag ``_build_position_context``
-    # stamps onto the context below.
-    coord._inverse_state = True
+    coord._inverse_state = inverse
     coord._clamp_to_outside_window_bounds = lambda position, _options: position
     coord._resolve_broadcast_dispatch = types.MethodType(
         AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
@@ -716,7 +722,7 @@ def _auto_control_off_switch(cmd_svc, policy, *, default_position: int):
             min_change=1,
             time_threshold=0,
             special_positions=[0, 100],
-            inverse_state=True,
+            inverse_state=inverse,
             force=kw.get("force", False),
             bypass_auto_control=kw.get("bypass_auto_control", False),
             policy=policy,
@@ -1968,7 +1974,7 @@ async def test_gate_still_waits_when_open_percent_is_stacked_under_inverse(
 
 
 @pytest.mark.asyncio
-async def test_gate_uses_the_dispatching_seams_frame_not_the_install_flag(
+async def test_middle_rail_gate_resolves_the_seams_corrected_wire_target(
     monkeypatch,
 ) -> None:
     """Auto-control-OFF on an inverse-state install must still send the middle rail.
@@ -1998,7 +2004,9 @@ async def test_gate_uses_the_dispatching_seams_frame_not_the_install_flag(
         blend=50,
         inverse=True,
     )
-    switch = _auto_control_off_switch(cmd_svc, policy, default_position=60)
+    switch = _auto_control_off_switch(
+        cmd_svc, policy, default_position=60, inverse=True
+    )
 
     with _patch_caps():
         await switch.async_turn_off()
@@ -2044,7 +2052,7 @@ async def test_raise_gate_compares_in_open_percent_not_raw_wire(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
-async def test_raise_gate_uses_the_dispatching_seams_frame_not_the_install_flag(
+async def test_raise_gate_resolves_the_seams_corrected_wire_target(
     monkeypatch,
 ) -> None:
     """The bottom rail's gate un-transforms against the SEAM's frame (issue #1118).
@@ -2075,7 +2083,9 @@ async def test_raise_gate_uses_the_dispatching_seams_frame_not_the_install_flag(
         blend=50,
         inverse=True,
     )
-    switch = _auto_control_off_switch(cmd_svc, policy, default_position=60)
+    switch = _auto_control_off_switch(
+        cmd_svc, policy, default_position=60, inverse=True
+    )
 
     with _patch_caps():
         await switch.async_turn_off()
@@ -2738,13 +2748,15 @@ _ORDERING_EXEMPT = {
     ),
     ("coordinator.py", "_broadcast_default_position"): (
         "test_end_of_window_default_fans_out_in_policy_order",
-        "Issue #1376: the ONE dispatch loop the end-of-window/sunset "
-        "broadcast AND the switch's auto-control-OFF return-to-default seam "
-        "both share, via coordinator._resolve_broadcast_dispatch, which "
-        "clamps, re-frames and orders in one call. All three seams follow "
-        "ONE rule — order on the CLAMPED number, in the configured-inverse "
-        "frame — and writing it at more than one loop is the two-site mirror "
-        "that lets them drift (which is exactly how #1376 happened).",
+        "Issue #1376: the ONE dispatch loop the end-of-window broadcast AND "
+        "the switch's auto-control-OFF return-to-default seam both share — "
+        "clamp, re-frame, order and fan out in a single call. The sunset "
+        "broadcast is NOT a third caller of this loop: it shares only the "
+        "resolve half (coordinator._resolve_broadcast_dispatch, which clamps, "
+        "re-frames and orders — no dispatch) and fans out on its own in "
+        "state/window_transition_tracker.py. Two seams share the loop; three "
+        "share the resolve — writing either rule apart is the two-site "
+        "mirror that lets them drift (which is exactly how #1376 happened).",
     ),
 }
 

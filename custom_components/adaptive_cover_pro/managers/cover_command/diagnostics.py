@@ -138,7 +138,6 @@ class DiagnosticsRecorder:
         threshold_used: int | None,
         recorded_target: int | None,
         inverse_state: bool = False,
-        target_source: str = "",
         force: bool = False,
         is_safety: bool = False,
         trigger: str = "",
@@ -175,7 +174,6 @@ class DiagnosticsRecorder:
             "inverse_state_applied": inverse_state,
             "timestamp": ts,
             "covers_controlled": 1,
-            "target_source": target_source,
             "force": force,
             "is_safety": is_safety,
             "trigger": trigger,
@@ -202,7 +200,6 @@ class DiagnosticsRecorder:
                 "inverse_state_applied": inverse_state,
                 "supports_position": supports_position,
                 "trigger": trigger,
-                "target_source": target_source,
                 "force": force,
                 "is_safety": is_safety,
             }

@@ -102,8 +102,23 @@ def _make_coord_with_real_cmd_svc(
         # ``_snapshot_builder.build`` seam production reads (mocked only at
         # the HA-boundary edge, not at the clamp itself).
         coord._cover_data = MagicMock()
+        # Issue #1376 audit item 9: ``clock_window_open`` must actually FLOW
+        # from ``coord.clock_window_open`` through
+        # ``_build_user_command_snapshot`` rather than being supplied only
+        # inside ``constraint_snapshot`` with nothing checking the two agree.
+        # Setting the coordinator attribute to the SAME flag the snapshot was
+        # built with, then asserting in the mocked builder that the value
+        # ``_build_user_command_snapshot`` forwards matches it, means a real
+        # wiring break (e.g. the method reading the wrong attribute) fails
+        # this test instead of passing silently on a value supplied twice.
+        coord.clock_window_open = constraint_snapshot.clock_window_open
+
+        def _build_snapshot(_opts, *, clock_window_open, **_kwargs):
+            assert clock_window_open == coord.clock_window_open
+            return constraint_snapshot
+
         coord._snapshot_builder = MagicMock()
-        coord._snapshot_builder.build = MagicMock(return_value=constraint_snapshot)
+        coord._snapshot_builder.build = MagicMock(side_effect=_build_snapshot)
         coord._build_user_command_snapshot = types.MethodType(
             AdaptiveDataUpdateCoordinator._build_user_command_snapshot, coord
         )
@@ -155,6 +170,24 @@ def _make_coord_with_real_cmd_svc(
     return coord
 
 
+def _make_switch(coord) -> AdaptiveCoverSwitch:
+    """Build a bare ``AdaptiveCoverSwitch`` over ``coord`` (issue #1376 audit item 8).
+
+    ``object.__new__`` skips ``__init__`` — this module builds every switch
+    under test by hand rather than through the config-entry-backed
+    constructor, and every test in this file wants the identical set of
+    stand-in attributes. Collapses the 6-line block repeated across every
+    test in this module into one call.
+    """
+    switch = object.__new__(AdaptiveCoverSwitch)
+    switch.coordinator = coord
+    switch._key = "automatic_control"
+    switch._name = "test_switch"
+    switch._initial_state = True
+    switch.schedule_update_ha_state = MagicMock()
+    return switch
+
+
 @pytest.mark.asyncio
 async def test_return_to_default_fires_when_auto_control_toggled_off():
     """The sanctioned one-shot return-to-default still fires after #293 fix."""
@@ -162,12 +195,7 @@ async def test_return_to_default_fires_when_auto_control_toggled_off():
     hass.services.async_call = AsyncMock()
     coord = _make_coord_with_real_cmd_svc(hass)
 
-    switch = object.__new__(AdaptiveCoverSwitch)
-    switch.coordinator = coord
-    switch._key = "automatic_control"
-    switch._name = "test_switch"
-    switch._initial_state = True
-    switch.schedule_update_ha_state = MagicMock()
+    switch = _make_switch(coord)
 
     with _patch_caps():
         await switch.async_turn_off()
@@ -206,12 +234,7 @@ async def test_return_to_default_sends_axis_correct_service(
     hass.services.async_call = AsyncMock()
     coord = _make_coord_with_real_cmd_svc(hass, cover_type=cover_type)
 
-    switch = object.__new__(AdaptiveCoverSwitch)
-    switch.coordinator = coord
-    switch._key = "automatic_control"
-    switch._name = "test_switch"
-    switch._initial_state = True
-    switch.schedule_update_ha_state = MagicMock()
+    switch = _make_switch(coord)
 
     with _patch_caps(
         has_set_position=True,
@@ -299,12 +322,7 @@ async def test_return_to_default_inverts_on_inverse_install() -> None:
         current_position=50,
     )
 
-    switch = object.__new__(AdaptiveCoverSwitch)
-    switch.coordinator = coord
-    switch._key = "automatic_control"
-    switch._name = "test_switch"
-    switch._initial_state = True
-    switch.schedule_update_ha_state = MagicMock()
+    switch = _make_switch(coord)
 
     with _patch_caps(has_set_position=True, has_open=True, has_close=True):
         await switch.async_turn_off()
@@ -343,12 +361,7 @@ async def test_return_to_default_is_deduped_when_already_at_default_on_inverse_i
         current_position=100,
     )
 
-    switch = object.__new__(AdaptiveCoverSwitch)
-    switch.coordinator = coord
-    switch._key = "automatic_control"
-    switch._name = "test_switch"
-    switch._initial_state = True
-    switch.schedule_update_ha_state = MagicMock()
+    switch = _make_switch(coord)
 
     with _patch_caps(has_set_position=True, has_open=True, has_close=True):
         await switch.async_turn_off()
@@ -429,12 +442,7 @@ async def test_default_broadcast_frame_parity_between_seams() -> None:
     off_coord.config_entry.options = {CONF_DEFAULT_HEIGHT: default_height}
     off_coord.async_refresh = AsyncMock()
 
-    switch = object.__new__(AdaptiveCoverSwitch)
-    switch.coordinator = off_coord
-    switch._key = "automatic_control"
-    switch._name = "test_switch"
-    switch._initial_state = True
-    switch.schedule_update_ha_state = MagicMock()
+    switch = _make_switch(off_coord)
 
     await switch.async_turn_off()
 
@@ -460,16 +468,24 @@ async def test_default_broadcast_frame_parity_between_seams() -> None:
 # per-slot opt-in is ``outside_window`` (issue #943 item B) — and that flag
 # only changes anything once the clock window is CLOSED. At clock_window_open
 # =True (the "toggled off at midday" scenario), ``gather_axis_constraints``
-# returns every active claim unfiltered BY DESIGN — the same rule a live user
-# command's clamp and the end-of-window seam's own dark-gate-close case both
-# already follow (coordinator.py's "in-window semantics for an in-window
-# moment... keeps both cases correct without a branch"). So a floor clamping
-# this seam at midday is the established, already-tested #943-item-B
-# behaviour extended uniformly to a third caller, not a new divergent one —
-# and narrowing it for just this seam would re-fork the two-seam duplication
-# c7b244a5 was written to remove. These tests pin the CORRECT (clamped)
-# behaviour rather than the hypothesis's predicted (unclamped) one; no
-# production change was made for this finding.
+# returns every active claim unfiltered BY DESIGN — the same WINDOW-ELIGIBILITY
+# rule the end-of-window seam's own dark-gate-close case already follows
+# (coordinator.py's "in-window semantics for an in-window moment... keeps both
+# cases correct without a branch"). A live user command's clamp
+# (``_clamp_to_active_floor``, coordinator.py:4531-4549) shares that same
+# window-eligibility gather, but ALSO requires the floor to strictly outrank
+# manual override's priority (default 80) before it clamps — a check this
+# broadcast seam does not perform. ``_make_min_floor`` below defaults to
+# ``DEFAULT_CUSTOM_POSITION_PRIORITY`` (77), which would NOT clamp a live user
+# move (77 does not outrank 80) even though it DOES clamp this seam. So the
+# parity with the end-of-window broadcast is exact; the parity with a live
+# user command is ONLY about window-eligibility, not the full clamp decision.
+# A floor clamping this seam at midday is the established, already-tested
+# #943-item-B behaviour extended uniformly to a third caller, not a new
+# divergent one — and narrowing it for just this seam would re-fork the
+# two-seam duplication c7b244a5 was written to remove. These tests pin the
+# CORRECT (clamped) behaviour rather than the hypothesis's predicted
+# (unclamped) one; no production change was made for this finding.
 # ---------------------------------------------------------------------------
 
 
@@ -490,37 +506,59 @@ def _make_min_floor(
 
 
 @pytest.mark.asyncio
-async def test_return_to_default_is_clamped_by_an_active_floor_when_window_open() -> (
-    None
-):
-    """#1376 audit MUST-FIX: the seam's real clamp is reached, not identity-stubbed.
+@pytest.mark.parametrize(
+    ("clock_window_open", "outside_window", "default_height", "expected"),
+    [
+        pytest.param(True, False, 10, 30, id="window_open_floor_binds"),
+        pytest.param(False, False, 10, 10, id="window_closed_floor_not_opted_in_drops"),
+        pytest.param(False, True, 10, 30, id="window_closed_floor_opted_in_survives"),
+    ],
+)
+async def test_return_to_default_clamp_follows_943_item_b_window_eligibility(
+    clock_window_open: bool,
+    outside_window: bool,
+    default_height: int,
+    expected: int,
+) -> None:
+    """#1376 audit MUST-FIX / #943-item-B parity (BINDING_GUIDELINES §2 — parametrized).
 
-    Auto control toggled off at midday (clock window genuinely open) with an
-    active position floor of 30 and a configured default of 10. The floor
-    must raise the dispatched value to 30 — the same #943-item-B rule the
-    end-of-window broadcast and a live user command already follow when the
-    window is open. Before c7b244a5 this seam had no clamp at all and would
-    have sent the raw 10 regardless of the floor.
+    The seam's real clamp is reached, not identity-stubbed. An active
+    position floor of 30 binds or is dropped purely on window-eligibility —
+    the same rule the end-of-window broadcast already follows (see the
+    header comment above for why this is ONLY about window-eligibility, not
+    full parity with a live user command's clamp, which additionally gates
+    on priority-vs-manual-override):
+
+    - ``window_open_floor_binds``: clock window genuinely open, configured
+      default 10 — the floor raises the dispatched value to 30. Before
+      c7b244a5 this seam had no clamp at all and would have sent the raw 10
+      regardless.
+    - ``window_closed_floor_not_opted_in_drops``: window closed, slot did NOT
+      opt in (``outside_window=False``, the default) — the gather drops the
+      floor, matching the end-of-window seam's own behaviour for the
+      identical option, so the configured default (10) reaches the cover
+      unclamped.
+    - ``window_closed_floor_opted_in_survives``: window closed, slot DID opt
+      in (``outside_window=True``, issue #943 item B) — the floor keeps
+      binding past the clock; this seam must not diverge from the
+      end-of-window broadcast's handling of the identical option.
     """
     hass = MagicMock()
     hass.services.async_call = AsyncMock()
     snapshot = make_snapshot(
-        clock_window_open=True,
-        custom_position_sensors=[_make_min_floor(position=30)],
+        clock_window_open=clock_window_open,
+        custom_position_sensors=[
+            _make_min_floor(position=30, outside_window=outside_window)
+        ],
     )
     coord = _make_coord_with_real_cmd_svc(
         hass,
-        default_height=10,
+        default_height=default_height,
         current_position=50,
         constraint_snapshot=snapshot,
     )
 
-    switch = object.__new__(AdaptiveCoverSwitch)
-    switch.coordinator = coord
-    switch._key = "automatic_control"
-    switch._name = "test_switch"
-    switch._initial_state = True
-    switch.schedule_update_ha_state = MagicMock()
+    switch = _make_switch(coord)
 
     with _patch_caps():
         await switch.async_turn_off()
@@ -528,85 +566,7 @@ async def test_return_to_default_is_clamped_by_an_active_floor_when_window_open(
     hass.services.async_call.assert_awaited()
     call_args = hass.services.async_call.await_args
     assert call_args.args[1] == "set_cover_position"
-    assert call_args.args[2] == {"entity_id": "cover.test", "position": 30}
-
-
-@pytest.mark.asyncio
-async def test_return_to_default_floor_dropped_when_window_closed_and_not_opted_in() -> (
-    None
-):
-    """#943-item-B parity: a non-opted-in floor stops binding once the window closes.
-
-    Same floor as above, but the clock window is closed and the slot did NOT
-    opt in (``outside_window=False``, the default). The gather drops it —
-    matching the end-of-window seam's own behaviour for the identical
-    option — so the configured default (10) reaches the cover unclamped.
-    """
-    hass = MagicMock()
-    hass.services.async_call = AsyncMock()
-    snapshot = make_snapshot(
-        clock_window_open=False,
-        custom_position_sensors=[_make_min_floor(position=30, outside_window=False)],
-    )
-    coord = _make_coord_with_real_cmd_svc(
-        hass,
-        default_height=10,
-        current_position=50,
-        constraint_snapshot=snapshot,
-    )
-
-    switch = object.__new__(AdaptiveCoverSwitch)
-    switch.coordinator = coord
-    switch._key = "automatic_control"
-    switch._name = "test_switch"
-    switch._initial_state = True
-    switch.schedule_update_ha_state = MagicMock()
-
-    with _patch_caps():
-        await switch.async_turn_off()
-
-    hass.services.async_call.assert_awaited()
-    call_args = hass.services.async_call.await_args
-    assert call_args.args[1] == "set_cover_position"
-    assert call_args.args[2] == {"entity_id": "cover.test", "position": 10}
-
-
-@pytest.mark.asyncio
-async def test_return_to_default_floor_survives_closed_window_when_opted_in() -> None:
-    """#943-item-B parity: an opted-in floor keeps binding once the window closes.
-
-    Same shape as the "dropped" case above except ``outside_window=True`` —
-    the per-slot opt-in that keeps a bounded claim binding past the clock
-    (issue #943 item B). The end-of-window broadcast already honours this for
-    the identical option; this seam must not diverge from it.
-    """
-    hass = MagicMock()
-    hass.services.async_call = AsyncMock()
-    snapshot = make_snapshot(
-        clock_window_open=False,
-        custom_position_sensors=[_make_min_floor(position=30, outside_window=True)],
-    )
-    coord = _make_coord_with_real_cmd_svc(
-        hass,
-        default_height=10,
-        current_position=50,
-        constraint_snapshot=snapshot,
-    )
-
-    switch = object.__new__(AdaptiveCoverSwitch)
-    switch.coordinator = coord
-    switch._key = "automatic_control"
-    switch._name = "test_switch"
-    switch._initial_state = True
-    switch.schedule_update_ha_state = MagicMock()
-
-    with _patch_caps():
-        await switch.async_turn_off()
-
-    hass.services.async_call.assert_awaited()
-    call_args = hass.services.async_call.await_args
-    assert call_args.args[1] == "set_cover_position"
-    assert call_args.args[2] == {"entity_id": "cover.test", "position": 30}
+    assert call_args.args[2] == {"entity_id": "cover.test", "position": expected}
 
 
 @pytest.mark.asyncio
@@ -639,12 +599,7 @@ async def test_return_to_default_clamps_in_logical_frame_before_flipping_on_inve
         constraint_snapshot=snapshot,
     )
 
-    switch = object.__new__(AdaptiveCoverSwitch)
-    switch.coordinator = coord
-    switch._key = "automatic_control"
-    switch._name = "test_switch"
-    switch._initial_state = True
-    switch.schedule_update_ha_state = MagicMock()
+    switch = _make_switch(coord)
 
     with _patch_caps(has_set_position=True, has_open=True, has_close=True):
         await switch.async_turn_off()
