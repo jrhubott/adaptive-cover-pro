@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,6 +19,9 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SENSOR_TYPE,
     DOMAIN,
     CoverType,
+)
+from custom_components.adaptive_cover_pro.coordinator import (
+    AdaptiveDataUpdateCoordinator,
 )
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.switch import (
@@ -49,6 +53,19 @@ def _make_coordinator(mock_hass=None):
     # Real policy: the return-to-default loop asks it for the entity order
     # (issue #1115). Tests that spy on a sequencer replace this themselves.
     coord._policy = get_policy("cover_blind")
+    # Issue #1376: the auto-off return-to-default seam now shares
+    # coordinator._broadcast_default_position with the end-of-window/sunset
+    # broadcasts. A MagicMock coordinator must state the frame explicitly and
+    # bind the real (already-tested) resolve/broadcast methods, or a bare
+    # MagicMock attribute silently inverts / is not awaitable.
+    coord._inverse_state = False
+    coord._clamp_to_outside_window_bounds = lambda position, _options: position
+    coord._resolve_broadcast_dispatch = types.MethodType(
+        AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
+    )
+    coord._broadcast_default_position = types.MethodType(
+        AdaptiveDataUpdateCoordinator._broadcast_default_position, coord
+    )
     coord.manager = MagicMock()
     coord.manager.is_cover_manual = MagicMock(return_value=False)
     coord.manager.manual_controlled = []

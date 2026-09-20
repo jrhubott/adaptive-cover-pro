@@ -428,6 +428,12 @@ async def _trigger_switch_auto_control_off_return(coord):
     coord.config_entry.options = {"default_height": 60}
     coord.manager.manual_controlled = []
     coord.async_refresh = AsyncMock()
+    # Issue #1376: the seam now shares coordinator._broadcast_default_position
+    # (→ _resolve_broadcast_dispatch) with the end-of-window/sunset
+    # broadcasts. This is a real coordinator object (object.__new__ skips
+    # __init__), so ``_inverse_state`` must be seeded explicitly like the
+    # other bare-coordinator triggers in this module do.
+    coord._inverse_state = False
 
     switch = object.__new__(AdaptiveCoverSwitch)
     switch.coordinator = coord

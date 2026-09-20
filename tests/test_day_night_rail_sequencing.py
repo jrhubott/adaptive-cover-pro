@@ -670,12 +670,15 @@ def _rail_context(policy, *, inverse: bool = False):
 def _auto_control_off_switch(cmd_svc, policy, *, default_position: int):
     """Build the real auto-control switch over a real cmd_svc + Model C policy.
 
-    Reproduces the return-to-default seam end to end: the switch orders the
-    rails, remaps the middle one through ``_entity_target(..., inverted=False)``
-    and dispatches both through ``apply_position`` — the chokepoint the travel
-    gate hangs off. The context carries the install's real ``inverse_state``,
-    which is exactly what diverges from the frame this seam dispatches in.
+    Reproduces the return-to-default seam end to end: the switch shares
+    coordinator._broadcast_default_position with the end-of-window/sunset
+    broadcasts (issue #1376) — clamp, re-frame ``inverted=self._inverse_state``,
+    order and dispatch both rails through ``apply_position``, the chokepoint
+    the travel gate hangs off.
     """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
     from custom_components.adaptive_cover_pro.managers.cover_command import (
         PositionContext,
     )
@@ -687,6 +690,17 @@ def _auto_control_off_switch(cmd_svc, policy, *, default_position: int):
     coord._policy = policy
     coord._cmd_svc = cmd_svc
     coord.return_to_default_toggle = True
+    # Both current callers build an inverse-state install (issue #1118) — the
+    # seam's own frame must match the install flag ``_build_position_context``
+    # stamps onto the context below.
+    coord._inverse_state = True
+    coord._clamp_to_outside_window_bounds = lambda position, _options: position
+    coord._resolve_broadcast_dispatch = types.MethodType(
+        AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
+    )
+    coord._broadcast_default_position = types.MethodType(
+        AdaptiveDataUpdateCoordinator._broadcast_default_position, coord
+    )
     coord.automatic_control = False
     coord.manager.manual_controlled = []
     coord.config_entry.options = {CONF_DEFAULT_HEIGHT: default_position}
@@ -1959,24 +1973,27 @@ async def test_gate_uses_the_dispatching_seams_frame_not_the_install_flag(
 ) -> None:
     """Auto-control-OFF on an inverse-state install must still send the middle rail.
 
-    The return-to-default seam dispatches the raw default UN-inverted
-    (``_entity_target(..., inverted=False)``) — a deliberate contract locked by
-    ``test_auto_control_off_seam_never_inverts_middle_rail``. The
-    ``PositionContext`` it builds still carries the install's real
-    ``inverse_state=True``, so a gate that flips against THAT reads the middle
-    rail's open-space target 80 as open 20 and then waits for a bottom rail that
-    is already parked exactly where the same seam put it. The command is
-    withheld for the full wait budget and the rail never returns to default.
-
-    The gate must flip against the frame the dispatched value is actually
-    expressed in — the one ``_entity_target`` named for this very dispatch.
+    Issue #1376 unified this seam onto ``coordinator._broadcast_default_position``,
+    so it now names ``_entity_target(..., inverted=self._inverse_state)`` — the
+    same frame the install flag carries — instead of the pre-fix hardcoded
+    ``inverted=False``. That closes the specific divergence issue #1118's gate
+    fix was proven against here (this seam's own frame and the install flag
+    can no longer disagree), so this test now guards a narrower but still real
+    regression: the rail-clearance gate must keep resolving the corrected wire
+    numbers self-consistently — the middle rail must still dispatch once the
+    bottom rail (its physical no-pass constraint) has already arrived at ITS
+    corrected wire target, not stay withheld because of a stale wire-value
+    assumption. The #1118 own-frame-stamp invariant itself stays covered by
+    the unstamped-target / resend / external-interlock tests elsewhere in this
+    module, which do not route through this seam.
     """
     monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
     monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
 
     cmd_svc, policy, _rails, events = _rail_harness(
-        # The bottom rail is parked at the un-inverted default this seam sends.
-        script={_BOTTOM: [60], _MIDDLE: [100]},
+        # The bottom rail is parked exactly at the wire target this seam now
+        # sends (default 60, inverse-state on → wire 40).
+        script={_BOTTOM: [40], _MIDDLE: [100]},
         position=60,
         blend=50,
         inverse=True,
@@ -1986,8 +2003,11 @@ async def test_gate_uses_the_dispatching_seams_frame_not_the_install_flag(
     with _patch_caps():
         await switch.async_turn_off()
 
-    # Middle rail open-space target 80 >= bottom rail 60 — already clear.
-    assert cmd_svc.get_target(_MIDDLE) == 80
+    # Middle rail open-space target 80 (wire 20) >= bottom rail open-space 60
+    # (wire 40) — already clear. The physical (open-space) relationship is the
+    # same one the pre-#1376 wire numbers (60/80) expressed; only the WIRE
+    # encoding changed once this seam started inverting like its siblings.
+    assert cmd_svc.get_target(_MIDDLE) == 20
     assert f"send:{_MIDDLE}" in events, events
     assert policy.has_pending_secondary_axis(_MIDDLE) is False
 
@@ -2029,24 +2049,28 @@ async def test_raise_gate_uses_the_dispatching_seams_frame_not_the_install_flag(
 ) -> None:
     """The bottom rail's gate un-transforms against the SEAM's frame (issue #1118).
 
-    Inverse-state install, auto-control toggled OFF. The return-to-default seam
-    dispatches the raw default UN-inverted (``_entity_target(..., inverted=False)``),
-    and the middle rail is parked at the un-inverted 80 that same seam put it
-    at. In the seam's frame the middle rail's open 80 is comfortably above the
-    bottom rail's open-60 target, so there is no collision and the command goes
-    out.
+    Inverse-state install, auto-control toggled OFF. Issue #1376 unified this
+    seam onto ``coordinator._broadcast_default_position``, so it now names
+    ``_entity_target(..., inverted=self._inverse_state)`` — the same frame the
+    install flag carries, instead of the pre-fix hardcoded ``inverted=False``.
+    Physically the middle rail is parked open-space 80 (comfortably above the
+    bottom rail's open-space-60 raise target, no collision) — the SAME
+    open-space relationship the pre-fix numbers expressed — but that physical
+    reading now has to be re-expressed in the corrected wire frame: middle's
+    live wire reading is 20 (``flip_if(80, inverted=True)``), not 80.
 
-    Resolve it against the install flag instead and the numbers swap — middle
-    open 20 under a bottom target of open 40 — so the rail is withheld, and
-    withheld forever, because only that seam ever refreshes the target. That is
-    why ``capture_dispatch_token`` has to stamp the BOTTOM rail as well: with no
-    stamp the gate falls back to the cached ``axis_inverted`` flag, which is the
-    #993 bug class pointed at the new direction.
+    This seam's own frame and the install flag can no longer disagree, so this
+    test no longer proves the frame-divergence half of #1118 (covered instead
+    by the unstamped-target / resend / external-interlock tests elsewhere in
+    this module). What it still guards: the rail-clearance gate must keep
+    resolving the CORRECTED wire numbers self-consistently — the bottom rail
+    must still be released for a raise once the physical no-pass constraint is
+    satisfied, not withheld because of a stale wire-value assumption.
     """
     monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
     monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
     cmd_svc, policy, _rails, events = _rail_harness(
-        script={_BOTTOM: [10], _MIDDLE: [80]},
+        script={_BOTTOM: [10], _MIDDLE: [20]},
         position=60,
         blend=50,
         inverse=True,
@@ -2676,13 +2700,17 @@ _RAW_ENTITY_ATTRS = frozenset({"entities", "_entities"})
 # Modules expected to contain at least one seam. A rename that makes the scan
 # stop matching (say ``apply_position`` gets renamed) would otherwise leave this
 # guard silently green over zero call sites.
+#
+# ``switch.py`` dropped out (issue #1376): its return-to-default fan-out loop
+# moved wholesale into ``coordinator._broadcast_default_position`` (still in
+# this set), so the seam no longer has a dispatch loop of its own to scan —
+# it delegates the whole thing, ordering included, to the coordinator.
 _SEAM_MODULES = frozenset(
     {
         "button.py",
         "coordinator.py",
         "group_coordinator.py",
         "managers/cover_command/__init__.py",
-        "switch.py",
         "services/set_position_service.py",
         "services/set_tilt_service.py",
         "services/set_axes_service.py",
@@ -2708,13 +2736,15 @@ _ORDERING_EXEMPT = {
         "order_for_dispatch there, on the CLAMPED number (#943 item B). The "
         "entities= argument is the input to that call, not a pre-ordered list.",
     ),
-    ("coordinator.py", "_on_window_closed"): (
+    ("coordinator.py", "_broadcast_default_position"): (
         "test_end_of_window_default_fans_out_in_policy_order",
-        "Shares coordinator._resolve_broadcast_dispatch with the sunset "
-        "broadcast, which clamps, re-frames and orders in one call. The two "
-        "seams follow ONE rule — order on the CLAMPED number, in the "
-        "configured-inverse frame — and writing it at both loops is the "
-        "two-site mirror that lets them drift.",
+        "Issue #1376: the ONE dispatch loop the end-of-window/sunset "
+        "broadcast AND the switch's auto-control-OFF return-to-default seam "
+        "both share, via coordinator._resolve_broadcast_dispatch, which "
+        "clamps, re-frames and orders in one call. All three seams follow "
+        "ONE rule — order on the CLAMPED number, in the configured-inverse "
+        "frame — and writing it at more than one loop is the two-site mirror "
+        "that lets them drift (which is exactly how #1376 happened).",
     ),
 }
 
@@ -3055,7 +3085,11 @@ async def test_end_of_window_default_fans_out_in_policy_order() -> None:
     coord._cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
     coord.async_refresh = AsyncMock()
     coord._entity_target = lambda entity, position, **_kw: position
-    for name in ("_resolve_broadcast_dispatch", "_check_time_window_transition"):
+    for name in (
+        "_resolve_broadcast_dispatch",
+        "_broadcast_default_position",
+        "_check_time_window_transition",
+    ):
         setattr(
             coord,
             name,

@@ -2406,6 +2406,9 @@ class CoverCommandService:
                     position,
                     supports_position,
                     context.inverse_state,
+                    trigger=_trigger,
+                    force=context.force,
+                    is_safety=context.is_safety,
                 )
                 self._diag.last_cover_action["dry_run"] = True
                 return self._skip(
@@ -2502,6 +2505,9 @@ class CoverCommandService:
             position,
             supports_position,
             context.inverse_state,
+            trigger=_trigger,
+            force=context.force,
+            is_safety=context.is_safety,
             queue_grant=_queue_grant,
         )
 

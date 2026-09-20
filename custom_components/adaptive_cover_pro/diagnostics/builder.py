@@ -107,6 +107,13 @@ class DiagnosticContext:
 
     # Automation
     automatic_control: bool
+    # Whether the "return to default when disabled" switch is armed — the
+    # auto-control-OFF return-to-default seam (issue #1376) only fires when
+    # this is True. Absent from every prior diagnostics dump, which is why a
+    # downloaded attachment could not confirm whether that seam was armed on
+    # a reporter's install. Defaults False so contexts built without it
+    # (tests, older callers) are unaffected.
+    return_to_default_toggle: bool = False
     # True while a travel-time calibration run holds the covers.
     calibrating: bool = False
     # Whether the user's start/end CLOCK window is open, ignoring the daytime
@@ -1403,6 +1410,11 @@ class DiagnosticsBuilder:
                     )
                 ),
                 "templated_thresholds": DiagnosticsBuilder._templated_thresholds(ctx),
+                # Issue #1376 secondary finding: neither was previously in the
+                # configuration block, so an attachment could not confirm
+                # whether the auto-off return-to-default seam was armed.
+                "automatic_control": ctx.automatic_control,
+                "return_to_default_toggle": ctx.return_to_default_toggle,
             }
         }
 

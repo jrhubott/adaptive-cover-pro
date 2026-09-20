@@ -5361,6 +5361,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             enabled_toggle=(
                 self.enabled_toggle if self.enabled_toggle is not None else True
             ),
+            # Issue #1376 secondary finding: surfaces whether the auto-off
+            # return-to-default seam is armed, so a diagnostics attachment can
+            # confirm it without guessing.
+            return_to_default_toggle=(
+                self.return_to_default_toggle
+                if self.return_to_default_toggle is not None
+                else False
+            ),
             primary_axis_suppression_counts=(
                 self.manager.primary_axis_suppression_counts()
             ),
@@ -5845,6 +5853,55 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         return clamped, ordered
 
+    async def _broadcast_default_position(
+        self,
+        position: int,
+        options: dict,
+        reason: str,
+        *,
+        force: bool = False,
+        bypass_auto_control: bool = False,
+    ) -> int:
+        """Clamp, re-frame and fan out a pipeline-bypassing default (issue #1376).
+
+        The ONE dispatch loop for every seam that broadcasts a configured
+        default position off the main pipeline — the end-of-window
+        return-to-default and the switch's auto-control-OFF return-to-default
+        both call this rather than each stating the clamp/frame/order rule
+        (:meth:`_resolve_broadcast_dispatch`) and the per-entity remap
+        (:meth:`_entity_target`) again at their own call site. Before this
+        existed, the switch seam dispatched the raw logical value with a
+        hardcoded ``inverted=False`` instead of asking
+        ``self._inverse_state`` — a true statement about the end-of-window
+        broadcast's frame, but a false one about an inverse-state install's,
+        since both broadcast the SAME configured option
+        (``CONF_DEFAULT_HEIGHT``) and must agree on the wire number for it.
+
+        ``force`` and ``bypass_auto_control`` are forwarded to
+        :meth:`_build_position_context` unchanged for every entity in the
+        fan-out — the end-of-window seam wants neither (its guards already
+        ran above), the switch seam wants both (a sanctioned one-shot
+        transition, issue #293).
+
+        Returns the wire value dispatched (``pos_to_send``), so a caller that
+        logs or records it (the end-of-window seam's ``logger.info`` /
+        ``end_time_default_sent`` event) does not have to re-derive it.
+        """
+        _logical, pos_to_send, ordered = self._resolve_broadcast_dispatch(
+            position, options, self.entities
+        )
+        for cover in ordered:
+            ctx = self._build_position_context(
+                cover, options, force=force, bypass_auto_control=bypass_auto_control
+            )
+            await self._cmd_svc.apply_position(
+                cover,
+                self._entity_target(cover, pos_to_send, inverted=self._inverse_state),
+                reason,
+                context=ctx,
+            )
+        return pos_to_send
+
     async def _check_time_window_transition(self, now: dt.datetime) -> None:
         """Check time window transitions — delegates to TimeWindowManager.
 
@@ -5926,15 +5983,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # about which of the two predicates tripped is what keeps both cases
             # correct without a branch.
             #
-            # Clamped, re-framed and ordered in one call, through the helper the
-            # sunset broadcast also uses: the three steps are one rule and the
-            # two seams must not state it apart. Deliberately NOT
-            # ``_to_cover_frame`` — this seam inverts whenever inverse-state is
-            # configured, unconditional of bypass, floor clamp and
-            # interpolation, and never interpolates. #993's middle-rail
-            # invariant depends on that divergence.
-            effective_pos, pos_to_send, ordered_covers = (
-                self._resolve_broadcast_dispatch(effective_pos, options, self.entities)
+            # Clamp, re-frame, order and fan out in one call — shared with the
+            # sunset broadcast AND the switch's auto-control-OFF return-to-default
+            # (issue #1376), so the three seams that broadcast a configured
+            # default off the main pipeline cannot state the rule apart.
+            pos_to_send = await self._broadcast_default_position(
+                effective_pos, options, "end_time_default"
             )
             self.logger.info(
                 "End time reached — sending effective default %s%% "
@@ -5952,24 +6006,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     "cover_count": len(self.entities),
                 }
             )
-            # Already ordered on ``pos_to_send`` by the resolve above, in the
-            # same frame ``_entity_target`` gets below — one derivation, so the
-            # ordering view and the dispatch cannot disagree about the direction
-            # of travel (issue #1118).
-            for cover_entity in ordered_covers:
-                ctx = self._build_position_context(cover_entity, options, force=False)
-                await self._cmd_svc.apply_position(
-                    cover_entity,
-                    # ``pos_to_send`` was inverted iff inverse-state is
-                    # configured (unconditional of bypass/floor-clamp/interp), so
-                    # the middle-rail remap must un-invert in THAT space, not the
-                    # cached main-pipeline flag (#993).
-                    self._entity_target(
-                        cover_entity, pos_to_send, inverted=self._inverse_state
-                    ),
-                    "end_time_default",
-                    context=ctx,
-                )
             # Trigger a normal refresh so sensor state and diagnostics reflect
             # the commands just dispatched above. Distinct from the #1241
             # refresh earlier in this function: that one runs BEFORE dispatch

@@ -269,14 +269,18 @@ async def test_night_blackout_deploys_outside_operating_window() -> None:
 
 @pytest.mark.asyncio
 async def test_auto_control_off_seam_keeps_the_back_inverted() -> None:
-    """#1035 seam 6: the return-to-default broadcast must not un-invert the back.
+    """#1035 seam 6 / #1376: the return-to-default broadcast keeps the back inverted.
 
-    ``switch.py:388`` names ``inverted=False`` because THAT loop never inverts
-    the raw default — a true statement about the FRONT's value (#993). The
-    back's absolute substitution never consumed it, so on an inverse install
-    the blackout's wire target is still ``inverse_state(CLOSED)`` = 100. Raw 0
-    leaves an inverted device physically OPEN. Previously unreported; cured by
-    the same policy change.
+    Issue #1376 moved this seam onto the shared
+    ``coordinator._broadcast_default_position``, so it now dispatches
+    ``inverted=self._inverse_state`` — the SAME broadcast frame the
+    end-of-window/sunset seams use — instead of the pre-fix hardcoded
+    ``inverted=False``. The front now inverts too (``inverse_state(60)``), but
+    the back's absolute substitution never consumed the ``inverted`` argument
+    at all (it derives its own frame from the policy's cached
+    ``_back_inverse``), so its wire target is unaffected by either seam's
+    frame and stays ``inverse_state(CLOSED)`` = 100 either way — the #1035
+    guard this test exists to pin.
     """
     from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
 
@@ -296,6 +300,19 @@ async def test_auto_control_off_seam_keeps_the_back_inverted() -> None:
     coord._entity_target = types.MethodType(
         AdaptiveDataUpdateCoordinator._entity_target, coord
     )
+    # Issue #1376: the seam now shares coordinator._broadcast_default_position
+    # with the end-of-window/sunset broadcasts, so it dispatches
+    # ``inverted=self._inverse_state`` rather than the pre-fix hardcoded
+    # ``inverted=False``. This install IS inverse-state (matches the policy's
+    # own ``inverse=True`` above), so the front's wire value must invert too.
+    coord._inverse_state = True
+    coord._clamp_to_outside_window_bounds = lambda position, _options: position
+    coord._resolve_broadcast_dispatch = types.MethodType(
+        AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
+    )
+    coord._broadcast_default_position = types.MethodType(
+        AdaptiveDataUpdateCoordinator._broadcast_default_position, coord
+    )
 
     switch = object.__new__(AdaptiveCoverSwitch)
     switch.coordinator = coord
@@ -305,7 +322,9 @@ async def test_auto_control_off_seam_keeps_the_back_inverted() -> None:
 
     await switch.async_turn_off()
 
-    assert coord._cmd_svc.get_target(_FRONT) == 60  # front: the raw default
+    # front: now shares the broadcast frame with the other default seams
+    # (#1376) — inverted iff inverse-state is configured, same as the back.
+    assert coord._cmd_svc.get_target(_FRONT) == inverse_state(60)
     assert coord._cmd_svc.get_target(_BACK) == inverse_state(POSITION_CLOSED)
     assert coord._cmd_svc.get_target(_BACK) != POSITION_CLOSED
 
@@ -350,6 +369,11 @@ async def test_end_time_default_seam_calibrates_the_back_under_interpolation() -
     coord._clamp_to_outside_window_bounds = lambda position, _options: position
     coord._resolve_broadcast_dispatch = types.MethodType(
         AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
+    )
+    # Issue #1376: the end-of-window seam now dispatches through the shared
+    # coordinator._broadcast_default_position rather than looping inline.
+    coord._broadcast_default_position = types.MethodType(
+        AdaptiveDataUpdateCoordinator._broadcast_default_position, coord
     )
 
     async def _fire_closed(*, track_end_time, refresh_callback, on_window_open):

@@ -11,10 +11,16 @@ return-to-default still works after the gate fix.
 
 from __future__ import annotations
 
+import datetime as dt
+import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+from custom_components.adaptive_cover_pro.coordinator import (
+    AdaptiveDataUpdateCoordinator,
+)
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
@@ -43,7 +49,14 @@ def _patch_caps(
     )
 
 
-def _make_coord_with_real_cmd_svc(hass, *, cover_type="cover_blind"):
+def _make_coord_with_real_cmd_svc(
+    hass,
+    *,
+    cover_type="cover_blind",
+    inverse_state=False,
+    default_height=60,
+    current_position=0,
+):
     """Build a coordinator stub backed by a real CoverCommandService."""
     coord = MagicMock()
     coord.logger = MagicMock()
@@ -51,13 +64,27 @@ def _make_coord_with_real_cmd_svc(hass, *, cover_type="cover_blind"):
     coord.return_to_default_toggle = True
     coord.automatic_control = False  # toggle just flipped to off
     coord.manager.manual_controlled = []
-    coord.config_entry.options = {"default_height": 60}
+    coord.config_entry.options = {CONF_DEFAULT_HEIGHT: default_height}
     coord.async_refresh = AsyncMock()
+    # Issue #1376: the auto-off return-to-default broadcast now shares
+    # coordinator._broadcast_default_position with the end-of-window/sunset
+    # broadcasts, which resolve their wire frame from ``self._inverse_state``.
+    # A MagicMock stub must state that explicitly — a bare MagicMock attribute
+    # is truthy, so an unstated ``_inverse_state`` would silently invert.
+    coord._inverse_state = inverse_state
     # The return-to-default loop routes each target through the polymorphic
     # ``_entity_target`` (identity for every non-dual-entity cover type).
     coord._entity_target = lambda _entity, position, *, inverted=None: position
     # Real policy: the return-to-default loop asks it for the entity order (#1115).
     coord._policy = get_policy(cover_type)
+    # No outside-window bounds configured in these tests — identity clamp.
+    coord._clamp_to_outside_window_bounds = lambda position, _options: position
+    coord._resolve_broadcast_dispatch = types.MethodType(
+        AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
+    )
+    coord._broadcast_default_position = types.MethodType(
+        AdaptiveDataUpdateCoordinator._broadcast_default_position, coord
+    )
 
     cmd_svc = CoverCommandService(
         hass=hass,
@@ -69,7 +96,7 @@ def _make_coord_with_real_cmd_svc(hass, *, cover_type="cover_blind"):
     cmd_svc._enabled = True
     # Stub current position so abs(current - 60) is computable and outside
     # the tolerance band (cover is at 0, target will be 60 — far apart).
-    cmd_svc._get_current_position = MagicMock(return_value=0)
+    cmd_svc._get_current_position = MagicMock(return_value=current_position)
     coord._cmd_svc = cmd_svc
 
     def _build_ctx(
@@ -207,3 +234,177 @@ async def test_return_to_default_skipped_without_bypass_flag():
     assert outcome == "skipped"
     assert detail == "auto_control_off"
     hass.services.async_call.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Issue #1376 — the auto-off return-to-default broadcast must share the same
+# logical→wire frame as the end-of-window/sunset broadcasts
+# (coordinator._inverse_state), not dispatch the raw configured default.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_return_to_default_inverts_on_inverse_install() -> None:
+    """#1376 repro: an inverse awning with default 0 must be sent to wire 100.
+
+    ``inverse_state=True`` + ``default_percentage=0`` is the reporter's exact
+    config (Luifel, cover_awning). The main pipeline maps configured 0 to wire
+    100 (open_cover, retracted). Before this fix the switch seam dispatched
+    the raw logical 0 — ``close_cover`` — driving the awning to the physical
+    mirror image of its configured default.
+    """
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+    coord = _make_coord_with_real_cmd_svc(
+        hass,
+        cover_type="cover_awning",
+        inverse_state=True,
+        default_height=0,
+        # Deliberately neither the raw default (0, the pre-fix bug's target)
+        # nor the corrected wire value (100) — so neither frame's dispatch is
+        # masked by the same-position gate, and the test isolates the
+        # direction/service the seam picks rather than whether it dispatches
+        # at all.
+        current_position=50,
+    )
+
+    switch = object.__new__(AdaptiveCoverSwitch)
+    switch.coordinator = coord
+    switch._key = "automatic_control"
+    switch._name = "test_switch"
+    switch._initial_state = True
+    switch.schedule_update_ha_state = MagicMock()
+
+    with _patch_caps(has_set_position=True, has_open=True, has_close=True):
+        await switch.async_turn_off()
+
+    hass.services.async_call.assert_awaited()
+    call_args = hass.services.async_call.await_args
+    # endpoint_use_open_close defaults True (issue #697/#819) and wire 100 is
+    # a full mechanical endpoint, so this routes through open_cover rather
+    # than set_cover_position(position=100) — never close_cover / position 0.
+    assert call_args.args[1] == "open_cover"
+    assert call_args.args[2] == {"entity_id": "cover.test"}
+
+
+@pytest.mark.asyncio
+async def test_return_to_default_is_deduped_when_already_at_default_on_inverse_install() -> (
+    None
+):
+    """#1376: once the frame is fixed, the reporter's case is a true no-op.
+
+    Cover already sits at wire 100 (HA state "open") when auto_control turns
+    off with a configured default of 0 on an inverse install. The corrected
+    wire target (100) matches ``_current`` exactly, so the same-position gate
+    that already exists in ``apply_position`` (issues #290/#567) swallows the
+    command — no second, parallel dedupe is added at this seam.
+    """
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+    open_state = MagicMock()
+    open_state.state = "open"
+    hass.states.get = MagicMock(return_value=open_state)
+    coord = _make_coord_with_real_cmd_svc(
+        hass,
+        cover_type="cover_awning",
+        inverse_state=True,
+        default_height=0,
+        current_position=100,
+    )
+
+    switch = object.__new__(AdaptiveCoverSwitch)
+    switch.coordinator = coord
+    switch._key = "automatic_control"
+    switch._name = "test_switch"
+    switch._initial_state = True
+    switch.schedule_update_ha_state = MagicMock()
+
+    with _patch_caps(has_set_position=True, has_open=True, has_close=True):
+        await switch.async_turn_off()
+
+    hass.services.async_call.assert_not_awaited()
+    assert coord._cmd_svc.last_skipped_action["reason"] == "same_position"
+
+
+@pytest.mark.asyncio
+async def test_default_broadcast_frame_parity_between_seams() -> None:
+    """Issue #1376: auto-control-OFF and end-of-window must dispatch the SAME wire number.
+
+    Both seams broadcast the same configured ``CONF_DEFAULT_HEIGHT`` option,
+    bypassing the main pipeline. Two seams disagreeing about a bypassing
+    broadcast's frame is the defect — the fix (routing both through
+    ``coordinator._broadcast_default_position``) makes disagreement
+    impossible. Fails today: 100 (end-of-window) vs 0 (switch).
+    """
+    entity = "cover.test"
+    default_height = 0
+    end_of_window_targets: dict[str, int] = {}
+    auto_off_targets: dict[str, int] = {}
+
+    def _shared_coord(target_store: dict[str, int]) -> MagicMock:
+        coord = MagicMock()
+        coord.logger = MagicMock()
+        coord.entities = [entity]
+        coord._policy = get_policy("cover_awning")
+        coord._inverse_state = True
+        coord._clamp_to_outside_window_bounds = lambda position, _o: position
+        coord._resolve_broadcast_dispatch = types.MethodType(
+            AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
+        )
+        coord._broadcast_default_position = types.MethodType(
+            AdaptiveDataUpdateCoordinator._broadcast_default_position, coord
+        )
+        coord._entity_target = lambda _e, position, *, inverted=None: position
+        coord._build_position_context = MagicMock(return_value=MagicMock())
+
+        async def _apply(ent, position, _reason, context=None):  # noqa: ARG001
+            target_store[ent] = position
+            return ("sent", "")
+
+        coord._cmd_svc = MagicMock()
+        coord._cmd_svc.apply_position = _apply
+        coord._cmd_svc.clear_non_safety_targets = MagicMock()
+        return coord
+
+    # --- end-of-window seam ---
+    eow_coord = _shared_coord(end_of_window_targets)
+    eow_coord._track_end_time = True
+    eow_coord.automatic_control = True
+    eow_coord._pipeline_has_active_override = MagicMock(return_value=False)
+    eow_coord.async_refresh = AsyncMock()
+    eow_coord.config_entry.options = {}
+    eow_coord._compute_current_effective_default = MagicMock(
+        return_value=(default_height, False)
+    )
+    eow_coord._check_sunset_window_transition = AsyncMock()
+
+    async def _fire_closed(
+        *, track_end_time, refresh_callback, on_window_open
+    ):  # noqa: ARG001
+        await refresh_callback()
+
+    eow_coord._time_mgr = MagicMock()
+    eow_coord._time_mgr.check_transition = _fire_closed
+
+    await AdaptiveDataUpdateCoordinator._check_time_window_transition(
+        eow_coord, dt.datetime.now(dt.UTC)
+    )
+
+    # --- auto-control-OFF seam ---
+    off_coord = _shared_coord(auto_off_targets)
+    off_coord.return_to_default_toggle = True
+    off_coord.automatic_control = False
+    off_coord.manager.manual_controlled = []
+    off_coord.config_entry.options = {CONF_DEFAULT_HEIGHT: default_height}
+    off_coord.async_refresh = AsyncMock()
+
+    switch = object.__new__(AdaptiveCoverSwitch)
+    switch.coordinator = off_coord
+    switch._key = "automatic_control"
+    switch._name = "test_switch"
+    switch._initial_state = True
+    switch.schedule_update_ha_state = MagicMock()
+
+    await switch.async_turn_off()
+
+    assert end_of_window_targets[entity] == auto_off_targets[entity]

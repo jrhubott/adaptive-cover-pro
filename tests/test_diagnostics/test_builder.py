@@ -1106,6 +1106,11 @@ class TestConfigurationDiagnostics:
             "end_of_window_position",
             "is_sunny_source",
             "templated_thresholds",
+            # Issue #1376 secondary finding: neither was in the configuration
+            # block, so a diagnostics attachment could not confirm whether the
+            # auto-off return-to-default seam was armed on a reporter's install.
+            "automatic_control",
+            "return_to_default_toggle",
         }
         # Signed-gamma sub-keys (issue #247's primary storage) per slot — sourced
         # from BLIND_SPOT_SLOTS rather than hardcoded, per the no-magic-values
@@ -1161,6 +1166,22 @@ class TestConfigurationDiagnostics:
         assert config["force_override_active"] is True
         assert config["motion_detected"] is False
         assert config["motion_timeout_active"] is True
+
+    def test_configuration_reports_automatic_control_and_return_to_default_toggle(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Issue #1376: a diagnostics read must show whether the auto-off
+        return-to-default seam is armed (``return_to_default_toggle``) and
+        whether automation is currently on (``automatic_control``) — neither
+        was in the configuration block, so this could not be confirmed from
+        an attachment.
+        """
+        diag, _ = builder.build(
+            _base_ctx(automatic_control=False, return_to_default_toggle=True)
+        )
+        config = diag["configuration"]
+        assert config["automatic_control"] is False
+        assert config["return_to_default_toggle"] is True
 
 
 # ---------------------------------------------------------------------------
