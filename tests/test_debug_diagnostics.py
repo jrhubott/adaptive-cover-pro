@@ -711,18 +711,6 @@ class TestTrackActionEnrichment:
         assert parsed.utcoffset() is not None, "timestamp must be timezone-aware (UTC)"
         assert parsed.utcoffset().total_seconds() == 0
 
-    def test_target_source_recorded(self):
-        """target_source kwarg is stored in last_cover_action."""
-        svc, _buf = self._make_svc_with_buffer()
-        svc._track_action(
-            "cover.test",
-            "set_cover_position",
-            50,
-            True,
-            target_source="pipeline",
-        )
-        assert svc.last_cover_action["target_source"] == "pipeline"
-
     def test_force_and_is_safety_recorded(self):
         """Force and is_safety flags are stored in last_cover_action."""
         svc, _buf = self._make_svc_with_buffer()
@@ -786,7 +774,6 @@ class TestTrackActionEnrichment:
             75,
             True,
             trigger="solar",
-            target_source="pipeline",
             force=False,
             is_safety=False,
         )
@@ -797,7 +784,6 @@ class TestTrackActionEnrichment:
         assert ev["entity_id"] == "cover.test"
         assert ev["service"] == "set_cover_position"
         assert ev["trigger"] == "solar"
-        assert ev["target_source"] == "pipeline"
 
     def test_no_event_buffer_no_error(self):
         """_track_action works normally when no event_buffer is injected."""

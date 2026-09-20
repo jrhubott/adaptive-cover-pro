@@ -473,6 +473,11 @@ async def test_end_time_default_seam_inverse_uses_seam_space() -> None:
     coord._resolve_broadcast_dispatch = types.MethodType(
         AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
     )
+    # Issue #1376: the end-of-window seam now dispatches through the shared
+    # coordinator._broadcast_default_position rather than looping inline.
+    coord._broadcast_default_position = types.MethodType(
+        AdaptiveDataUpdateCoordinator._broadcast_default_position, coord
+    )
     coord._check_sunset_window_transition = AsyncMock()
 
     targets: dict[str, int] = {}
@@ -503,14 +508,21 @@ async def test_end_time_default_seam_inverse_uses_seam_space() -> None:
 
 
 @pytest.mark.asyncio
-async def test_auto_control_off_seam_never_inverts_middle_rail() -> None:
+async def test_auto_control_off_seam_uses_the_broadcast_frame_for_the_middle_rail() -> (
+    None
+):
     """Auto-control-OFF return-to-default → middle rail remapped in OPEN space.
 
-    The switch's return loop NEVER inverts (sends the raw default). If the cached
-    flag is True (from a prior inverse main cycle) the middle rail would be
-    un-inverted with the wrong assumption and slammed below the bottom rail. With
-    default 60, blend 50, the correct open-space middle is 80 (>= 60); the buggy
-    cached-True remap yields 30 (< 60 → physical cross).
+    Issue #1376 moved this seam onto the shared
+    ``coordinator._broadcast_default_position``, so it now dispatches
+    ``inverted=self._inverse_state`` — the SAME broadcast frame the
+    end-of-window/sunset seams use (and the same frame the policy's cached
+    ``_dual_entity_inverse`` happens to agree with here) — instead of the
+    pre-fix hardcoded ``inverted=False``. With default 60, blend 50 and
+    inverse-state configured, the wire numbers invert (bottom 40, middle 20),
+    but the no-rail-cross invariant is a statement about OPEN-percent space
+    and must survive regardless of which wire frame the seam dispatches in:
+    the middle rail must never be slammed below the bottom rail.
     """
     from custom_components.adaptive_cover_pro.managers.cover_command import (
         CoverCommandService,
@@ -518,8 +530,6 @@ async def test_auto_control_off_seam_never_inverts_middle_rail() -> None:
     )
     from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
 
-    # Cached inverse flag True (plain inverse main cycle) — DIVERGES from the
-    # auto-off seam, which never inverts.
     policy = _dual_policy_primed(position=60, blend=50, inverse_cfg=True)
 
     from unittest.mock import patch
@@ -538,6 +548,18 @@ async def test_auto_control_off_seam_never_inverts_middle_rail() -> None:
     coord.async_refresh = AsyncMock()
     coord._entity_target = types.MethodType(
         AdaptiveDataUpdateCoordinator._entity_target, coord
+    )
+    # Issue #1376: this seam now shares coordinator._broadcast_default_position
+    # with the end-of-window/sunset broadcasts and dispatches
+    # ``inverted=self._inverse_state`` — an inverse-state install, matching
+    # the policy's own ``inverse_cfg=True`` above.
+    coord._inverse_state = True
+    coord._clamp_to_outside_window_bounds = lambda position, _options: position
+    coord._resolve_broadcast_dispatch = types.MethodType(
+        AdaptiveDataUpdateCoordinator._resolve_broadcast_dispatch, coord
+    )
+    coord._broadcast_default_position = types.MethodType(
+        AdaptiveDataUpdateCoordinator._broadcast_default_position, coord
     )
 
     cmd_svc = CoverCommandService(
@@ -586,9 +608,16 @@ async def test_auto_control_off_seam_never_inverts_middle_rail() -> None:
     ):
         await switch.async_turn_off()
 
-    assert cmd_svc.get_target(_BOTTOM) == 60
-    assert cmd_svc.get_target(_MIDDLE) == 80  # open-space, never inverted
-    assert cmd_svc.get_target(_MIDDLE) >= cmd_svc.get_target(_BOTTOM)
+    # Wire numbers invert now that this seam shares the broadcast frame
+    # (#1376): bottom 40 (= open 60), middle 20 (= open 80) — the SAME
+    # open-space relationship the pre-fix wire numbers (60/80) expressed.
+    assert cmd_svc.get_target(_BOTTOM) == 40
+    assert cmd_svc.get_target(_MIDDLE) == 20
+    # No-rail-cross invariant (#993) is a statement about OPEN-percent space
+    # and must survive the frame this seam dispatches in.
+    assert inverse_state(cmd_svc.get_target(_MIDDLE)) >= inverse_state(
+        cmd_svc.get_target(_BOTTOM)
+    )
 
 
 # ---------------------------------------------------------------------------

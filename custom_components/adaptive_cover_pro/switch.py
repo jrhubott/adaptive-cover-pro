@@ -380,10 +380,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                 self.coordinator.manager.reset(entity)
 
             # Return to default position if enabled
-            if (
-                hasattr(self.coordinator, "return_to_default_toggle")
-                and self.coordinator.return_to_default_toggle
-            ):
+            if self.coordinator.return_to_default_toggle:
                 default_position = self.coordinator.config_entry.options.get(
                     CONF_DEFAULT_HEIGHT, DEFAULT_POSITION_SELECTOR_FALLBACK
                 )
@@ -391,43 +388,27 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                     "Returning covers to default position: %s", default_position
                 )
                 options = self.coordinator.config_entry.options
-                # Policy-mandated dispatch order, shared with every other
-                # dispatch seam (issue #1115): a Model C day/night shade's
-                # bottom rail must be commanded before its middle rail, which
-                # cannot physically travel past it. Identity for every cover
-                # type whose entities are independent.
-                # Name the number and frame this loop fans out so the ordering
-                # view can tell a raise from a lower (issue #1118) — the same
-                # pair ``_entity_target`` gets below.
-                ordered = self.coordinator._policy.order_for_dispatch(  # noqa: SLF001
-                    self.coordinator.entities,
-                    position=default_position,
-                    inverted=False,
+                # Shared with the end-of-window broadcast (issue #1376):
+                # clamp, re-frame (inverted iff inverse-state is CONFIGURED —
+                # coordinator._inverse_state, never the raw ``False`` this
+                # seam used to hardcode), order and fan out through the one
+                # rule in coordinator._broadcast_default_position, so this
+                # seam cannot dispatch a different wire number than its
+                # sibling for the SAME configured CONF_DEFAULT_HEIGHT. (The
+                # sunset broadcast shares only the resolve half,
+                # _resolve_broadcast_dispatch, and fans out on its own in
+                # state/window_transition_tracker.py.) Sanctioned one-shot
+                # transition: auto_control was just toggled OFF, so
+                # force=True/bypass_auto_control=True honor the user's "return
+                # to default" choice by bypassing the auto_control gate
+                # exactly once (issue #293).
+                await self.coordinator._broadcast_default_position(  # noqa: SLF001
+                    default_position,
+                    options,
+                    "auto_control_off",
+                    force=True,
+                    bypass_auto_control=True,
                 )
-                for entity in ordered:
-                    # Sanctioned one-shot transition: auto_control was just
-                    # toggled OFF; honor the user's "return to default" choice
-                    # by bypassing the auto_control gate exactly once.  Without
-                    # bypass_auto_control=True the gate (issue #293) would
-                    # correctly skip this command.
-                    ctx = self.coordinator._build_position_context(
-                        entity, options, force=True, bypass_auto_control=True
-                    )
-                    # Per-entity remap keeps this broadcast return-to-default
-                    # loop consistent with the other dispatch seams: a Model C
-                    # day/night middle rail is remapped polymorphically via
-                    # ``_entity_target`` (identity for every other type). This
-                    # loop NEVER inverts the raw default, so the remap must
-                    # un-invert in open-percent space (``inverted=False``), not
-                    # the cached main-pipeline flag (#993).
-                    await self.coordinator._cmd_svc.apply_position(
-                        entity,
-                        self.coordinator._entity_target(
-                            entity, default_position, inverted=False
-                        ),
-                        "auto_control_off",
-                        context=ctx,
-                    )
 
         await self.coordinator.async_refresh()
         self.schedule_update_ha_state()

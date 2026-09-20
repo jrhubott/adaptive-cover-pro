@@ -2406,6 +2406,9 @@ class CoverCommandService:
                     position,
                     supports_position,
                     context.inverse_state,
+                    trigger=_trigger,
+                    force=context.force,
+                    is_safety=context.is_safety,
                 )
                 self._diag.last_cover_action["dry_run"] = True
                 return self._skip(
@@ -2502,6 +2505,9 @@ class CoverCommandService:
             position,
             supports_position,
             context.inverse_state,
+            trigger=_trigger,
+            force=context.force,
+            is_safety=context.is_safety,
             queue_grant=_queue_grant,
         )
 
@@ -3855,7 +3861,6 @@ class CoverCommandService:
         supports_position: bool,
         inverse_state: bool = False,
         *,
-        target_source: str = "",
         force: bool = False,
         is_safety: bool = False,
         trigger: str = "",
@@ -3881,7 +3886,6 @@ class CoverCommandService:
             ),
             recorded_target=self._get(entity).target,
             inverse_state=inverse_state,
-            target_source=target_source,
             force=force,
             is_safety=is_safety,
             trigger=trigger,

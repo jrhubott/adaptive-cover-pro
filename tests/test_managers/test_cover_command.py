@@ -2006,6 +2006,95 @@ async def test_apply_position_out_of_band_sends_command(mock_hass, logger, grace
 
 
 @pytest.mark.asyncio
+async def test_apply_position_records_trigger_and_force_on_last_cover_action(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #1376 secondary finding: last_cover_action must attribute the caller.
+
+    ``_track_action``'s send-path call site never forwarded the caller's
+    ``trigger``/``force``/``is_safety`` (the reason string and the context
+    flags apply_position was actually given), so every ``cover_command_sent``
+    event and ``last_cover_action`` snapshot reported
+    ``trigger: "", force: false, is_safety: false`` regardless of what
+    actually dispatched it — diagnostics could not attribute a command to a
+    seam (e.g. ``auto_control_off`` vs ``solar`` vs a weather override).
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=8)
+    _stub_state(mock_hass, current_position=90)
+
+    ctx = PositionContext(
+        auto_control=True,
+        manual_override=False,
+        sun_just_appeared=False,
+        min_change=10,
+        time_threshold=0,
+        special_positions=[0, 100],
+        force=True,
+        is_safety=True,
+    )
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=90),
+        patch.object(svc, "_check_position_delta", return_value=True),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("set_cover_position", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, _reason = await svc.apply_position(
+            "cover.test", 100, "auto_control_off", ctx
+        )
+
+    assert outcome == "sent"
+    assert svc.last_cover_action["trigger"] == "auto_control_off"
+    assert svc.last_cover_action["force"] is True
+    assert svc.last_cover_action["is_safety"] is True
+
+
+@pytest.mark.asyncio
+async def test_apply_position_dry_run_records_trigger_and_force_on_last_cover_action(
+    mock_hass, logger, grace_mgr
+):
+    """The dry-run ``_track_action`` call site has the identical attribution gap."""
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=8)
+    _stub_state(mock_hass, current_position=90)
+    svc._dry_run = True
+
+    ctx = PositionContext(
+        auto_control=True,
+        manual_override=False,
+        sun_just_appeared=False,
+        min_change=10,
+        time_threshold=0,
+        special_positions=[0, 100],
+        force=True,
+        is_safety=True,
+    )
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=90),
+        patch.object(svc, "_check_position_delta", return_value=True),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("set_cover_position", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "auto_control_off", ctx
+        )
+
+    assert outcome == "skipped"
+    assert reason == "dry_run"
+    assert svc.last_cover_action["trigger"] == "auto_control_off"
+    assert svc.last_cover_action["force"] is True
+    assert svc.last_cover_action["is_safety"] is True
+
+
+@pytest.mark.asyncio
 async def test_apply_position_zero_tolerance_sends_command(
     mock_hass, logger, grace_mgr
 ):
