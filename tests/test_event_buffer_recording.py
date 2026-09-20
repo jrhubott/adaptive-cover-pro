@@ -516,6 +516,51 @@ class TestEndTimeDefaultSentEvent:
             sent_indices
         ), f"end_time_default_sent must precede cover_command_sent, got order {order}"
 
+    @pytest.mark.asyncio
+    async def test_broadcast_default_position_on_resolved_cover_count_matches_dispatched(
+        self,
+    ) -> None:
+        """Issue #1376 audit item — ``on_resolved``'s count must track ``entities``.
+
+        ``_broadcast_default_position`` accepts an ``entities`` subset, but the
+        one production caller today always passes the default (``self.entities``),
+        so nothing has ever exercised a caller whose recorded ``cover_count``
+        disagrees with the dispatched set. Prove the coupling directly: dispatch
+        a 2-entity subset out of a 5-entity instance and confirm the count
+        reaching ``on_resolved`` is the subset size actually dispatched, not the
+        instance's full entity count.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        buf = EventBuffer(maxlen=50)
+        coord = self._make_end_time_coord(buf, n_entities=5)
+        subset = list(coord.entities[:2])
+        recorded: dict[str, int] = {}
+
+        def _on_resolved(pos_to_send: int, cover_count: int | None = None) -> None:
+            # Mirrors the pre-fix production closure
+            # (``_record_end_time_default_sent``), which had no dispatched
+            # count available from the callback and fell back to
+            # ``len(self.entities)`` — exactly the coupling bug under test.
+            recorded["pos_to_send"] = pos_to_send
+            recorded["cover_count"] = (
+                cover_count if cover_count is not None else len(coord.entities)
+            )
+
+        await AdaptiveDataUpdateCoordinator._broadcast_default_position(
+            coord,
+            30,
+            coord.config_entry.options,
+            "test_reason",
+            entities=subset,
+            on_resolved=_on_resolved,
+        )
+
+        assert recorded["cover_count"] == len(subset)
+        assert recorded["cover_count"] != len(coord.entities)
+
 
 # ===========================================================================
 # Sunset window opened event

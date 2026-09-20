@@ -54,8 +54,8 @@ def _make_coordinator(mock_hass=None):
     # (issue #1115). Tests that spy on a sequencer replace this themselves.
     coord._policy = get_policy("cover_blind")
     # Issue #1376: the auto-off return-to-default seam now shares
-    # coordinator._broadcast_default_position with the end-of-window/sunset
-    # broadcasts. A MagicMock coordinator must state the frame explicitly and
+    # coordinator._broadcast_default_position with the end-of-window
+    # broadcast. A MagicMock coordinator must state the frame explicitly and
     # bind the real (already-tested) resolve/broadcast methods, or a bare
     # MagicMock attribute silently inverts / is not awaitable.
     coord._inverse_state = False

@@ -673,8 +673,8 @@ def _auto_control_off_switch(
     """Build the real auto-control switch over a real cmd_svc + Model C policy.
 
     Reproduces the return-to-default seam end to end: the switch shares
-    coordinator._broadcast_default_position with the end-of-window/sunset
-    broadcasts (issue #1376) — clamp, re-frame ``inverted=self._inverse_state``,
+    coordinator._broadcast_default_position with the end-of-window
+    broadcast (issue #1376) — clamp, re-frame ``inverted=self._inverse_state``,
     order and dispatch both rails through ``apply_position``, the chokepoint
     the travel gate hangs off.
 

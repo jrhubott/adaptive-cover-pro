@@ -84,10 +84,11 @@ def _make_coord_with_real_cmd_svc(
     coord.config_entry.options = {CONF_DEFAULT_HEIGHT: default_height}
     coord.async_refresh = AsyncMock()
     # Issue #1376: the auto-off return-to-default broadcast now shares
-    # coordinator._broadcast_default_position with the end-of-window/sunset
-    # broadcasts, which resolve their wire frame from ``self._inverse_state``.
-    # A MagicMock stub must state that explicitly — a bare MagicMock attribute
-    # is truthy, so an unstated ``_inverse_state`` would silently invert.
+    # coordinator._broadcast_default_position with the end-of-window
+    # broadcast, both of which resolve their wire frame from
+    # ``self._inverse_state``. A MagicMock stub must state that explicitly —
+    # a bare MagicMock attribute is truthy, so an unstated ``_inverse_state``
+    # would silently invert.
     coord._inverse_state = inverse_state
     # The return-to-default loop routes each target through the polymorphic
     # ``_entity_target`` (identity for every non-dual-entity cover type).

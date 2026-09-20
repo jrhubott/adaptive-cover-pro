@@ -5862,7 +5862,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         force: bool = False,
         bypass_auto_control: bool = False,
         entities: list[str] | None = None,
-        on_resolved: Callable[[int], None] | None = None,
+        on_resolved: Callable[[int, int], None] | None = None,
     ) -> int:
         """Clamp, re-frame and fan out a pipeline-bypassing default (issue #1376).
 
@@ -5898,12 +5898,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         documents on its own ``entities`` parameter).
 
         ``on_resolved``, when given, is called with the resolved wire value
-        immediately after the clamp/re-frame/order step and BEFORE the first
-        ``apply_position`` dispatch. A caller that records the decision which
-        causes the dispatches (an event, a log line) passes it here so that
-        record lands ahead of the ``cover_command_sent`` events the dispatches
-        themselves write into the same ring — otherwise the ring lists effects
-        before the cause.
+        AND the number of entities in ``ordered`` (the set about to be
+        dispatched) immediately after the clamp/re-frame/order step and
+        BEFORE the first ``apply_position`` dispatch. A caller that records
+        the decision which causes the dispatches (an event, a log line)
+        passes it here so that record lands ahead of the
+        ``cover_command_sent`` events the dispatches themselves write into
+        the same ring — otherwise the ring lists effects before the cause.
+        Passing the dispatched count alongside the wire value means a caller
+        never has to re-derive "how many" from ``self.entities`` itself —
+        which would silently disagree with reality the moment a caller ever
+        passes an ``entities`` subset narrower than the full instance.
 
         Returns the wire value dispatched (``pos_to_send``), so a caller that
         logs or records it after the fact does not have to re-derive it.
@@ -5913,7 +5918,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             position, options, resolve_entities
         )
         if on_resolved is not None:
-            on_resolved(pos_to_send)
+            on_resolved(pos_to_send, len(ordered))
         for cover in ordered:
             ctx = self._build_position_context(
                 cover, options, force=force, bypass_auto_control=bypass_auto_control
@@ -6022,13 +6027,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # effects ahead of the cause. ``on_resolved`` runs at the resolve
             # step, before any dispatch, so the event/log stay at this call
             # site (as originally planned) while still landing first.
-            def _record_end_time_default_sent(resolved_pos: int) -> None:
+            #
+            # ``cover_count`` comes from ``on_resolved``'s second argument
+            # (the size of the dispatched ``ordered`` set), not
+            # ``len(self.entities)`` — this call site never passes an
+            # ``entities`` subset today so the two numbers happen to agree,
+            # but reading ``self.entities`` here would silently disagree with
+            # what was actually dispatched the first time a caller narrows
+            # the fan-out.
+            def _record_end_time_default_sent(
+                resolved_pos: int, cover_count: int
+            ) -> None:
                 self.logger.info(
                     "End time reached — sending effective default %s%% "
                     "(sunset_active=%s) to %s cover(s)",
                     resolved_pos,
                     is_sunset,
-                    len(self.entities),
+                    cover_count,
                 )
                 self._event_buffer.record(
                     {
@@ -6036,7 +6051,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                         "event": "end_time_default_sent",
                         "position": resolved_pos,
                         "sunset_active": is_sunset,
-                        "cover_count": len(self.entities),
+                        "cover_count": cover_count,
                     }
                 )
 

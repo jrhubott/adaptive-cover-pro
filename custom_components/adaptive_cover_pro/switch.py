@@ -388,14 +388,16 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                     "Returning covers to default position: %s", default_position
                 )
                 options = self.coordinator.config_entry.options
-                # Shared with the end-of-window/sunset broadcasts (issue
-                # #1376): clamp, re-frame (inverted iff inverse-state is
-                # CONFIGURED — coordinator._inverse_state, never the raw
-                # ``False`` this seam used to hardcode), order and fan out
-                # through the one rule in
-                # coordinator._broadcast_default_position, so this seam cannot
-                # dispatch a different wire number than its siblings for the
-                # SAME configured CONF_DEFAULT_HEIGHT. Sanctioned one-shot
+                # Shared with the end-of-window broadcast (issue #1376):
+                # clamp, re-frame (inverted iff inverse-state is CONFIGURED —
+                # coordinator._inverse_state, never the raw ``False`` this
+                # seam used to hardcode), order and fan out through the one
+                # rule in coordinator._broadcast_default_position, so this
+                # seam cannot dispatch a different wire number than its
+                # sibling for the SAME configured CONF_DEFAULT_HEIGHT. (The
+                # sunset broadcast shares only the resolve half,
+                # _resolve_broadcast_dispatch, and fans out on its own in
+                # state/window_transition_tracker.py.) Sanctioned one-shot
                 # transition: auto_control was just toggled OFF, so
                 # force=True/bypass_auto_control=True honor the user's "return
                 # to default" choice by bypassing the auto_control gate
