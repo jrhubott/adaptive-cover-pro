@@ -106,6 +106,8 @@ from .const import (
     DEFAULT_EXTREME_HEAT_POSITION,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MINIMIZE_MOVEMENTS,
+    DEFAULT_SNAP_CLOSED_BELOW,
+    DEFAULT_SNAP_CLOSED_THRESHOLD,
     CONF_FOV_COMPUTE,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
@@ -145,6 +147,8 @@ from .const import (
     CONF_MIN_POSITION,
     CONF_MIN_POSITION_SUN_TRACKING,
     CONF_MINIMIZE_MOVEMENTS,
+    CONF_SNAP_CLOSED_BELOW,
+    CONF_SNAP_CLOSED_THRESHOLD,
     CONF_MODE,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
@@ -404,6 +408,7 @@ from .pipeline.handlers import (  # noqa: E402
     HANDLER_PRIORITY_CONF,
     resolve_handler_priority,
 )
+from .pipeline.helpers import SOLAR_TRACKING_FLOOR_PCT  # noqa: E402
 from .pipeline.types import CustomPositionSensorState, has_fixed_tilt  # noqa: E402
 from .priority_chain import build_priority_chain  # noqa: E402
 from .managers.cover_command.queue import normalize_queue_name  # noqa: E402
@@ -1045,6 +1050,20 @@ AUTOMATION_SCHEMA = vol.Schema(
                 max=10,
                 step=1,
                 mode=selector.NumberSelectorMode.SLIDER,
+            )
+        ),
+        vol.Optional(
+            CONF_SNAP_CLOSED_BELOW, default=DEFAULT_SNAP_CLOSED_BELOW
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_SNAP_CLOSED_THRESHOLD, default=DEFAULT_SNAP_CLOSED_THRESHOLD
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=50,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
             )
         ),
         vol.Optional(CONF_START_ENTITY): selector.EntitySelector(
@@ -1915,6 +1934,11 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "{indent}🪟 Minimize movements — {detail}, rounding toward more "
         "coverage to reduce motor movements."
     ),
+    "solar.snap_closed_below": (
+        "{indent}📎 Snap closed below {threshold}% — a sun-tracking demand "
+        "under {threshold}% (but above 0%) goes straight to fully closed "
+        "instead of leaving a barely-open sliver."
+    ),
     "solar.gate_sensors": (
         "{indent}🚦 Sun tracking gate: {sensors} decide whether to sun-track."
     ),
@@ -2028,6 +2052,27 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "⚠️ Sun-tracking min {sun_min}% < min position {min_pos}% — "
         "always-on floor dominates; sun-tracking floor will be raised to "
         "{min_pos}%."
+    ),
+    "warnings.snap_closed_below_conflicts_min_pos": (
+        "⚠️ Snap closed below {threshold}% + min position {min_pos}% — the "
+        "always-on floor already covers the entire snap band and will win, "
+        "so this setting can never take effect. Lower the min position below "
+        "{floor_bound}% or raise the threshold above {threshold_bound}% for "
+        "it to do anything."
+    ),
+    "warnings.snap_closed_below_conflicts_max_pos": (
+        "⚠️ Snap closed below {threshold}% + max position {max_pos}% — the "
+        "always-on ceiling already covers the entire snap band and will win, "
+        "so this setting can never take effect. Raise the max position above "
+        "{ceiling_bound}% or raise the threshold above {threshold_bound}% for "
+        "it to do anything."
+    ),
+    "warnings.snap_closed_below_floor_active": (
+        "⚠️ Snap closed below {threshold}% + a mixed cover group (some "
+        "support set_position, some are open/close-only) — the sun-tracking "
+        "floor stays active for the whole group (issue #569), so a demand it "
+        "collapses to closed settles at {floor_pct}% instead of a true 0% on "
+        "the position-capable cover(s)."
     ),
     "warnings.mode2_min_position": (
         "⚠️ Tilt MODE2 + min position {min_pos}% — in MODE2 the open "
@@ -2461,7 +2506,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # =========================================================================
     # Section 1c: Cover Capability Warnings
     # =========================================================================
-    _, cap_warnings = check_cover_capabilities(config, sensor_type, hass)
+    cap_map, cap_warnings = check_cover_capabilities(config, sensor_type, hass)
     if cap_warnings:
         lines.append("")
         lines.append(L["headers.cover_warnings"])
@@ -3339,6 +3384,15 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             else:
                 detail = L["solar.minimize_steps"].format(steps=steps)
             _sub(L["solar.minimize"].format(indent=indent, detail=detail))
+        if config.get(CONF_SNAP_CLOSED_BELOW, False):
+            snap_threshold = int(
+                config.get(CONF_SNAP_CLOSED_THRESHOLD, DEFAULT_SNAP_CLOSED_THRESHOLD)
+            )
+            _sub(
+                L["solar.snap_closed_below"].format(
+                    indent=_GATE_SUMMARY_INDENT, threshold=snap_threshold
+                )
+            )
         # Sun-tracking gate (issue #1167) — suppresses solar positioning while it
         # reads false, letting the chain fall through to the default position.
         # Only rendered under the enabled branch: with the master toggle off the
@@ -3693,6 +3747,120 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             )
         )
 
+    # Footgun: the opposite-polarity clamp at/beyond the snap threshold makes
+    # the declutter snap completely inert (issue #1379). ``apply_config_limits``
+    # runs AFTER the snap and always wins (floor-wins-on-conflict — the same
+    # precedence ``clamp_to_bounds`` guarantees), so once that clamp already
+    # dominates the entire snap band, the setting can never change the
+    # outcome: a demand it collapses gets pulled straight back to the clamp,
+    # and a demand it leaves untouched was already going to land on that same
+    # clamp anyway.
+    #
+    # Derivation (audit round 2 — off-by-one on both branches). The snap band
+    # is INTEGER percentages, not a continuous interval, and that rounding is
+    # where the boundary actually sits:
+    #
+    #   * full_coverage_at_zero=True (blind/tilt/venetian): the snap targets
+    #     0. ``gap_to_closed_pct == percentage`` (``PositionConverter.
+    #     snap_closed_below_threshold``), so the band ``0 < gap < threshold``
+    #     is the integers ``{1, ..., threshold-1}``; its HIGHEST member is
+    #     ``threshold-1``, not ``threshold``. With the floor at *m*
+    #     (``min_pos_sun_tracking`` when set, else ``min_pos`` — it overrides
+    #     min_pos per ``PositionConverter.apply_limits``), snap-on gives
+    #     ``max(0, m) == m`` and snap-off gives ``max(P, m)`` for every band
+    #     member P; these agree for every P in the band iff
+    #     ``m >= max(band) == threshold-1``. ``m == 0`` is excluded — that is
+    #     ``apply_limits``'s own "no floor configured" case, never a clamp.
+    #   * full_coverage_at_zero=False (awning): the snap targets 100.
+    #     ``gap_to_closed_pct == 100-percentage``, so ``0 < gap < threshold``
+    #     is the integers ``{101-threshold, ..., 99}``; its LOWEST member is
+    #     ``101-threshold``, not ``100-threshold``. With the ceiling at
+    #     max_pos (no sun-tracking-only max exists), snap-on gives
+    #     ``min(100, max_pos) == max_pos`` and snap-off gives
+    #     ``min(P, max_pos)`` for every band member P; these agree for every
+    #     P iff ``max_pos <= min(band) == 101-threshold``. ``max_pos == 100``
+    #     is excluded — ``apply_config_limits`` never applies that ceiling at
+    #     all (it is the "no ceiling configured" sentinel).
+    #
+    #   Escaping either inert state needs the SAME kind of +1 correction: the
+    #   floor must clear ``threshold-1`` (so raising the threshold must clear
+    #   ``m+1``, not merely ``m``), and the ceiling must clear
+    #   ``101-threshold`` (so raising the threshold must clear
+    #   ``101-max_pos``, not ``100-max_pos``) — a bound phrased with the old,
+    #   un-adjusted arithmetic names a value that is STILL inert.
+    if config.get(CONF_SNAP_CLOSED_BELOW, False):
+        _snap_threshold = int(
+            config.get(CONF_SNAP_CLOSED_THRESHOLD, DEFAULT_SNAP_CLOSED_THRESHOLD)
+        )
+        # Reuses ``summary_policy`` (resolved once above, with the same
+        # unknown-type-falls-back-to-BlindPolicy guard the rest of the
+        # summary already relies on) rather than re-resolving the policy a
+        # second time here.
+        _snap_full_coverage_at_zero = not summary_policy.axes[0].open_blocks_sun
+        if _snap_full_coverage_at_zero:
+            _effective_min = (
+                min_pos_sun_track if min_pos_sun_track is not None else min_pos
+            )
+            if (
+                _effective_min is not None
+                and _effective_min != 0
+                and _effective_min >= _snap_threshold - 1
+            ):
+                lines.append(
+                    L["warnings.snap_closed_below_conflicts_min_pos"].format(
+                        threshold=_snap_threshold,
+                        min_pos=_effective_min,
+                        floor_bound=_snap_threshold - 1,
+                        threshold_bound=_effective_min + 1,
+                    )
+                )
+        elif (
+            max_pos is not None and max_pos != 100 and max_pos <= 101 - _snap_threshold
+        ):
+            lines.append(
+                L["warnings.snap_closed_below_conflicts_max_pos"].format(
+                    threshold=_snap_threshold,
+                    max_pos=max_pos,
+                    ceiling_bound=101 - _snap_threshold,
+                    threshold_bound=101 - max_pos,
+                )
+            )
+
+        # Footgun (round 1 OPTIONAL 5): the sun-tracking 1 % floor
+        # (``solar_floor`` / ``SOLAR_TRACKING_FLOOR_PCT``) is switched off only
+        # when EVERY bound entity supports the position axis (the conservative
+        # mixed-instance rule, issue #569 — see
+        # ``PipelineSnapshotBuilder.build``'s ``all_positionable`` rollup,
+        # which this mirrors). One open/close-only cover in an otherwise
+        # position-capable group keeps that floor active for the WHOLE group,
+        # so a demand the snap collapses to 0 is floored back up to
+        # ``SOLAR_TRACKING_FLOOR_PCT`` — silently, since only the live
+        # pipeline's per-entity capability data knows this, not the static
+        # config the rest of this function reads. Reuses ``cap_map`` —
+        # already resolved from ``hass`` above for the "Cover Warnings"
+        # section — rather than querying capabilities a second time.
+        # Only matters for the full_coverage_at_zero (closed-end-is-0) axes:
+        # an awning's snap target (100) is always far above the floor, so
+        # solar_floor is a no-op there regardless of floor_active.
+        # Irrelevant when every entity is open/close-only too (the group
+        # covered by cap_map): none of them would ever receive the literal
+        # numeric snap value in the first place, so the 1%-vs-0% distinction
+        # this warning exists for cannot apply to any of them.
+        if _snap_full_coverage_at_zero and cap_map:
+            _snap_has_positionable = any(
+                summary_policy.position_axis_supported(c) for c in cap_map.values()
+            )
+            _snap_has_non_positionable = any(
+                not summary_policy.position_axis_supported(c) for c in cap_map.values()
+            )
+            if _snap_has_positionable and _snap_has_non_positionable:
+                lines.append(
+                    L["warnings.snap_closed_below_floor_active"].format(
+                        threshold=_snap_threshold,
+                        floor_pct=SOLAR_TRACKING_FLOOR_PCT,
+                    )
+                )
+
     # MODE2 + min_position footgun warning (issue #373).
     # In MODE2 the OPEN (horizontal) slat angle IS 50%, so any min_position
     # >= 50% collapses every climate/glare-control decision to the floor and
@@ -3954,6 +4122,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_DELTA_TIME,
             CONF_MINIMIZE_MOVEMENTS,
             CONF_MAX_COVERAGE_STEPS,
+            CONF_SNAP_CLOSED_BELOW,
+            CONF_SNAP_CLOSED_THRESHOLD,
             CONF_START_TIME,
             CONF_START_ENTITY,
             CONF_END_TIME,

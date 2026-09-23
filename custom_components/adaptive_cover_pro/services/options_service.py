@@ -141,6 +141,8 @@ from ..const import (
     CONF_SLIDING_POINT2_X,
     CONF_SLIDING_POINT2_Y,
     CONF_SLIDING_SLIDE_DIRECTION,
+    CONF_SNAP_CLOSED_BELOW,
+    CONF_SNAP_CLOSED_THRESHOLD,
     CONF_SOLAR_COVER_SHADE,
     CONF_SOLAR_COVER_SIDE,
     CONF_SOLAR_G_GLAZING,
@@ -528,6 +530,8 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_DISTANCE: _range(CONF_DISTANCE),
     CONF_MINIMIZE_MOVEMENTS: _bool_v(),
     CONF_MAX_COVERAGE_STEPS: _range(CONF_MAX_COVERAGE_STEPS),
+    CONF_SNAP_CLOSED_BELOW: _bool_v(),
+    CONF_SNAP_CLOSED_THRESHOLD: _range(CONF_SNAP_CLOSED_THRESHOLD),
     # Blind spot — master enable plus per-slot left/right/elevation ranges
     # (issue #701). Slot 1 reuses the legacy unsuffixed keys; slots 2/3 are
     # suffixed. Every slot pulls its range from OPTION_RANGES.

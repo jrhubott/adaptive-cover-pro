@@ -661,6 +661,16 @@ CONF_MINIMIZE_MOVEMENTS = "minimize_movements"  # opt-in toggle
 CONF_MAX_COVERAGE_STEPS = "max_coverage_steps"  # discrete coverage levels, 1-10
 DEFAULT_MINIMIZE_MOVEMENTS = False
 DEFAULT_MAX_COVERAGE_STEPS = 1
+# Opt-in "declutter" snap (issue #1379): collapse a small non-zero sun-tracking
+# demand to the axis's fully-closed endpoint instead of leaving a barely-open
+# sliver (e.g. 2-3 %) that reads as "not fully closed". Inert while off;
+# scoped to the position axis / sun-tracking outputs only, via the single
+# ``solar_position_from_geometry`` seam — see ``PositionConverter.
+# snap_closed_below_threshold``.
+CONF_SNAP_CLOSED_BELOW = "snap_closed_below"  # opt-in toggle
+CONF_SNAP_CLOSED_THRESHOLD = "snap_closed_threshold"  # percent, 1-50
+DEFAULT_SNAP_CLOSED_BELOW = False
+DEFAULT_SNAP_CLOSED_THRESHOLD = 10
 # True if blind passes some light even when closed (used by glare/climate).
 CONF_TRANSPARENT_BLIND = "transparent_blind"
 
@@ -2784,6 +2794,9 @@ _RANGE_INTERP_VALUE = (0, 100)  # interp start/end, percent
 
 # Sun-tracking movement minimization.
 _RANGE_MAX_COVERAGE_STEPS = (1, 10)  # CONF_MAX_COVERAGE_STEPS, discrete levels
+
+# Sun-tracking snap-closed declutter (issue #1379).
+_RANGE_SNAP_CLOSED_THRESHOLD = (1, 50)  # CONF_SNAP_CLOSED_THRESHOLD, percent
 
 # Automation timing.
 _RANGE_DELTA_POSITION = (1, 90)  # CONF_DELTA_POSITION, percent

@@ -1147,6 +1147,67 @@ def test_build_reads_tilt_limits_and_sun_only_toggles():
 
 
 @pytest.mark.unit
+def test_build_reads_snap_closed_below_and_threshold():
+    """snap_closed_below / snap_closed_threshold flow onto the snapshot (#1379)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+
+    snapshot = builder.build(
+        {CONF_SNAP_CLOSED_BELOW: True, CONF_SNAP_CLOSED_THRESHOLD: 15},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: False,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.snap_closed_below is True
+    assert snapshot.snap_closed_threshold == 15
+
+
+@pytest.mark.unit
+def test_build_snap_closed_below_default_when_options_absent():
+    """No snap options → the snapshot defaults preserve the pre-#1379 no-op."""
+    from custom_components.adaptive_cover_pro.const import (
+        DEFAULT_SNAP_CLOSED_THRESHOLD,
+    )
+
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+
+    snapshot = builder.build(
+        {},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: False,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.snap_closed_below is False
+    assert snapshot.snap_closed_threshold == DEFAULT_SNAP_CLOSED_THRESHOLD
+
+
+@pytest.mark.unit
 def test_build_tilt_limits_default_when_options_absent():
     """No tilt options → snapshot uses no-op defaults (100 / 0 / False)."""
     builder, _, _ = _make_builder()

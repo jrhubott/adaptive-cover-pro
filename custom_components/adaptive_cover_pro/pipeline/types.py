@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from ..const import (
+    DEFAULT_SNAP_CLOSED_THRESHOLD,
     DEFAULT_TRACKING_SEASONS,
     POSITION_OPEN,
     AxisConstraintMode,
@@ -680,6 +681,17 @@ class PipelineSnapshot:
     # the sun is in the FOV. Defaults preserve the un-quantized behavior.
     minimize_movements: bool = False
     max_coverage_steps: int = 1
+
+    # Sun-tracking declutter snap (opt-in, issue #1379). When True, a computed
+    # sun-tracking position axis demand whose gap to the axis's closed endpoint
+    # is greater than 0 and less than ``snap_closed_threshold`` collapses to
+    # that endpoint instead of leaving a barely-open sliver. Runs after
+    # ``minimize_movements`` quantization and before the floor/limit clamp in
+    # ``solar_position_from_geometry``, so an active min-position floor always
+    # wins. Position axis / sun-tracking outputs only. Defaults preserve the
+    # un-snapped behavior.
+    snap_closed_below: bool = False
+    snap_closed_threshold: int = DEFAULT_SNAP_CLOSED_THRESHOLD
 
     # Whether the sun-tracking 1 % floor applies this cycle (issue #569). The
     # solar branch and the glare-zone handler floor the geometric position at

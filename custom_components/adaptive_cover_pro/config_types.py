@@ -14,6 +14,7 @@ from .const import (
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_SOLAR_COVER_SHADE,
     DEFAULT_SOLAR_COVER_SIDE,
+    DEFAULT_SNAP_CLOSED_THRESHOLD,
     DEFAULT_SOLAR_G_GLAZING,
     DEFAULT_SUNRISE_GATES_START,
     DEFAULT_TEMPLATE_COMBINE_MODE,
@@ -814,6 +815,11 @@ class TrackingSlice:
     # Opt-in sun-tracking movement minimization (quantize to N coverage levels).
     minimize_movements: bool = False
     max_coverage_steps: int = 1
+    # Opt-in sun-tracking declutter snap (issue #1379): collapse a small
+    # non-zero position-axis demand to the closed endpoint instead of leaving a
+    # barely-open sliver. Inert while off; see ``PipelineSnapshot.snap_closed_below``.
+    snap_closed_below: bool = False
+    snap_closed_threshold: int = DEFAULT_SNAP_CLOSED_THRESHOLD
     # When True, the reconciliation pass resends until the cover reaches target.
     # When False (default), command once and let a settle past tolerance become
     # a manual override (issue #591).
@@ -927,6 +933,8 @@ class RuntimeConfig:
             CONF_OPEN_CLOSE_THRESHOLD,
             CONF_OUTSIDE_TEMP_SOURCE,
             CONF_POSITION_TOLERANCE,
+            CONF_SNAP_CLOSED_BELOW,
+            CONF_SNAP_CLOSED_THRESHOLD,
             CONF_START_ENTITY,
             CONF_START_TIME,
             CONF_SUNRISE_GATES_START,
@@ -968,6 +976,7 @@ class RuntimeConfig:
             DEFAULT_MINIMIZE_MOVEMENTS,
             DEFAULT_MOTION_TIMEOUT,
             DEFAULT_OUTSIDE_TEMP_SOURCE,
+            DEFAULT_SNAP_CLOSED_BELOW,
             DEFAULT_SUNRISE_GATES_START,
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             DEFAULT_VENETIAN_MODE,
@@ -1011,6 +1020,14 @@ class RuntimeConfig:
                 ),
                 max_coverage_steps=int(
                     options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
+                ),
+                snap_closed_below=bool(
+                    options.get(CONF_SNAP_CLOSED_BELOW, DEFAULT_SNAP_CLOSED_BELOW)
+                ),
+                snap_closed_threshold=int(
+                    options.get(
+                        CONF_SNAP_CLOSED_THRESHOLD, DEFAULT_SNAP_CLOSED_THRESHOLD
+                    )
                 ),
                 enable_position_matching=options.get(
                     CONF_ENABLE_POSITION_MATCHING, DEFAULT_ENABLE_POSITION_MATCHING

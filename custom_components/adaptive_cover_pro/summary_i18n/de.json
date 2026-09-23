@@ -101,7 +101,10 @@
     "forecast_source_no_weather_entity": "⚠️ Außentemperaturquelle basiert auf Vorhersage, aber es ist keine Wetter-Entität konfiguriert — die Vorhersage wird stillschweigend auf den Live-Messwert zurückfallen. Konfigurieren Sie eine Wetter-Entität unter Wetter, Licht & Wolken.",
     "travel_time_unmeasurable": "⚠️ {entities} melden einen angenommenen Zustand, daher kann ihre Laufzeit nicht gemessen werden und keine wurde eingegeben — Dashboards zeigen keine Bewegung. Geben Sie eine Zeit unter Kalibrierung → Laufzeit ein.",
     "weather_window_scoped": "⚠️ Die Wettersicherung wirkt nur innerhalb des Zeitfensters — außerhalb folgt die Beschattung stattdessen der Fensterende-/Sonnenuntergangs-Position, und das Wetter schützt sie nachts nicht.",
-    "weather_tilt_min_mode": "⚠️ Eine Wetter-Übersteuerungsneigung ist gesetzt, aber der Minimale-Positionsmodus ist aktiv — das Wetter setzt in diesem Modus nur eine Mindestposition und stellt die Lamellen nie ein, daher wird die Neigung ignoriert."
+    "weather_tilt_min_mode": "⚠️ Eine Wetter-Übersteuerungsneigung ist gesetzt, aber der Minimale-Positionsmodus ist aktiv — das Wetter setzt in diesem Modus nur eine Mindestposition und stellt die Lamellen nie ein, daher wird die Neigung ignoriert.",
+    "snap_closed_below_conflicts_min_pos": "⚠️ Unter Schwelle schließen {threshold}% + Mindestposition {min_pos}% — die ständig aktive Untergrenze deckt bereits das gesamte Schließband ab und wird Vorrang haben, daher kann diese Einstellung nie wirksam werden. Senken Sie die Mindestposition unter {floor_bound}% oder erhöhen Sie die Schwelle über {threshold_bound}%, damit sie funktioniert.",
+    "snap_closed_below_conflicts_max_pos": "⚠️ Unter Schwelle schließen {threshold}% + Maximalposition {max_pos}% — die ständig aktive Obergrenze deckt bereits das gesamte Schließband ab und wird Vorrang haben, daher kann diese Einstellung nie wirksam werden. Erhöhen Sie die Maximalposition über {ceiling_bound}% oder erhöhen Sie die Schwelle über {threshold_bound}%, damit sie funktioniert.",
+    "snap_closed_below_floor_active": "⚠️ Unter Schwelle schließen {threshold}% + gemischte Beschattungsgruppe (einige unterstützen set_position, einige sind nur Öffnen/Schließen) — die Untergrenze der Sonnenverfolgung bleibt für die ganze Gruppe aktiv (issue #569), daher landen die positionierbaren Beschattung(en) beim Schließen bei {floor_pct}% statt 0%."
   },
   "motion": {
     "action_hold": "Behänge halten aktuelle Position (zurück zum Standard, wenn Sonne den Sonnen-Akzeptanzwinkel verlässt)",
@@ -176,7 +179,8 @@
     "gate_sensors": "{indent}🚦 Sonnenverfolgungs-Gate: {sensors} entscheiden, ob der Sonne gefolgt wird.",
     "gate_template": "{indent}🚦 Sonnenverfolgungs-Gate: eine Vorlage entscheidet, ob der Sonne gefolgt wird.",
     "gate_both": "{indent}🚦 Sonnenverfolgungs-Gate: {sensors} und eine Vorlage ({mode}) entscheiden, ob der Sonne gefolgt wird.",
-    "gate_explainer": "{indent}Solange das Gate falsch meldet, wird die Sonnenpositionierung übersprungen und die Abdeckung fällt auf die Standardposition zurück. Klimamodus, Bewegung und manuelle Übersteuerung bleiben unberührt, und das Betriebsfenster bleibt offen — anders als beim Tageslicht-Gate, das das Fenster schließt und alle davon unterdrückt. Blendungszonen laufen weiter, verlieren aber ihre nur-bei-Sonnenverfolgung-Grenzwerte, da diese nur bei aktiver Verfolgung gelten."
+    "gate_explainer": "{indent}Solange das Gate falsch meldet, wird die Sonnenpositionierung übersprungen und die Abdeckung fällt auf die Standardposition zurück. Klimamodus, Bewegung und manuelle Übersteuerung bleiben unberührt, und das Betriebsfenster bleibt offen — anders als beim Tageslicht-Gate, das das Fenster schließt und alle davon unterdrückt. Blendungszonen laufen weiter, verlieren aber ihre nur-bei-Sonnenverfolgung-Grenzwerte, da diese nur bei aktiver Verfolgung gelten.",
+    "snap_closed_below": "{indent}📎 Unter Schwelle schließen {threshold}% — eine Sonnenverfolgungsanforderung unter {threshold}% (aber über 0%) wird sofort ganz geschlossen, anstatt einen kaum sichtbaren Spalt offen zu lassen."
   },
   "timing": {
     "from_entity": "von {entity}",
