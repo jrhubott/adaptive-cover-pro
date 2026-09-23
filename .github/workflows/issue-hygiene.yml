@@ -156,7 +156,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
       - name: "Close stale needs-diagnostics"
-        uses: actions/stale@v10
+        uses: actions/stale@v11
         with:
           only-issue-labels: "needs-diagnostics"
           days-before-issue-stale: 7
@@ -170,7 +170,7 @@ jobs:
           operations-per-run: 50
 
       - name: "Close stale needs-template"
-        uses: actions/stale@v10
+        uses: actions/stale@v11
         with:
           only-issue-labels: "needs-template"
           days-before-issue-stale: 7
