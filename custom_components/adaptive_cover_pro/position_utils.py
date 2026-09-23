@@ -509,17 +509,24 @@ class PositionConverter:
         Monotonic axes only, enforced by *pivot* rather than assumed: a
         non-``None`` pivot means the axis is bi-directional (a MODE2 slat —
         every tilt-capable engine reports a real numeric horizontal pivot for
-        MODE1/MODE2/``specify_angles``/the louvered roof, never ``None``, per
-        ``AdaptiveTiltCover.coverage_pivot_percentage``) and is an
-        unconditional bail-out, regardless of *full_coverage_at_zero* or
-        which axis a policy happens to declare at ``axes[0]``
-        (``cover_tilt`` / ``cover_louvered_roof`` put TILT there — see
-        issue #1379 audit). This mirrors the exact discriminator
+        MODE1/MODE2/``specify_angles``/the louvered roof in every reachable
+        configuration, per ``AdaptiveTiltCover.coverage_pivot_percentage``),
+        and this method always bails out on it, regardless of
+        *full_coverage_at_zero* or which axis a policy happens to declare at
+        ``axes[0]`` (``cover_tilt`` / ``cover_louvered_roof`` put TILT there
+        — see issue #1379 audit). This mirrors the exact discriminator
         :meth:`quantize_to_coverage_steps` already reads via its own *pivot*
         parameter, one call site above this one, rather than re-deriving an
         axis-identity check. The position axis's base
         ``coverage_pivot_percentage()`` always returns ``None``, which is
         what lets a monotonic axis reach the snap at all.
+
+        Not literally unconditional, though: the base contract also allows
+        ``None`` on a degenerate zero-width tilt scale, which would let that
+        (hypothetical) configuration slip past this bail-out too. Audit
+        round 2 confirmed no registered engine configuration reaches that
+        case, so it is not a live exception today — but the guarantee rests
+        on that fact, not on anything this method can verify itself.
 
         Reuses :func:`covered_fraction` — the single place the
         position-to-coverage-share polarity is written (#1236) — for the
@@ -546,9 +553,8 @@ class PositionConverter:
             pivot: The axis's coverage pivot from
                 ``cover.coverage_pivot_percentage()`` — ``None`` for a
                 monotonic axis, a float for a bi-directional one. Non-``None``
-                is an unconditional bail-out; defaults to ``None`` so a
-                caller that never resolves a pivot keeps the monotonic
-                behavior.
+                always bails out; defaults to ``None`` so a caller that never
+                resolves a pivot keeps the monotonic behavior.
 
         Returns:
             The closed endpoint (0 or 100) when the demand is in the open

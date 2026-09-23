@@ -2056,14 +2056,14 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "⚠️ Snap closed below {threshold}% + min position {min_pos}% — the "
         "always-on floor already covers the entire snap band and will win, "
         "so this setting can never take effect. Lower the min position below "
-        "{threshold}% or raise the threshold above {min_pos}% for it to do "
-        "anything."
+        "{floor_bound}% or raise the threshold above {threshold_bound}% for "
+        "it to do anything."
     ),
     "warnings.snap_closed_below_conflicts_max_pos": (
         "⚠️ Snap closed below {threshold}% + max position {max_pos}% — the "
         "always-on ceiling already covers the entire snap band and will win, "
         "so this setting can never take effect. Raise the max position above "
-        "{ceiling_bound}% or set the threshold above {threshold_bound}% for "
+        "{ceiling_bound}% or raise the threshold above {threshold_bound}% for "
         "it to do anything."
     ),
     "warnings.mode2_min_position": (
@@ -3748,47 +3748,73 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # and a demand it leaves untouched was already going to land on that same
     # clamp anyway.
     #
-    # The clamp that matters is polarity-dependent — the snap's own closed
-    # endpoint flips with it (0 for full_coverage_at_zero=True axes, 100
-    # otherwise), and only a same-direction clamp can dominate it:
+    # Derivation (audit round 2 — off-by-one on both branches). The snap band
+    # is INTEGER percentages, not a continuous interval, and that rounding is
+    # where the boundary actually sits:
+    #
     #   * full_coverage_at_zero=True (blind/tilt/venetian): the snap targets
-    #     0, so the relevant clamp is the MIN floor (the sun-tracking-only
-    #     min when set — it overrides min_pos, see
-    #     ``PositionConverter.apply_limits`` — else the always-on min_pos).
-    #     Inert when that floor is >= the threshold.
-    #   * full_coverage_at_zero=False (awning): the snap targets 100, so a
-    #     MIN floor never interacts with it at all — the relevant clamp is
-    #     the always-on MAX ceiling (there is no sun-tracking-only max).
-    #     Inert when ``max_pos <= 100 - threshold`` (the ceiling's own gap
-    #     from 100 already covers the whole band, symmetric to the floor
-    #     case above).
+    #     0. ``gap_to_closed_pct == percentage`` (``PositionConverter.
+    #     snap_closed_below_threshold``), so the band ``0 < gap < threshold``
+    #     is the integers ``{1, ..., threshold-1}``; its HIGHEST member is
+    #     ``threshold-1``, not ``threshold``. With the floor at *m*
+    #     (``min_pos_sun_tracking`` when set, else ``min_pos`` — it overrides
+    #     min_pos per ``PositionConverter.apply_limits``), snap-on gives
+    #     ``max(0, m) == m`` and snap-off gives ``max(P, m)`` for every band
+    #     member P; these agree for every P in the band iff
+    #     ``m >= max(band) == threshold-1``. ``m == 0`` is excluded — that is
+    #     ``apply_limits``'s own "no floor configured" case, never a clamp.
+    #   * full_coverage_at_zero=False (awning): the snap targets 100.
+    #     ``gap_to_closed_pct == 100-percentage``, so ``0 < gap < threshold``
+    #     is the integers ``{101-threshold, ..., 99}``; its LOWEST member is
+    #     ``101-threshold``, not ``100-threshold``. With the ceiling at
+    #     max_pos (no sun-tracking-only max exists), snap-on gives
+    #     ``min(100, max_pos) == max_pos`` and snap-off gives
+    #     ``min(P, max_pos)`` for every band member P; these agree for every
+    #     P iff ``max_pos <= min(band) == 101-threshold``. ``max_pos == 100``
+    #     is excluded — ``apply_config_limits`` never applies that ceiling at
+    #     all (it is the "no ceiling configured" sentinel).
+    #
+    #   Escaping either inert state needs the SAME kind of +1 correction: the
+    #   floor must clear ``threshold-1`` (so raising the threshold must clear
+    #   ``m+1``, not merely ``m``), and the ceiling must clear
+    #   ``101-threshold`` (so raising the threshold must clear
+    #   ``101-max_pos``, not ``100-max_pos``) — a bound phrased with the old,
+    #   un-adjusted arithmetic names a value that is STILL inert.
     if config.get(CONF_SNAP_CLOSED_BELOW, False):
         _snap_threshold = int(
             config.get(CONF_SNAP_CLOSED_THRESHOLD, DEFAULT_SNAP_CLOSED_THRESHOLD)
         )
-        _snap_policy = get_policy(sensor_type) if sensor_type is not None else None
-        _snap_full_coverage_at_zero = (
-            not _snap_policy.axes[0].open_blocks_sun
-            if _snap_policy is not None
-            else True
-        )
+        # Reuses ``summary_policy`` (resolved once above, with the same
+        # unknown-type-falls-back-to-BlindPolicy guard the rest of the
+        # summary already relies on) rather than re-resolving the policy a
+        # second time here.
+        _snap_full_coverage_at_zero = not summary_policy.axes[0].open_blocks_sun
         if _snap_full_coverage_at_zero:
             _effective_min = (
                 min_pos_sun_track if min_pos_sun_track is not None else min_pos
             )
-            if _effective_min is not None and _effective_min >= _snap_threshold:
+            if (
+                _effective_min is not None
+                and _effective_min != 0
+                and _effective_min >= _snap_threshold - 1
+            ):
                 lines.append(
                     L["warnings.snap_closed_below_conflicts_min_pos"].format(
-                        threshold=_snap_threshold, min_pos=_effective_min
+                        threshold=_snap_threshold,
+                        min_pos=_effective_min,
+                        floor_bound=_snap_threshold - 1,
+                        threshold_bound=_effective_min + 1,
                     )
                 )
-        elif max_pos is not None and max_pos <= 100 - _snap_threshold:
+        elif (
+            max_pos is not None and max_pos != 100 and max_pos <= 101 - _snap_threshold
+        ):
             lines.append(
                 L["warnings.snap_closed_below_conflicts_max_pos"].format(
                     threshold=_snap_threshold,
                     max_pos=max_pos,
-                    ceiling_bound=100 - _snap_threshold,
-                    threshold_bound=100 - max_pos,
+                    ceiling_bound=101 - _snap_threshold,
+                    threshold_bound=101 - max_pos,
                 )
             )
 

@@ -960,6 +960,137 @@ def test_summary_no_false_positive_warning_for_awning_min_position():
     assert "can never take effect" not in summary
 
 
+def test_summary_warns_at_the_exact_blind_inert_boundary():
+    """Off-by-one audit fix: effective_min == threshold - 1 IS inert (blind axis).
+
+    Snap band is percentage in {1, ..., threshold-1} (integers, from
+    ``gap_to_closed_pct = percentage`` and ``0 < gap < threshold``). With
+    min_pos=9 and threshold=10, EVERY band member floors to 9 whether the
+    snap fires or not (max(P, 9) == 9 for every P in {1..9}, and
+    max(0, 9) == 9 too) — fully inert, so this must warn even though the
+    pre-fix ``effective_min >= threshold`` condition (9 >= 10) said it
+    wasn't.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MIN_POSITION,
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_SNAP_CLOSED_BELOW: True,
+        CONF_SNAP_CLOSED_THRESHOLD: 10,
+        CONF_MIN_POSITION: 9,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "can never take effect" in summary
+    # Remedy bounds: lower below (threshold-1)=9, or raise above (min_pos+1)=10.
+    assert "below 9%" in summary
+    assert "above 10%" in summary
+
+
+def test_summary_no_warning_just_past_the_blind_inert_boundary():
+    """One point below the blind boundary is genuinely NOT inert.
+
+    min_pos=8 differs from the snap for band members 5-9 (max(P, 8) == P
+    for P in {5..9}, but max(0, 8) == 8) — the setting has a real effect,
+    so no warning.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MIN_POSITION,
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_SNAP_CLOSED_BELOW: True,
+        CONF_SNAP_CLOSED_THRESHOLD: 10,
+        CONF_MIN_POSITION: 8,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "can never take effect" not in summary
+
+
+def test_summary_warns_at_the_exact_awning_inert_boundary():
+    """Off-by-one audit fix: max_pos == 101 - threshold IS inert (awning axis).
+
+    Snap band is percentage in {101-threshold, ..., 99} (integers, from
+    ``gap_to_closed_pct = 100 - percentage`` and ``0 < gap < threshold``).
+    With max_pos=91 and threshold=10, EVERY band member (91..99) clamps to
+    91 whether the snap fires or not (min(P, 91) == 91 for every P in
+    {91..99}, and min(100, 91) == 91 too) — fully inert, matching the
+    audited concrete miss exactly.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MAX_POSITION,
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_SNAP_CLOSED_BELOW: True,
+        CONF_SNAP_CLOSED_THRESHOLD: 10,
+        CONF_MAX_POSITION: 91,
+    }
+    summary = _build_config_summary(cfg, CoverType.AWNING)
+    assert "can never take effect" in summary
+    # Remedy bounds: raise above (101-threshold)=91, or raise above (101-max_pos)=10.
+    assert "above 91%" in summary
+    assert "above 10%" in summary
+
+
+def test_summary_no_warning_just_past_the_awning_inert_boundary():
+    """One point above the awning boundary is genuinely NOT inert.
+
+    max_pos=92 differs from the snap for band members 91 (min(91, 92) ==
+    91, but a snapped 100 clamps to min(100, 92) == 92) — the setting has
+    a real effect, so no warning. This is exactly the audit's stated "need
+    >= 92 to see any effect" boundary.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MAX_POSITION,
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_SNAP_CLOSED_BELOW: True,
+        CONF_SNAP_CLOSED_THRESHOLD: 10,
+        CONF_MAX_POSITION: 92,
+    }
+    summary = _build_config_summary(cfg, CoverType.AWNING)
+    assert "can never take effect" not in summary
+
+
+def test_summary_no_false_positive_for_default_min_position_at_smallest_threshold():
+    """min_pos=0 (the default / "no floor") must never register as inert.
+
+    A guard the off-by-one fix's own arithmetic needs, not merely inherits:
+    ``effective_min >= threshold - 1`` alone would flag min_pos=0 at
+    threshold=1 (0 >= 0) even though ``PositionConverter.apply_limits``
+    treats a 0 floor as no floor at all (``effective_min != 0`` gates the
+    clamp) — there is nothing there to make the snap inert.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MIN_POSITION,
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_SNAP_CLOSED_BELOW: True,
+        CONF_SNAP_CLOSED_THRESHOLD: 1,
+        CONF_MIN_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "can never take effect" not in summary
+
+
 def test_summary_warns_for_awning_when_max_position_makes_snap_inert():
     """Awning max_position is the mirror of the blind axis's min_position case.
 
