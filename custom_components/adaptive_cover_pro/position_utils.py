@@ -491,6 +491,7 @@ class PositionConverter:
         *,
         enabled: bool,
         full_coverage_at_zero: bool,
+        pivot: float | None = None,
     ) -> int:
         """Collapse a small non-zero sun-tracking demand to the closed endpoint.
 
@@ -505,10 +506,20 @@ class PositionConverter:
         through untouched, so the continuous curve above the band is
         unaffected.
 
-        Monotonic axes only: this mirrors the ``pivot is None`` branch of
-        :meth:`quantize_to_coverage_steps` and does not take a pivot/bounds
-        pair, matching the position-axis-only scope of this feature (a
-        bi-directional tilt axis is out of scope — see #1104/#1107).
+        Monotonic axes only, enforced by *pivot* rather than assumed: a
+        non-``None`` pivot means the axis is bi-directional (a MODE2 slat —
+        every tilt-capable engine reports a real numeric horizontal pivot for
+        MODE1/MODE2/``specify_angles``/the louvered roof, never ``None``, per
+        ``AdaptiveTiltCover.coverage_pivot_percentage``) and is an
+        unconditional bail-out, regardless of *full_coverage_at_zero* or
+        which axis a policy happens to declare at ``axes[0]``
+        (``cover_tilt`` / ``cover_louvered_roof`` put TILT there — see
+        issue #1379 audit). This mirrors the exact discriminator
+        :meth:`quantize_to_coverage_steps` already reads via its own *pivot*
+        parameter, one call site above this one, rather than re-deriving an
+        axis-identity check. The position axis's base
+        ``coverage_pivot_percentage()`` always returns ``None``, which is
+        what lets a monotonic axis reach the snap at all.
 
         Reuses :func:`covered_fraction` — the single place the
         position-to-coverage-share polarity is written (#1236) — for the
@@ -532,13 +543,20 @@ class PositionConverter:
             full_coverage_at_zero: True when 0 % is the closed/full-coverage
                 endpoint (vertical blind, tilt, venetian); False when 100 % is
                 (awning). Same flag :meth:`quantize_to_coverage_steps` reads.
+            pivot: The axis's coverage pivot from
+                ``cover.coverage_pivot_percentage()`` — ``None`` for a
+                monotonic axis, a float for a bi-directional one. Non-``None``
+                is an unconditional bail-out; defaults to ``None`` so a
+                caller that never resolves a pivot keeps the monotonic
+                behavior.
 
         Returns:
             The closed endpoint (0 or 100) when the demand is in the open
-            band ``(0, threshold)``; *percentage* unchanged otherwise.
+            band ``(0, threshold)`` on a monotonic axis; *percentage*
+            unchanged otherwise.
 
         """
-        if not enabled:
+        if not enabled or pivot is not None:
             return percentage
         gap_to_closed_pct = (
             covered_fraction(percentage, open_blocks_sun=full_coverage_at_zero) * 100

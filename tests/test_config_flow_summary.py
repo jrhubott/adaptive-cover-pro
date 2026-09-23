@@ -934,6 +934,59 @@ def test_summary_warning_uses_sun_tracking_min_when_more_specific():
     assert "20%" in summary
 
 
+def test_summary_no_false_positive_warning_for_awning_min_position():
+    """Awning min_position never interacts with the snap (#1379 audit fix).
+
+    The snap targets the CLOSED end for an awning, which is 100, not 0. A
+    numeric min_position floor never conflicts with a target of 100
+    (``max(100, min_pos) == 100`` for any ``min_pos <= 100``), so this must
+    never warn — even though the blind-polarity condition
+    (``effective_min >= threshold``) would incorrectly fire here if the
+    check ignored axis polarity.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MIN_POSITION,
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_SNAP_CLOSED_BELOW: True,
+        CONF_SNAP_CLOSED_THRESHOLD: 10,
+        CONF_MIN_POSITION: 20,
+    }
+    summary = _build_config_summary(cfg, CoverType.AWNING)
+    assert "can never take effect" not in summary
+
+
+def test_summary_warns_for_awning_when_max_position_makes_snap_inert():
+    """Awning max_position is the mirror of the blind axis's min_position case.
+
+    The snap targets 100 for an awning; ``apply_config_limits`` clamps ANY
+    value down to ``max_position`` regardless of the snap, so a ceiling of
+    80 with threshold=10 swallows the entire (90, 100) snap band — the
+    setting can never take effect. The pre-fix condition (checking only
+    min_position) produced no warning at all here.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MAX_POSITION,
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_SNAP_CLOSED_BELOW: True,
+        CONF_SNAP_CLOSED_THRESHOLD: 10,
+        CONF_MAX_POSITION: 80,
+    }
+    summary = _build_config_summary(cfg, CoverType.AWNING)
+    assert "can never take effect" in summary
+    assert "10%" in summary
+    assert "80%" in summary
+
+
 def test_summary_no_warning_when_min_position_below_snap_threshold():
     """No footgun warning when min_pos sits below the threshold (snap still bites).
 

@@ -1021,8 +1021,8 @@ class RuntimeConfig:
                 max_coverage_steps=int(
                     options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
                 ),
-                snap_closed_below=options.get(
-                    CONF_SNAP_CLOSED_BELOW, DEFAULT_SNAP_CLOSED_BELOW
+                snap_closed_below=bool(
+                    options.get(CONF_SNAP_CLOSED_BELOW, DEFAULT_SNAP_CLOSED_BELOW)
                 ),
                 snap_closed_threshold=int(
                     options.get(

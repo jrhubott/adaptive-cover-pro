@@ -268,6 +268,25 @@ def _make_geometry_cover(*, raw_pct: float):
     )
 
 
+def _make_pivot_cover(*, round_result: int, pivot: float | None):
+    """Build a cover double with a fully controllable ``round_toward_coverage``
+    result and an explicit ``coverage_pivot_percentage()`` answer.
+
+    Used to reproduce the tilt-axis snap-scoping bug directly: a real
+    ``AdaptiveTiltCover`` MODE2 solve for a specific mirror-pair of
+    near-horizontal percentages (49/51) is fragile to reverse-engineer from
+    raw sun geometry, whereas the bug's entire mechanism is "does this cover
+    report a non-``None`` pivot" — controlling that directly pins the exact
+    reported failure without depending on unrelated geometry solving.
+    """
+    return SimpleNamespace(
+        calculate_raw_percentage=lambda: float(round_result),
+        round_toward_coverage=lambda pct, full_coverage_at_zero: round_result,  # noqa: ARG005
+        coverage_pivot_percentage=lambda: pivot,
+        coverage_travel_bounds=lambda: (0.0, 100.0),
+    )
+
+
 class TestSolarPositionFromGeometrySnapClosedBelow:
     """The snap step must run after quantize and before the floor/limit clamp."""
 
@@ -337,6 +356,67 @@ class TestSolarPositionFromGeometrySnapClosedBelow:
         )
 
         assert result == 2
+
+    def test_snap_does_not_fire_on_a_bidirectional_tilt_axis(self):
+        """The snap is scoped to the monotonic position axis only (audit fix).
+
+        Drives the REAL ``TiltPolicy`` (``axes[0]`` is ``TILT_AXIS_PRIMARY``,
+        same as it is for ``cover_louvered_roof``) through
+        ``solar_position_from_geometry`` end-to-end. MODE2 puts the horizontal
+        (least-covering) slat at a 50 % pivot; a solve of 49 sits one point
+        short of horizontal — near-open, not near-closed. Before the fix,
+        ``covered_fraction(49, open_blocks_sun=True) * 100 == 49 < 50``
+        satisfied the naive (position-axis) band check and slammed the
+        near-open slats fully shut. 51 — the mirror value, identically
+        near-open on the other side of the pivot — was untouched, which is
+        the asymmetry that gave the bug away. After the fix neither fires:
+        the axis carries a real pivot (50.0, not ``None``), which is exactly
+        the discriminator ``quantize_to_coverage_steps`` already uses one
+        line above to detect a bi-directional axis.
+        """
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+        policy = get_policy("cover_tilt")
+
+        for tilt_solve in (49, 51):
+            cover = _make_pivot_cover(round_result=tilt_solve, pivot=50.0)
+            result = solar_position_from_geometry(
+                cover,
+                _make_config(),
+                minimize_movements=False,
+                max_coverage_steps=1,
+                policy=policy,
+                floor_active=False,
+                snap_closed_below=True,
+                snap_closed_threshold=50,
+            )
+            assert result == tilt_solve
+
+    def test_snap_still_fires_on_the_position_axis(self):
+        """The tilt fix leaves the genuinely monotonic position axis alone.
+
+        Same real-policy end-to-end shape as the tilt test above, but with
+        ``cover_blind`` (``axes[0]`` is ``POSITION_AXIS``, whose base
+        ``coverage_pivot_percentage()`` returns ``None``) — the snap must
+        still collapse a barely-open demand to fully closed.
+        """
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+        policy = get_policy("cover_blind")
+        cover = _make_pivot_cover(round_result=3, pivot=None)
+
+        result = solar_position_from_geometry(
+            cover,
+            _make_config(),
+            minimize_movements=False,
+            max_coverage_steps=1,
+            policy=policy,
+            floor_active=False,
+            snap_closed_below=True,
+            snap_closed_threshold=10,
+        )
+
+        assert result == 0
 
 
 class TestComputeSolarPositionSnapClosedBelow:

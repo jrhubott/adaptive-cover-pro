@@ -216,6 +216,33 @@ def test_snap_closed_below_noop_when_disabled_or_above_threshold() -> None:
 
 
 @pytest.mark.unit
+def test_snap_closed_below_bails_out_on_a_bidirectional_pivot() -> None:
+    """A non-``None`` pivot means a bi-directional (tilt) axis — out of scope.
+
+    Reuses the discriminator ``quantize_to_coverage_steps`` already reads:
+    ``None`` is the monotonic case (the position axis), any float means the
+    axis is bi-directional (e.g. a MODE2 tilt's horizontal pivot). Audit fix
+    for issue #1379 — the original implementation had no pivot parameter at
+    all and fired on tilt axes whenever the naive polarity math happened to
+    land in the band, asymmetrically about the pivot.
+    """
+    # Would collapse to 0 without a pivot (matches the base collapsing test).
+    assert (
+        PositionConverter.snap_closed_below_threshold(
+            3, 10, enabled=True, full_coverage_at_zero=True, pivot=50.0
+        )
+        == 3
+    )
+    # Explicit None (the default) still behaves like the monotonic axis.
+    assert (
+        PositionConverter.snap_closed_below_threshold(
+            3, 10, enabled=True, full_coverage_at_zero=True, pivot=None
+        )
+        == 0
+    )
+
+
+@pytest.mark.unit
 def test_snap_closed_below_respects_awning_polarity() -> None:
     """An awning's closed endpoint is 100, not 0 — the far end of the range.
 
