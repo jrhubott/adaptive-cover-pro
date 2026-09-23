@@ -106,6 +106,8 @@ from .const import (
     DEFAULT_EXTREME_HEAT_POSITION,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MINIMIZE_MOVEMENTS,
+    DEFAULT_SNAP_CLOSED_BELOW,
+    DEFAULT_SNAP_CLOSED_THRESHOLD,
     CONF_FOV_COMPUTE,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
@@ -145,6 +147,8 @@ from .const import (
     CONF_MIN_POSITION,
     CONF_MIN_POSITION_SUN_TRACKING,
     CONF_MINIMIZE_MOVEMENTS,
+    CONF_SNAP_CLOSED_BELOW,
+    CONF_SNAP_CLOSED_THRESHOLD,
     CONF_MODE,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
@@ -1047,6 +1051,20 @@ AUTOMATION_SCHEMA = vol.Schema(
                 mode=selector.NumberSelectorMode.SLIDER,
             )
         ),
+        vol.Optional(
+            CONF_SNAP_CLOSED_BELOW, default=DEFAULT_SNAP_CLOSED_BELOW
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_SNAP_CLOSED_THRESHOLD, default=DEFAULT_SNAP_CLOSED_THRESHOLD
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=50,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
         vol.Optional(CONF_START_ENTITY): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
         ),
@@ -1915,6 +1933,11 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "{indent}🪟 Minimize movements — {detail}, rounding toward more "
         "coverage to reduce motor movements."
     ),
+    "solar.snap_closed_below": (
+        "{indent}📎 Snap closed below {threshold}% — a sun-tracking demand "
+        "under {threshold}% (but above 0%) goes straight to fully closed "
+        "instead of leaving a barely-open sliver."
+    ),
     "solar.gate_sensors": (
         "{indent}🚦 Sun tracking gate: {sensors} decide whether to sun-track."
     ),
@@ -2028,6 +2051,13 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "⚠️ Sun-tracking min {sun_min}% < min position {min_pos}% — "
         "always-on floor dominates; sun-tracking floor will be raised to "
         "{min_pos}%."
+    ),
+    "warnings.snap_closed_below_conflicts_min_pos": (
+        "⚠️ Snap closed below {threshold}% + min position {min_pos}% — the "
+        "always-on floor already covers the entire snap band and will win, "
+        "so this setting can never take effect. Lower the min position below "
+        "{threshold}% or raise the threshold above {min_pos}% for it to do "
+        "anything."
     ),
     "warnings.mode2_min_position": (
         "⚠️ Tilt MODE2 + min position {min_pos}% — in MODE2 the open "
@@ -3339,6 +3369,15 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             else:
                 detail = L["solar.minimize_steps"].format(steps=steps)
             _sub(L["solar.minimize"].format(indent=indent, detail=detail))
+        if config.get(CONF_SNAP_CLOSED_BELOW, False):
+            snap_threshold = int(
+                config.get(CONF_SNAP_CLOSED_THRESHOLD, DEFAULT_SNAP_CLOSED_THRESHOLD)
+            )
+            _sub(
+                L["solar.snap_closed_below"].format(
+                    indent=_GATE_SUMMARY_INDENT, threshold=snap_threshold
+                )
+            )
         # Sun-tracking gate (issue #1167) — suppresses solar positioning while it
         # reads false, letting the chain fall through to the default position.
         # Only rendered under the enabled branch: with the master toggle off the
@@ -3693,6 +3732,29 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             )
         )
 
+    # Footgun: an active min-position floor at/above the snap threshold makes
+    # the declutter snap completely inert (issue #1379). ``apply_config_limits``
+    # runs AFTER the snap and always wins (floor-wins-on-conflict — the same
+    # precedence ``clamp_to_bounds`` guarantees), so once the floor is >= the
+    # threshold it already dominates every value the snap band could ever
+    # produce: a demand it collapses to 0 gets raised straight back to the
+    # floor, and a demand it leaves untouched was already going to be raised
+    # to that same floor anyway. The setting can never change the outcome.
+    # The effective floor during sun tracking is the sun-tracking-only min
+    # when set (it overrides min_pos — see ``PositionConverter.apply_limits``),
+    # else the always-on min_pos.
+    if config.get(CONF_SNAP_CLOSED_BELOW, False):
+        _snap_threshold = int(
+            config.get(CONF_SNAP_CLOSED_THRESHOLD, DEFAULT_SNAP_CLOSED_THRESHOLD)
+        )
+        _effective_min = min_pos_sun_track if min_pos_sun_track is not None else min_pos
+        if _effective_min is not None and _effective_min >= _snap_threshold:
+            lines.append(
+                L["warnings.snap_closed_below_conflicts_min_pos"].format(
+                    threshold=_snap_threshold, min_pos=_effective_min
+                )
+            )
+
     # MODE2 + min_position footgun warning (issue #373).
     # In MODE2 the OPEN (horizontal) slat angle IS 50%, so any min_position
     # >= 50% collapses every climate/glare-control decision to the floor and
@@ -3954,6 +4016,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_DELTA_TIME,
             CONF_MINIMIZE_MOVEMENTS,
             CONF_MAX_COVERAGE_STEPS,
+            CONF_SNAP_CLOSED_BELOW,
+            CONF_SNAP_CLOSED_THRESHOLD,
             CONF_START_TIME,
             CONF_START_ENTITY,
             CONF_END_TIME,

@@ -839,6 +839,126 @@ def test_minimize_movements_absent_when_sun_tracking_disabled():
     assert "Minimize movements" not in summary
 
 
+def test_snap_closed_below_omitted_when_disabled():
+    """No snap-closed line when the feature is off (default) — issue #1379."""
+    summary = _build_config_summary({CONF_AZIMUTH: 180}, CoverType.BLIND)
+    assert "Snap closed below" not in summary
+
+
+def test_snap_closed_below_shows_threshold_when_enabled():
+    """The configured threshold surfaces in the solar-tracking bullet."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_SNAP_CLOSED_BELOW: True,
+        CONF_SNAP_CLOSED_THRESHOLD: 15,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Snap closed below" in summary
+    assert "15%" in summary
+
+
+def test_snap_closed_below_absent_when_sun_tracking_disabled():
+    """The line lives under the ☀️ tracking branch; gone when tracking is off."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_SUN_TRACKING,
+        CONF_SNAP_CLOSED_BELOW,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_ENABLE_SUN_TRACKING: False,
+        CONF_SNAP_CLOSED_BELOW: True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Snap closed below" not in summary
+
+
+def test_summary_warns_when_snap_closed_threshold_conflicts_with_min_position():
+    """Footgun: an active min_pos floor at/above the threshold makes the snap inert.
+
+    ``apply_config_limits`` runs after the snap and always wins (floor-wins
+    rule). Once min_pos is at or above the snap threshold, it already
+    dominates every value the snap band could produce, so enabling the
+    setting can never change the outcome.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MIN_POSITION,
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_SNAP_CLOSED_BELOW: True,
+        CONF_SNAP_CLOSED_THRESHOLD: 10,
+        CONF_MIN_POSITION: 20,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "⚠️" in summary
+    assert "10%" in summary
+    assert "20%" in summary
+
+
+def test_summary_warning_uses_sun_tracking_min_when_more_specific():
+    """The conflict check prefers the sun-tracking-only floor when it is set.
+
+    ``apply_limits`` uses ``min_pos_sun_tracking`` as the effective floor
+    during sun tracking whenever it is set, overriding ``min_pos`` (see
+    ``PositionConverter.apply_limits``). Here plain min_pos (5) alone would
+    NOT conflict with a threshold of 10, but the sun-tracking-only floor (20)
+    does — proving the summary's conflict check reads the same effective
+    floor the pipeline actually applies, not the always-on min_pos alone.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MIN_POSITION,
+        CONF_MIN_POSITION_SUN_TRACKING,
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_SNAP_CLOSED_BELOW: True,
+        CONF_SNAP_CLOSED_THRESHOLD: 10,
+        CONF_MIN_POSITION: 5,
+        CONF_MIN_POSITION_SUN_TRACKING: 20,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "⚠️" in summary
+    assert "10%" in summary
+    assert "20%" in summary
+
+
+def test_summary_no_warning_when_min_position_below_snap_threshold():
+    """No footgun warning when min_pos sits below the threshold (snap still bites).
+
+    The floor only makes the snap fully inert when it is AT OR ABOVE the
+    threshold (every value the snap band could produce is already dominated
+    by the floor either way). With min_pos=5 < threshold=10, a demand between
+    5 and 10 is genuinely different with the snap on (collapses to 0, then
+    floors to 5) versus off (stays untouched, above the floor) — no conflict.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MIN_POSITION,
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_SNAP_CLOSED_BELOW: True,
+        CONF_SNAP_CLOSED_THRESHOLD: 10,
+        CONF_MIN_POSITION: 5,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "always-on floor" not in summary
+
+
 # ---------------------------------------------------------------------------
 # Section 2: Timing
 # ---------------------------------------------------------------------------

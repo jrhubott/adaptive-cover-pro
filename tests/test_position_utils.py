@@ -18,6 +18,7 @@ import pytest
 
 from custom_components.adaptive_cover_pro.position_utils import (
     InterpolationCurve,
+    PositionConverter,
     covered_fraction,
     flip_if,
     from_cover_frame,
@@ -154,6 +155,88 @@ def test_day_night_shade_engine_delegates_to_the_shared_primitive() -> None:
     ).read_text(encoding="utf-8")
     assert "covered_fraction(" in source
     assert "POSITION_OPEN - position" not in source
+
+
+# ---------------------------------------------------------------------------
+# snap_closed_below_threshold — declutter a barely-open sliver (issue #1379)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_snap_closed_below_collapses_small_demand_to_closed() -> None:
+    """A small non-zero demand near the closed endpoint snaps fully closed.
+
+    A vertical blind (``full_coverage_at_zero=True``) commanded to 3 % sits
+    only 3 points from the closed endpoint (0) — the "sliver of light"
+    the issue describes. With the threshold at 10 %, that gap collapses
+    straight to 0.
+    """
+    assert (
+        PositionConverter.snap_closed_below_threshold(
+            3, 10, enabled=True, full_coverage_at_zero=True
+        )
+        == 0
+    )
+
+
+@pytest.mark.unit
+def test_snap_closed_below_noop_when_disabled_or_above_threshold() -> None:
+    """No-op when the feature is off, already closed, or outside the band."""
+    # Feature disabled: the value that WOULD collapse passes through untouched.
+    assert (
+        PositionConverter.snap_closed_below_threshold(
+            3, 10, enabled=False, full_coverage_at_zero=True
+        )
+        == 3
+    )
+    # Already fully closed: nothing left to collapse (gap is 0, not > 0).
+    assert (
+        PositionConverter.snap_closed_below_threshold(
+            0, 10, enabled=True, full_coverage_at_zero=True
+        )
+        == 0
+    )
+    # Exactly at the threshold: the comparison is strictly "less than", so the
+    # boundary itself is left alone (matches quantize_to_coverage_steps's
+    # convention of an inclusive "full coverage" ceiling but an exclusive band
+    # here — the threshold value itself is a real, intentional position).
+    assert (
+        PositionConverter.snap_closed_below_threshold(
+            10, 10, enabled=True, full_coverage_at_zero=True
+        )
+        == 10
+    )
+    # Comfortably above the threshold: untouched.
+    assert (
+        PositionConverter.snap_closed_below_threshold(
+            50, 10, enabled=True, full_coverage_at_zero=True
+        )
+        == 50
+    )
+
+
+@pytest.mark.unit
+def test_snap_closed_below_respects_awning_polarity() -> None:
+    """An awning's closed endpoint is 100, not 0 — the far end of the range.
+
+    ``full_coverage_at_zero=False`` means 100 % (fully extended) is the
+    closed/full-coverage end. A demand of 97 % sits 3 points short of it,
+    which collapses UP to 100 rather than down to 0.
+    """
+    assert (
+        PositionConverter.snap_closed_below_threshold(
+            97, 10, enabled=True, full_coverage_at_zero=False
+        )
+        == 100
+    )
+    # Comfortably below the threshold band (measured from the 100 end):
+    # untouched.
+    assert (
+        PositionConverter.snap_closed_below_threshold(
+            50, 10, enabled=True, full_coverage_at_zero=False
+        )
+        == 50
+    )
 
 
 # ---------------------------------------------------------------------------

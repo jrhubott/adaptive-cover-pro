@@ -427,7 +427,9 @@
           "end_entity": "Entité indiquant l'heure de fin",
           "minimize_movements": "Minimiser les mouvements",
           "max_coverage_steps": "Étapes de couverture maximale",
-          "command_queue": "File d'attente de commandes"
+          "command_queue": "File d'attente de commandes",
+          "snap_closed_below": "Fermeture rapide sous seuil",
+          "snap_closed_threshold": "Seuil de fermeture rapide"
         },
         "data_description": {
           "delta_position": "Changement de position minimum (%) requis avant d'ajuster le store. Empêche les minuscules ajustements tandis que le soleil se déplace lentement. Valeurs typiques : 1-2% (très réactif, peut ajuster fréquemment), 5% (équilibré, recommandé pour la plupart), 10% (moins fréquent, mouvements plus importants). Exemple : Si le store est à 30% et le soleil se déplace légèrement, n'ajustez que si la nouvelle position est 35% ou plus (avec un seuil de 5%). Réduit l'usure du moteur et le bruit des minuscules ajustements constants.",
@@ -438,7 +440,9 @@
           "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne).",
           "minimize_movements": "Réduisez la fréquence à laquelle le store se repositionne tout en suivant le soleil en accrochant à quelques niveaux de couverture fixes au lieu de suivre le soleil en continu. L'arrondi se fait vers PLUS de couverture, donc le soleil direct n'est jamais laissé entrer par l'arrondi. Échange un peu de lumière naturelle pour beaucoup moins de mouvements moteur. Par défaut : désactivé.",
           "max_coverage_steps": "Combien de positions distinctes le store peut utiliser sur son chemin vers une couverture complète lorsque 'Minimiser les mouvements' est activé (1-10). 1 = saut direct vers la couverture complète dès que le soleil entre dans l'angle d'ouverture solaire et maintien jusqu'à ce qu'il le quitte (moins de mouvements). Les valeurs supérieures trackent le soleil plus graduellement en ce nombre d'étapes. Par défaut : 1.",
-          "command_queue": "Sérialiser les commandes de cette protection par rapport aux autres protections assignées au même nom de file d'attente. Les protections partageant une file d'attente ne transmettent jamais au même moment — utile pour les backends radio unidirectionnels (Somfy RTS, RFXtrx) où les commandes simultanées entrent en collision et sont perdues. L'intervalle entre les commandes est défini dans l'entrée File d'attente de commandes portant le même nom, ou par défaut 5 secondes si aucune n'existe. Laissez vide pour aucune file d'attente (par défaut)."
+          "command_queue": "Sérialiser les commandes de cette protection par rapport aux autres protections assignées au même nom de file d'attente. Les protections partageant une file d'attente ne transmettent jamais au même moment — utile pour les backends radio unidirectionnels (Somfy RTS, RFXtrx) où les commandes simultanées entrent en collision et sont perdues. L'intervalle entre les commandes est défini dans l'entrée File d'attente de commandes portant le même nom, ou par défaut 5 secondes si aucune n'existe. Laissez vide pour aucune file d'attente (par défaut).",
+          "snap_closed_below": "Quand une position de suivi solaire est à peine ouverte (une petite demande non-nulle sous le seuil ci-dessous), l'envoyer complètement fermée au lieu de laisser une fente de lumière difficile à voir. Affecte uniquement les positions de suivi solaire ; une position minimale active gagne toujours sur la fermeture rapide. Par défaut : désactivé.",
+          "snap_closed_threshold": "À quel pourcentage de fermeture complète (%) une demande de suivi solaire doit être avant que « Fermeture rapide sous seuil » la tire jusqu'à 0% (1-50). S'applique uniquement au-dessus de 0% — une position déjà fermée n'est pas modifiée. Par défaut : 10%."
         }
       },
       "change_cover_type": {

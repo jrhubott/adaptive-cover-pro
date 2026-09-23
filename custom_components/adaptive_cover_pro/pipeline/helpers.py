@@ -19,7 +19,7 @@ import dataclasses
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from ..const import SOLAR_ANTICIPATION_SAMPLES
+from ..const import DEFAULT_SNAP_CLOSED_THRESHOLD, SOLAR_ANTICIPATION_SAMPLES
 from ..position_utils import PositionConverter
 from .types import PipelineSnapshot
 
@@ -200,11 +200,14 @@ def solar_position_from_geometry(
     max_coverage_steps: int,
     policy: CoverTypePolicy | None,
     floor_active: bool = True,
+    snap_closed_below: bool = False,
+    snap_closed_threshold: int = DEFAULT_SNAP_CLOSED_THRESHOLD,
 ) -> int:
     """Sun-tracked position from raw geometry, with all standard transforms.
 
     Snapshot-free single source of truth for the solar branch, shared by the
-    live pipeline (:func:`compute_solar_position`) and the forecast:
+    live pipeline (:func:`compute_solar_position`), the anticipation look-ahead
+    (:func:`anticipated_solar_position_from_geometry`), and the forecast:
 
     1. Calls ``cover.calculate_raw_percentage()`` (pure geometry, unrounded float),
        then quantizes toward full coverage (issue #978) via the engine's
@@ -216,11 +219,19 @@ def solar_position_from_geometry(
        when policy is None.
     2. Optionally quantizes into the configured number of discrete coverage
        levels (movement minimization — opt-in, rounds toward coverage).
-    3. Floors at ``SOLAR_TRACKING_FLOOR_PCT`` (1 %) so open/close-only covers
+    3. Optionally collapses a small non-zero demand to the closed endpoint
+       (declutter snap, opt-in — issue #1379). Runs on the quantized value from
+       step 2 and before the floor/limit clamp below, so a live active
+       min_pos/min_pos_sun_tracking floor — or a post-decision axis constraint
+       — always wins over the snap via ``clamp_to_bounds``'s existing
+       floor-wins-on-conflict rule (``pipeline/axis_constraints.py``). Position
+       axis only; tilt is out of scope (keeps the MODE2 pivot logic in step 2
+       untouched — issues #1104/#1107).
+    4. Floors at ``SOLAR_TRACKING_FLOOR_PCT`` (1 %) so open/close-only covers
        never close while the sun is still in the field of view — but only when
        ``floor_active``. Set-position-capable instances pass ``floor_active``
        False so the cover can reach a true 0 % (issue #569).
-    4. Applies the configured min/max position limits (``sun_valid=True``).
+    5. Applies the configured min/max position limits (``sun_valid=True``).
 
     Should only be called when ``cover.direct_sun_valid`` is True.
 
@@ -271,6 +282,17 @@ def solar_position_from_geometry(
             pivot=cover.coverage_pivot_percentage(),
             bounds=cover.coverage_travel_bounds(),
         )
+    if policy is not None:
+        # Position-axis-only declutter snap (issue #1379): only reachable when
+        # `full_coverage_at_zero` was resolved above, which is also exactly the
+        # scope this feature wants (a bi-directional tilt axis never reaches
+        # this branch's monotonic assumption — see the docstring's step 3).
+        state = PositionConverter.snap_closed_below_threshold(
+            state,
+            snap_closed_threshold,
+            enabled=snap_closed_below,
+            full_coverage_at_zero=full_coverage_at_zero,
+        )
     state = solar_floor(state, floor_active=floor_active)
     return apply_config_limits(state, config, sun_valid=True)
 
@@ -295,6 +317,10 @@ def compute_solar_position(snapshot: PipelineSnapshot) -> int:
         max_coverage_steps=getattr(snapshot, "max_coverage_steps", 1),
         policy=getattr(snapshot, "policy", None),
         floor_active=getattr(snapshot, "solar_floor_active", True),
+        snap_closed_below=getattr(snapshot, "snap_closed_below", False),
+        snap_closed_threshold=getattr(
+            snapshot, "snap_closed_threshold", DEFAULT_SNAP_CLOSED_THRESHOLD
+        ),
     )
 
 
@@ -307,6 +333,8 @@ def anticipated_solar_position_from_geometry(
     max_coverage_steps: int,
     policy: CoverTypePolicy | None,
     floor_active: bool = True,
+    snap_closed_below: bool = False,
+    snap_closed_threshold: int = DEFAULT_SNAP_CLOSED_THRESHOLD,
 ) -> int:
     """Most-protective sun-tracked position across an upcoming look-ahead window.
 
@@ -360,6 +388,8 @@ def anticipated_solar_position_from_geometry(
         max_coverage_steps=max_coverage_steps,
         policy=policy,
         floor_active=floor_active,
+        snap_closed_below=snap_closed_below,
+        snap_closed_threshold=snap_closed_threshold,
     )
 
     if horizon_minutes <= 0 or policy is None:
@@ -405,6 +435,8 @@ def anticipated_solar_position_from_geometry(
             max_coverage_steps=max_coverage_steps,
             policy=policy,
             floor_active=floor_active,
+            snap_closed_below=snap_closed_below,
+            snap_closed_threshold=snap_closed_threshold,
         )
         # The LIVE cover is the right engine handle even though *candidate* came
         # from a projected one: the comparator only asks where this axis's
@@ -435,6 +467,10 @@ def anticipated_solar_position(snapshot: PipelineSnapshot) -> int:
         max_coverage_steps=getattr(snapshot, "max_coverage_steps", 1),
         policy=getattr(snapshot, "policy", None),
         floor_active=getattr(snapshot, "solar_floor_active", True),
+        snap_closed_below=getattr(snapshot, "snap_closed_below", False),
+        snap_closed_threshold=getattr(
+            snapshot, "snap_closed_threshold", DEFAULT_SNAP_CLOSED_THRESHOLD
+        ),
     )
 
 

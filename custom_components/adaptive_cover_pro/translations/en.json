@@ -417,7 +417,7 @@
       },
       "automation": {
         "title": "Movement & Schedule",
-        "description": "Global movement constraints applied after the pipeline picks a position, regardless of which handler won, plus the operational time window.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Minimize movements** and **Maximum coverage steps** snap sun tracking to a few fixed coverage levels instead of following the sun continuously. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically.\n\n[Learn more]({learn_more})",
+        "description": "Global movement constraints applied after the pipeline picks a position, regardless of which handler won, plus the operational time window.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Minimize movements** and **Maximum coverage steps** snap sun tracking to a few fixed coverage levels instead of following the sun continuously. **Snap closed below** collapses a small non-zero sun-tracking demand straight to fully closed instead of leaving a barely-open sliver. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically.\n\n[Learn more]({learn_more})",
         "data": {
           "delta_position": "Minimum position adjustment",
           "delta_time": "Minimum interval between position changes",
@@ -427,6 +427,8 @@
           "end_entity": "Entity indicating ending time",
           "minimize_movements": "Minimize movements",
           "max_coverage_steps": "Maximum coverage steps",
+          "snap_closed_below": "Snap closed below threshold",
+          "snap_closed_threshold": "Snap closed threshold",
           "command_queue": "Command queue"
         },
         "data_description": {
@@ -438,6 +440,8 @@
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
           "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
           "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the sun acceptance angle and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1.",
+          "snap_closed_below": "When a sun-tracking position is barely open (a small non-zero demand under the threshold below), send it all the way closed instead of leaving a hard-to-see sliver of light through. Only affects sun-tracking positions; an active minimum position always wins over the snap. Default: off.",
+          "snap_closed_threshold": "How close to fully closed (%) a sun-tracking demand must be before 'Snap closed below threshold' pulls it the rest of the way to 0% (1-50). Only applies above 0% — an already-closed position is untouched. Default: 10%.",
           "command_queue": "Serialize this cover's commands against other covers assigned to the same queue name. Covers sharing a queue never transmit at the same moment — useful for one-way radio backends (Somfy RTS, RFXtrx) where simultaneous commands collide and are lost. The gap between commands is set on the Command Queue entry with the same name, or defaults to 5 seconds if none exists. Leave blank for no queue (default)."
         }
       },

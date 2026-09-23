@@ -385,7 +385,9 @@
           "end_entity": "Entität, die die Endzeit angibt",
           "max_coverage_steps": "Maximale Abdeckungsschritte",
           "minimize_movements": "Bewegungen minimieren",
-          "command_queue": "Befehlswarteschlange"
+          "command_queue": "Befehlswarteschlange",
+          "snap_closed_below": "Unter Schwelle schließen",
+          "snap_closed_threshold": "Schwelle zum Schließen"
         },
         "data_description": {
           "delta_position": "Minimale Positionsänderung (%) erforderlich, bevor die Beschattung angepasst wird. Verhindert winzige Anpassungen, wenn die Sonne langsam wandert. Typische Werte: 1-2 % (sehr reaktiv, kann häufig angepasst werden), 5 % (ausgewogen, für die meisten empfohlen), 10 % (weniger häufig, größere Bewegungen). Beispiel: Wenn die Beschattung bei 30 % liegt und die Sonne sich leicht bewegt, passen Sie nur an, wenn die neue Position 35 % oder mehr beträgt (mit 5 % Schwellenwert). Reduziert Motorverschleiß und Geräusche durch ständige winzige Anpassungen.",
@@ -396,7 +398,9 @@
           "end_entity": "Entity, die den Endzeitstatus darstellt und die oben festgelegte feste Endzeit außer Kraft setzt. Nützlich zur Automatisierung der Endzeit mit einer Entity (z. B. Sensor, der die Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt).",
           "max_coverage_steps": "Die maximale Anzahl der zu berücksichtigenden Schritte (z. B. 5 Schritte = 20% je Schritt). Mehr Schritte bedeuten glattere Bewegungen, aber häufigere Befehle und möglicherweise langsamere Reaktionen. Weniger Schritte reduzieren die Motorverschleiß, aber die Bewegung erscheint weniger flüssig.",
           "minimize_movements": "Reduzieren Sie die Häufigkeit der Positionsänderung der Beschattung beim Sonnenverfolgen durch Einrasten auf wenige feste Abdeckungsebenen statt kontinuierlicher Sonnenverfolgung. Rundet zu MEHR Abdeckung, damit direkte Sonnenstrahlung niemals durch Rundung eindringt. Tauscht etwas Tageslicht gegen weit weniger Motorbewegungen ein. Standard: aus.",
-          "command_queue": "Serialisieren Sie die Befehle dieser Beschattung gegen andere Beschattungen, die derselben Warteschlange zugewiesen sind. Beschattungen, die eine Warteschlange teilen, senden nie gleichzeitig - nützlich für One-Way-Radio-Backends (Somfy RTS, RFXtrx), bei denen gleichzeitige Befehle kollidieren und verloren gehen. Der Abstand zwischen Befehlen wird im Eintrag \"Befehlswarteschlange\" mit demselben Namen festgelegt oder standardmäßig auf 5 Sekunden eingestellt, falls keine vorhanden ist. Leer lassen für keine Warteschlange (Standard)."
+          "command_queue": "Serialisieren Sie die Befehle dieser Beschattung gegen andere Beschattungen, die derselben Warteschlange zugewiesen sind. Beschattungen, die eine Warteschlange teilen, senden nie gleichzeitig - nützlich für One-Way-Radio-Backends (Somfy RTS, RFXtrx), bei denen gleichzeitige Befehle kollidieren und verloren gehen. Der Abstand zwischen Befehlen wird im Eintrag \"Befehlswarteschlange\" mit demselben Namen festgelegt oder standardmäßig auf 5 Sekunden eingestellt, falls keine vorhanden ist. Leer lassen für keine Warteschlange (Standard).",
+          "snap_closed_below": "Wenn eine sonnenverfolgernde Position kaum offen ist (eine kleine Nicht-Null-Anforderung unter der unten eingestellten Schwelle), schließen Sie die Beschattung vollständig, anstatt einen kaum sichtbaren Lichtspalt offen zu lassen. Betrifft nur sonnenverfolgernde Positionen; eine aktive Mindestposition hat immer Vorrang vor dieser Einstellung. Standard: aus.",
+          "snap_closed_threshold": "Wie nah an der vollständigen Schließung (%) eine Sonnenverfolgungsanforderung sein muss, damit 'Unter Schwelle schließen' sie ganz bis 0% zieht (1-50). Gilt nur über 0% — bereits geschlossene Positionen bleiben unverändert. Standard: 10%."
         }
       },
       "cover_entities": {

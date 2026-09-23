@@ -485,6 +485,69 @@ class PositionConverter:
         return max(commanded, math.ceil(far))
 
     @staticmethod
+    def snap_closed_below_threshold(
+        percentage: int,
+        threshold: int,
+        *,
+        enabled: bool,
+        full_coverage_at_zero: bool,
+    ) -> int:
+        """Collapse a small non-zero sun-tracking demand to the closed endpoint.
+
+        A granular position-capable cover can be commanded to a barely-open
+        sliver (e.g. 2-3 %) when the sun-tracking demand is small but not
+        quite zero — technically correct, but it reads as "not fully closed"
+        rather than as meaningful coverage (issue #1379). When *enabled*, any
+        demand whose distance to the axis's closed endpoint is greater than 0
+        (there is something to collapse) and less than *threshold* is pulled
+        the rest of the way to fully closed. Everything else — including the
+        endpoint itself and anything at or beyond the threshold — passes
+        through untouched, so the continuous curve above the band is
+        unaffected.
+
+        Monotonic axes only: this mirrors the ``pivot is None`` branch of
+        :meth:`quantize_to_coverage_steps` and does not take a pivot/bounds
+        pair, matching the position-axis-only scope of this feature (a
+        bi-directional tilt axis is out of scope — see #1104/#1107).
+
+        Reuses :func:`covered_fraction` — the single place the
+        position-to-coverage-share polarity is written (#1236) — for the
+        "distance to the closed endpoint" fraction rather than re-deriving
+        the ``full_coverage_at_zero`` arithmetic here. Passing
+        ``open_blocks_sun=full_coverage_at_zero`` (not negated) is what turns
+        that primitive, which normally answers "how much is covered", into
+        "how far is this position from ITS OWN closed endpoint" for either
+        polarity: for a blind (``full_coverage_at_zero=True``, closed end 0)
+        that distance is the percentage itself; for an awning
+        (``full_coverage_at_zero=False``, closed end 100) it is
+        ``100 - percentage``.
+
+        Args:
+            percentage: Engine-orientation position (0-100), already through
+                any quantization.
+            threshold: Percent (1-50 by config validation) below which a
+                non-zero demand collapses to closed.
+            enabled: The opt-in toggle. ``False`` is an unconditional no-op,
+                so a disabled install's output is byte-identical.
+            full_coverage_at_zero: True when 0 % is the closed/full-coverage
+                endpoint (vertical blind, tilt, venetian); False when 100 % is
+                (awning). Same flag :meth:`quantize_to_coverage_steps` reads.
+
+        Returns:
+            The closed endpoint (0 or 100) when the demand is in the open
+            band ``(0, threshold)``; *percentage* unchanged otherwise.
+
+        """
+        if not enabled:
+            return percentage
+        gap_to_closed_pct = (
+            covered_fraction(percentage, open_blocks_sun=full_coverage_at_zero) * 100
+        )
+        if 0 < gap_to_closed_pct < threshold:
+            return POSITION_CLOSED if full_coverage_at_zero else POSITION_OPEN
+        return percentage
+
+    @staticmethod
     def apply_limits(
         value: int,
         min_pos: int | None,

@@ -85,6 +85,8 @@ from ..const import (
     CONF_PRESENCE_TEMPLATE,
     CONF_PRESENCE_TEMPLATE_MODE,
     CONF_EXTREME_HEAT_POSITION,
+    CONF_SNAP_CLOSED_BELOW,
+    CONF_SNAP_CLOSED_THRESHOLD,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
     CONF_SUNSET_TILT,
     CONF_SUNSET_USE_MY,
@@ -120,6 +122,8 @@ from ..const import (
     DEFAULT_MINIMIZE_MOVEMENTS,
     DEFAULT_MOTION_TIMEOUT_MODE,
     DEFAULT_OUTSIDE_TEMP_SOURCE,
+    DEFAULT_SNAP_CLOSED_BELOW,
+    DEFAULT_SNAP_CLOSED_THRESHOLD,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WEATHER_OUTSIDE_WINDOW,
 )
@@ -985,6 +989,12 @@ class PipelineSnapshotBuilder:
             ),
             max_coverage_steps=int(
                 options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
+            ),
+            snap_closed_below=bool(
+                options.get(CONF_SNAP_CLOSED_BELOW, DEFAULT_SNAP_CLOSED_BELOW)
+            ),
+            snap_closed_threshold=int(
+                options.get(CONF_SNAP_CLOSED_THRESHOLD, DEFAULT_SNAP_CLOSED_THRESHOLD)
             ),
             default_tilt=options.get(CONF_DEFAULT_TILT),
             sunset_tilt=options.get(CONF_SUNSET_TILT),

@@ -161,6 +161,8 @@ from .const import (
     CONF_SLIDING_POINT2_X,
     CONF_SLIDING_POINT2_Y,
     CONF_SLIDING_SLIDE_DIRECTION,
+    CONF_SNAP_CLOSED_BELOW,
+    CONF_SNAP_CLOSED_THRESHOLD,
     CONF_SOLAR_COVER_SHADE,
     CONF_SOLAR_COVER_SIDE,
     CONF_SOLAR_G_GLAZING,
@@ -234,6 +236,8 @@ from .const import (
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_MOTION_TIMEOUT_MODE,
+    DEFAULT_SNAP_CLOSED_BELOW,
+    DEFAULT_SNAP_CLOSED_THRESHOLD,
     DEFAULT_SUNRISE_GATES_START,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     DEFAULT_WEATHER_OUTSIDE_WINDOW,
@@ -612,6 +616,23 @@ _SUN_TRACKING_SPECS = _spec(
         rng=const._RANGE_MAX_COVERAGE_STEPS,
         default=DEFAULT_MAX_COVERAGE_STEPS,
         make_selector=_number(minimum=1, maximum=10, step=1),
+    ),
+    # snap_closed_below / snap_closed_threshold: same L4-global-motion-constraint
+    # placement as minimize_movements / max_coverage_steps above (#1379).
+    FieldSpec(
+        CONF_SNAP_CLOSED_BELOW,
+        SECTION_AUTOMATION,
+        ValidatorKind.BOOL,
+        default=DEFAULT_SNAP_CLOSED_BELOW,
+        make_selector=_bool(),
+    ),
+    FieldSpec(
+        CONF_SNAP_CLOSED_THRESHOLD,
+        SECTION_AUTOMATION,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SNAP_CLOSED_THRESHOLD,
+        default=DEFAULT_SNAP_CLOSED_THRESHOLD,
+        make_selector=_number(minimum=1, maximum=50, step=1, unit="%"),
     ),
 )
 
@@ -2603,6 +2624,11 @@ _POSITION_ROLES: dict[str, PositionRole] = {
     CONF_DAY_NIGHT_OPACITY_SHEER: PositionRole.NEUTRAL,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT: PositionRole.NEUTRAL,
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD: PositionRole.NEUTRAL,
+    # Distance-to-closed-endpoint threshold (issue #1379): the snap already
+    # resolves which end is closed via full_coverage_at_zero, so the stored
+    # percentage means the same magnitude under either polarity — same
+    # reasoning as CONF_OPEN_CLOSE_THRESHOLD above.
+    CONF_SNAP_CLOSED_THRESHOLD: PositionRole.NEUTRAL,
     **_slot_roles(),
 }
 

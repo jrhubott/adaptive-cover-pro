@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 from custom_components.adaptive_cover_pro.pipeline.helpers import (
     SOLAR_TRACKING_FLOOR_PCT,
+    anticipated_solar_position,
     apply_snapshot_limits,
     compute_default_position,
     compute_raw_calculated_position,
@@ -17,7 +18,7 @@ from custom_components.adaptive_cover_pro.pipeline.helpers import (
     solar_floor,
     solar_position_from_geometry,
 )
-from tests.cover_helpers import build_louvered_roof_cover
+from tests.cover_helpers import attach_coverage_rounding, build_louvered_roof_cover
 
 # ---------------------------------------------------------------------------
 # Minimal snapshot / cover helpers
@@ -247,6 +248,140 @@ class TestComputeSolarPosition:
         )
 
         assert result == 100
+
+
+# ---------------------------------------------------------------------------
+# snap_closed_below wiring in solar_position_from_geometry (issue #1379)
+# ---------------------------------------------------------------------------
+
+
+def _make_geometry_cover(*, raw_pct: float):
+    """Build a minimal solar-tracking cover double with real coverage hooks.
+
+    Binds the production ``round_toward_coverage`` / ``coverage_pivot_percentage``
+    / ``coverage_travel_bounds`` implementations (monotonic base-class defaults:
+    floor/ceil, no pivot, full [0, 100] band) so this exercises the same
+    arithmetic the real engine uses, with a fully controllable raw percentage.
+    """
+    return attach_coverage_rounding(
+        SimpleNamespace(calculate_raw_percentage=lambda: raw_pct)
+    )
+
+
+class TestSolarPositionFromGeometrySnapClosedBelow:
+    """The snap step must run after quantize and before the floor/limit clamp."""
+
+    def test_snap_runs_after_quantize_not_before(self):
+        """Snap sees the QUANTIZED value, not the raw round_toward_coverage one.
+
+        Raw geometry floors to 10 (a blind, full_coverage_at_zero=True) — on
+        its own that is not inside the (0, 10) snap band, so a snap that ran
+        BEFORE quantize would be a no-op and the result would stay at 10.
+        Quantizing into 25 discrete coverage levels moves it to 8 (still
+        nonzero), which the snap then collapses to 0 — proving the snap reads
+        quantize's output.
+        """
+        cover = _make_geometry_cover(raw_pct=10.9)
+        policy = SimpleNamespace(axes=[SimpleNamespace(open_blocks_sun=False)])
+
+        result = solar_position_from_geometry(
+            cover,
+            _make_config(),
+            minimize_movements=True,
+            max_coverage_steps=25,
+            policy=policy,
+            floor_active=False,
+            snap_closed_below=True,
+            snap_closed_threshold=10,
+        )
+
+        assert result == 0
+
+    def test_active_min_pos_floor_wins_over_a_snap_to_zero(self):
+        """An active min_pos floor always wins over the snap (#472/#943 rule).
+
+        The snap collapses a 2 % demand to 0, but ``apply_config_limits`` runs
+        AFTER the snap and raises it back to the configured floor — the same
+        floor-wins-on-conflict precedence ``clamp_to_bounds`` already
+        guarantees (axis_constraints.py). This is the regression guard for
+        the snap never undercutting an active minimum-position floor.
+        """
+        cover = _make_geometry_cover(raw_pct=2.5)
+        policy = SimpleNamespace(axes=[SimpleNamespace(open_blocks_sun=False)])
+
+        result = solar_position_from_geometry(
+            cover,
+            _make_config(min_pos=20),
+            minimize_movements=False,
+            max_coverage_steps=1,
+            policy=policy,
+            floor_active=False,
+            snap_closed_below=True,
+            snap_closed_threshold=10,
+        )
+
+        assert result == 20
+
+    def test_disabled_by_default_is_a_no_op(self):
+        """Omitting the new kwargs entirely preserves pre-#1379 behavior."""
+        cover = _make_geometry_cover(raw_pct=2.5)
+        policy = SimpleNamespace(axes=[SimpleNamespace(open_blocks_sun=False)])
+
+        result = solar_position_from_geometry(
+            cover,
+            _make_config(),
+            minimize_movements=False,
+            max_coverage_steps=1,
+            policy=policy,
+            floor_active=False,
+        )
+
+        assert result == 2
+
+
+class TestComputeSolarPositionSnapClosedBelow:
+    """``compute_solar_position`` reads the snap fields off the snapshot."""
+
+    def test_forwards_snap_fields_from_snapshot(self):
+        snap = _make_snapshot(calc_pct=2.5, solar_floor_active=False)
+        snap.policy = SimpleNamespace(axes=[SimpleNamespace(open_blocks_sun=False)])
+        snap.cover = attach_coverage_rounding(
+            SimpleNamespace(calculate_raw_percentage=lambda: 2.5)
+        )
+        snap.snap_closed_below = True
+        snap.snap_closed_threshold = 10
+
+        assert compute_solar_position(snap) == 0
+
+    def test_absent_snap_fields_default_to_off(self):
+        """A snapshot built before this feature existed stays byte-identical."""
+        snap = _make_snapshot(calc_pct=2.5, solar_floor_active=False)
+        snap.policy = SimpleNamespace(axes=[SimpleNamespace(open_blocks_sun=False)])
+        snap.cover = attach_coverage_rounding(
+            SimpleNamespace(calculate_raw_percentage=lambda: 2.5)
+        )
+        # snap_closed_below / snap_closed_threshold intentionally absent.
+
+        assert compute_solar_position(snap) == 2
+
+
+class TestAnticipatedSolarPositionSnapClosedBelow:
+    """The anticipation adapter — what ``SolarHandler`` actually calls — must
+    also honor the snap fields, since it is the primary live sun-tracking
+    codepath (not ``compute_solar_position``, which other handlers use).
+    """
+
+    def test_forwards_snap_fields_from_snapshot(self):
+        snap = _make_snapshot(calc_pct=2.5, solar_floor_active=False)
+        snap.policy = SimpleNamespace(axes=[SimpleNamespace(open_blocks_sun=False)])
+        snap.cover = attach_coverage_rounding(
+            SimpleNamespace(calculate_raw_percentage=lambda: 2.5, direct_sun_valid=True)
+        )
+        snap.time_threshold_minutes = 0
+        snap.snap_closed_below = True
+        snap.snap_closed_threshold = 10
+
+        assert anticipated_solar_position(snap) == 0
 
 
 # ---------------------------------------------------------------------------

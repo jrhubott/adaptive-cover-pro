@@ -180,6 +180,29 @@ def test_runtime_config_reads_enforce_delta_at_endpoints() -> None:
     assert rc.tracking.enforce_delta_at_endpoints is True
 
 
+def test_snap_closed_below_defaults_off() -> None:
+    """Empty options → the declutter snap is off, threshold at its default (#1379)."""
+    from custom_components.adaptive_cover_pro.const import DEFAULT_SNAP_CLOSED_THRESHOLD
+
+    rc = RuntimeConfig.from_options({})
+    assert rc.tracking.snap_closed_below is False
+    assert rc.tracking.snap_closed_threshold == DEFAULT_SNAP_CLOSED_THRESHOLD
+
+
+def test_runtime_config_reads_snap_closed_below_and_threshold() -> None:
+    """The snap toggle and threshold flow through to the tracking slice (#1379)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SNAP_CLOSED_BELOW,
+        CONF_SNAP_CLOSED_THRESHOLD,
+    )
+
+    rc = RuntimeConfig.from_options(
+        {CONF_SNAP_CLOSED_BELOW: True, CONF_SNAP_CLOSED_THRESHOLD: 15}
+    )
+    assert rc.tracking.snap_closed_below is True
+    assert rc.tracking.snap_closed_threshold == 15
+
+
 def test_default_override_duration_is_not_shared_between_entries() -> None:
     """#1274: two entries on the default hold must not alias one dict object.
 
