@@ -185,6 +185,46 @@ class TestBuildForecastSamples:
         )
         assert all(s.position == 10 and s.handler == "default" for s in f.samples)
 
+    def test_snap_closed_below_collapses_small_solar_samples(self):
+        """A barely-open solar demand snaps to fully closed when enabled (#1379).
+
+        Matches the live solar branch exactly: the same
+        ``anticipated_solar_position_from_geometry`` seam the forecast already
+        routes through applies the snap right after quantization, so a 3%
+        demand (a "sliver" on a blind, full_coverage_at_zero=True) collapses
+        to 0 rather than showing a barely-open position the live cover would
+        never actually be commanded to once the snap is on.
+        """
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=True, percentage=3),
+            config=_make_config(h_def=10),
+            policy=_make_policy(open_blocks_sun=False),  # full_coverage_at_zero
+            now=_NOW,
+            floor_active=False,  # positionable cover: see the true 0%, not the 1% floor
+            snap_closed_below=True,
+            snap_closed_threshold=10,
+        )
+        assert all(s.position == 0 and s.handler == "solar" for s in f.samples)
+
+    def test_snap_closed_below_omitted_is_noop(self):
+        """Omitting the new kwargs entirely preserves pre-#1379 behavior.
+
+        A forecast built without ``snap_closed_below``/``snap_closed_threshold``
+        must be byte-identical to today: the same 3% demand that would
+        collapse to 0 with the snap on stays untouched here.
+        """
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=True, percentage=3),
+            config=_make_config(h_def=10),
+            policy=_make_policy(open_blocks_sun=False),
+            now=_NOW,
+        )
+        assert all(s.position == 3 and s.handler == "solar" for s in f.samples)
+
     def test_custom_step_covers_full_day_proportionally(self):
         sd = _make_sun_data(n_samples=289, step_minutes=5)
         f = build_forecast(
@@ -1231,6 +1271,47 @@ class TestForecastShimAnticipationHorizon:
         spy = self._run(coord)
         _, kwargs = spy.call_args
         assert kwargs["time_threshold_minutes"] == 0
+
+
+class TestForecastShimSnapClosedBelow:
+    """build_forecast_for_coord reads snap_closed_below/threshold from options (#1379).
+
+    Same read-once-and-forward shape as minimize_movements/max_coverage_steps
+    directly above it in the shim — mirrored here rather than re-derived.
+    """
+
+    def _stub_coord(self, *, options):
+        coord, _ = _stub_forecast_coord(options=options)
+        return coord
+
+    def _run(self, coord):
+        return _run_shim_spy(coord)
+
+    def test_passes_snap_closed_below_and_threshold_from_options(self):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_SNAP_CLOSED_BELOW,
+            CONF_SNAP_CLOSED_THRESHOLD,
+        )
+
+        coord = self._stub_coord(
+            options={CONF_SNAP_CLOSED_BELOW: True, CONF_SNAP_CLOSED_THRESHOLD: 15}
+        )
+        spy = self._run(coord)
+        _, kwargs = spy.call_args
+        assert kwargs["snap_closed_below"] is True
+        assert kwargs["snap_closed_threshold"] == 15
+
+    def test_defaults_off_when_options_absent(self):
+        """No snap options → the shim forwards the same no-op defaults as today."""
+        from custom_components.adaptive_cover_pro.const import (
+            DEFAULT_SNAP_CLOSED_THRESHOLD,
+        )
+
+        coord = self._stub_coord(options={})
+        spy = self._run(coord)
+        _, kwargs = spy.call_args
+        assert kwargs["snap_closed_below"] is False
+        assert kwargs["snap_closed_threshold"] == DEFAULT_SNAP_CLOSED_THRESHOLD
 
 
 # ---------------------------------------------------------------------------

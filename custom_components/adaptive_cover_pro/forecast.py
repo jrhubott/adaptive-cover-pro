@@ -27,8 +27,12 @@ from .const import (
     CONF_MAX_COVERAGE_STEPS,
     CONF_MINIMIZE_MOVEMENTS,
     CONF_RETURN_SUNSET,
+    CONF_SNAP_CLOSED_BELOW,
+    CONF_SNAP_CLOSED_THRESHOLD,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MINIMIZE_MOVEMENTS,
+    DEFAULT_SNAP_CLOSED_BELOW,
+    DEFAULT_SNAP_CLOSED_THRESHOLD,
     EVENT_FOV_ENTER,
     EVENT_FOV_EXIT,
     EVENT_SUNRISE,
@@ -132,6 +136,8 @@ def build_forecast(
     end_of_window_time: datetime | None = None,
     secondary_axis_factory: SecondaryAxisFactory | None = None,
     time_threshold_minutes: int = 0,
+    snap_closed_below: bool = False,
+    snap_closed_threshold: int = DEFAULT_SNAP_CLOSED_THRESHOLD,
 ) -> Forecast:
     """Compute the forecast for one cover.
 
@@ -144,9 +150,9 @@ def build_forecast(
     ``default_position_with_limits`` in :mod:`pipeline.helpers`), so the
     forecast strip matches what the cover is actually commanded to — including
     min/max position limits, the 1 % floor, movement minimization, the
-    look-ahead anticipation horizon (a grid-resolution approximation, not an
-    exact match — see :func:`_build_samples`), and the sunset-aware effective
-    default.
+    declutter snap (issue #1379), the look-ahead anticipation horizon (a
+    grid-resolution approximation, not an exact match — see
+    :func:`_build_samples`), and the sunset-aware effective default.
     *config* and *policy* supply everything those primitives need;
     *time_threshold_minutes* supplies the anticipation look-ahead horizon
     (mirrors the live path's ``PipelineSnapshot.time_threshold_minutes``,
@@ -186,6 +192,8 @@ def build_forecast(
         end_of_window_time=end_of_window_time,
         secondary_axis_factory=secondary_axis_factory,
         time_threshold_minutes=time_threshold_minutes,
+        snap_closed_below=snap_closed_below,
+        snap_closed_threshold=snap_closed_threshold,
     )
     events = _build_events(
         sun_data=sun_data, cover_factory=cover_factory, samples=samples
@@ -207,6 +215,8 @@ def _build_samples(
     end_of_window_time: datetime | None = None,
     secondary_axis_factory: SecondaryAxisFactory | None = None,
     time_threshold_minutes: int = 0,
+    snap_closed_below: bool = False,
+    snap_closed_threshold: int = DEFAULT_SNAP_CLOSED_THRESHOLD,
 ) -> list[ForecastSample]:
     """Walk the sun_data table at *step_minutes* cadence over the full calendar day.
 
@@ -289,6 +299,8 @@ def _build_samples(
                 max_coverage_steps=max_coverage_steps,
                 policy=policy,
                 floor_active=floor_active,
+                snap_closed_below=snap_closed_below,
+                snap_closed_threshold=snap_closed_threshold,
             )
             # Secondary-axis projection (#724) runs on solar samples only —
             # mirroring the live path, where tilt is meaningful only when the
@@ -509,6 +521,15 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
     max_coverage_steps = int(
         options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
     )
+    # Declutter snap (issue #1379): read once, same shape as minimize_movements/
+    # max_coverage_steps just above — forwarded straight to build_forecast so
+    # the sample strip matches what the live SolarHandler actually commands.
+    snap_closed_below = bool(
+        options.get(CONF_SNAP_CLOSED_BELOW, DEFAULT_SNAP_CLOSED_BELOW)
+    )
+    snap_closed_threshold = int(
+        options.get(CONF_SNAP_CLOSED_THRESHOLD, DEFAULT_SNAP_CLOSED_THRESHOLD)
+    )
 
     # Anticipation look-ahead horizon (issue #1091): the same
     # CONF_DELTA_TIME-derived horizon the live SolarHandler anticipates
@@ -552,4 +573,6 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
         end_of_window_time=eow_time,
         secondary_axis_factory=make_secondary_axes,
         time_threshold_minutes=time_threshold_minutes,
+        snap_closed_below=snap_closed_below,
+        snap_closed_threshold=snap_closed_threshold,
     )
