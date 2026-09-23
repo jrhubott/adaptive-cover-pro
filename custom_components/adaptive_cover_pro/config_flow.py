@@ -408,6 +408,7 @@ from .pipeline.handlers import (  # noqa: E402
     HANDLER_PRIORITY_CONF,
     resolve_handler_priority,
 )
+from .pipeline.helpers import SOLAR_TRACKING_FLOOR_PCT  # noqa: E402
 from .pipeline.types import CustomPositionSensorState, has_fixed_tilt  # noqa: E402
 from .priority_chain import build_priority_chain  # noqa: E402
 from .managers.cover_command.queue import normalize_queue_name  # noqa: E402
@@ -2066,6 +2067,13 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "{ceiling_bound}% or raise the threshold above {threshold_bound}% for "
         "it to do anything."
     ),
+    "warnings.snap_closed_below_floor_active": (
+        "⚠️ Snap closed below {threshold}% + a mixed cover group (some "
+        "support set_position, some are open/close-only) — the sun-tracking "
+        "floor stays active for the whole group (issue #569), so a demand it "
+        "collapses to closed settles at {floor_pct}% instead of a true 0% on "
+        "the position-capable cover(s)."
+    ),
     "warnings.mode2_min_position": (
         "⚠️ Tilt MODE2 + min position {min_pos}% — in MODE2 the open "
         "(horizontal) slat angle IS 50%, so any min position ≥ 50 "
@@ -2498,7 +2506,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # =========================================================================
     # Section 1c: Cover Capability Warnings
     # =========================================================================
-    _, cap_warnings = check_cover_capabilities(config, sensor_type, hass)
+    cap_map, cap_warnings = check_cover_capabilities(config, sensor_type, hass)
     if cap_warnings:
         lines.append("")
         lines.append(L["headers.cover_warnings"])
@@ -3817,6 +3825,41 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     threshold_bound=101 - max_pos,
                 )
             )
+
+        # Footgun (round 1 OPTIONAL 5): the sun-tracking 1 % floor
+        # (``solar_floor`` / ``SOLAR_TRACKING_FLOOR_PCT``) is switched off only
+        # when EVERY bound entity supports the position axis (the conservative
+        # mixed-instance rule, issue #569 — see
+        # ``PipelineSnapshotBuilder.build``'s ``all_positionable`` rollup,
+        # which this mirrors). One open/close-only cover in an otherwise
+        # position-capable group keeps that floor active for the WHOLE group,
+        # so a demand the snap collapses to 0 is floored back up to
+        # ``SOLAR_TRACKING_FLOOR_PCT`` — silently, since only the live
+        # pipeline's per-entity capability data knows this, not the static
+        # config the rest of this function reads. Reuses ``cap_map`` —
+        # already resolved from ``hass`` above for the "Cover Warnings"
+        # section — rather than querying capabilities a second time.
+        # Only matters for the full_coverage_at_zero (closed-end-is-0) axes:
+        # an awning's snap target (100) is always far above the floor, so
+        # solar_floor is a no-op there regardless of floor_active.
+        # Irrelevant when every entity is open/close-only too (the group
+        # covered by cap_map): none of them would ever receive the literal
+        # numeric snap value in the first place, so the 1%-vs-0% distinction
+        # this warning exists for cannot apply to any of them.
+        if _snap_full_coverage_at_zero and cap_map:
+            _snap_has_positionable = any(
+                summary_policy.position_axis_supported(c) for c in cap_map.values()
+            )
+            _snap_has_non_positionable = any(
+                not summary_policy.position_axis_supported(c) for c in cap_map.values()
+            )
+            if _snap_has_positionable and _snap_has_non_positionable:
+                lines.append(
+                    L["warnings.snap_closed_below_floor_active"].format(
+                        threshold=_snap_threshold,
+                        floor_pct=SOLAR_TRACKING_FLOOR_PCT,
+                    )
+                )
 
     # MODE2 + min_position footgun warning (issue #373).
     # In MODE2 the OPEN (horizontal) slat angle IS 50%, so any min_position
