@@ -174,6 +174,7 @@ _VERT_CONFIG_FIELDS = {
     "h_win",
     "window_depth",
     "sill_height",
+    "protected_height",
     "glare_zones",
 }
 

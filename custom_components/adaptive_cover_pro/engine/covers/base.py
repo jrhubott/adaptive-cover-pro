@@ -41,7 +41,9 @@ _COVER_CONFIG_RENAMES = {
     "min_pos_bool": "min_pos_sun_only",
 }
 
-_VERT_CONFIG_FIELDS = frozenset({"distance", "h_win", "window_depth", "sill_height"})
+_VERT_CONFIG_FIELDS = frozenset(
+    {"distance", "h_win", "window_depth", "sill_height", "protected_height"}
+)
 _HORIZ_CONFIG_FIELDS = frozenset({"awn_length", "awn_angle"})
 _TILT_CONFIG_FIELDS = frozenset({"slat_distance", "depth", "mode"})
 

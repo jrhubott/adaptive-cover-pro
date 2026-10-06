@@ -12,6 +12,8 @@ This directory contains all developer and contributor documentation for Adaptive
 
 The comprehensive developer guide and architecture docs now live on the wiki: [For Developers](https://github.com/jrhubott/adaptive-cover-pro/wiki/For-Developers).
 
+- [Room-wide sunlight penetration height](PROTECTED_HEIGHT.md): configuration and geometry.
+
 ## Quick Links
 
 - **Getting Started**: See the [For Developers](https://github.com/jrhubott/adaptive-cover-pro/wiki/For-Developers) wiki hub for setup instructions

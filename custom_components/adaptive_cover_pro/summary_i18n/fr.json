@@ -265,6 +265,7 @@
       "tall": "fenêtre de {h}m de haut",
       "blocking_glass": "bloque le soleil {d}m de la vitre",
       "reveal": "tableau {depth}m",
+      "protected_height": "limite du soleil mesurée à {height}m au-dessus du sol",
       "sill": "appui {sill}m",
       "height": "hauteur de fenêtre {v}m"
     },
