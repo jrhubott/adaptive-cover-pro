@@ -126,6 +126,7 @@ from ..const import (
     DEFAULT_SNAP_CLOSED_THRESHOLD,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WEATHER_OUTSIDE_WINDOW,
+    DEFAULT_WEATHER_STATE,
 )
 from ..cover_types.base import axis_inverted
 from ..engine.climate_crossings import resolve_extreme_heat_active
@@ -328,7 +329,7 @@ class PipelineSnapshotBuilder:
             presence_template_mode=options.get(CONF_PRESENCE_TEMPLATE_MODE)
             or DEFAULT_TEMPLATE_COMBINE_MODE,
             weather_entity=options.get(CONF_WEATHER_ENTITY),
-            weather_condition=options.get(CONF_WEATHER_STATE),
+            weather_condition=options.get(CONF_WEATHER_STATE, DEFAULT_WEATHER_STATE),
             use_lux=use_lux,
             lux_entity=lux_entity,
             lux_threshold=options.get(CONF_LUX_THRESHOLD),
