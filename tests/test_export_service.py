@@ -296,3 +296,12 @@ async def test_export_all_three_cover_types():
         assert result["cover_type"] == cover_type
         assert "location" in result
         assert "common" in result
+
+
+@pytest.mark.parametrize("height", [0.0, 0.6096])
+async def test_export_protected_height(height):
+    """The notebook export retains the room-wide measurement plane."""
+    entry = make_entry(options={"protected_height": height})
+    hass = make_hass(entry)
+    result = await async_handle_export(make_call(hass=hass))
+    assert result["vertical"]["protected_height"] == height

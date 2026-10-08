@@ -175,6 +175,7 @@ from .const import (
     CONF_PRESENCE_TEMPLATE_MODE,
     CONF_RETURN_SUNSET,
     CONF_SENSOR_TYPE,
+    CONF_PROTECTED_HEIGHT,
     CONF_SILL_HEIGHT,
     CONF_START_ENTITY,
     CONF_START_TIME,
@@ -4027,6 +4028,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_HEIGHT_WIN,
             CONF_WINDOW_DEPTH,
             CONF_SILL_HEIGHT,
+            CONF_PROTECTED_HEIGHT,
             CONF_WINDOW_WIDTH,
             CONF_LENGTH_AWNING,
             CONF_AWNING_ANGLE,
@@ -4787,6 +4789,17 @@ def _get_geometry_schema(
             hass, include_distance=policy.includes_shaded_distance()
         ).schema
     )
+    # Keep the protected plane next to the penetration distance it qualifies.
+    fields = dict(base.schema)
+    height_marker = next((m for m in fields if str(m) == CONF_PROTECTED_HEIGHT), None)
+    if height_marker is not None:
+        height_selector = fields.pop(height_marker)
+        ordered = {}
+        for marker, value in fields.items():
+            ordered[marker] = value
+            if str(marker) == CONF_DISTANCE:
+                ordered[height_marker] = height_selector
+        base = vol.Schema(ordered)
     # Optional solar-transmittance description (#1236) — appended last so the
     # pinned azimuth → FOV → shaded-distance order above is untouched.
     base = base.extend(solar_properties_schema(hass, options).schema)

@@ -10,6 +10,7 @@ from homeassistant.helpers import selector
 
 from ..const import (
     CONF_HEIGHT_WIN,
+    CONF_PROTECTED_HEIGHT,
     CONF_SILL_HEIGHT,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
@@ -45,9 +46,11 @@ VERTICAL_LENGTH_KEYS: tuple[str, ...] = (
 )
 
 
-def geometry_vertical_schema(hass: HomeAssistant | None = None) -> vol.Schema:
+def geometry_vertical_schema(
+    hass: HomeAssistant | None = None, *, include_protected_height: bool = False
+) -> vol.Schema:
     """Vertical-blind geometry schema. ``hass=None`` → metric labels."""
-    return vol.Schema(
+    schema = vol.Schema(
         {
             vol.Required(
                 CONF_HEIGHT_WIN,
@@ -71,11 +74,21 @@ def geometry_vertical_schema(hass: HomeAssistant | None = None) -> vol.Schema:
         }
     )
 
+    if include_protected_height:
+        schema = schema.extend(
+            {
+                vol.Optional(
+                    CONF_PROTECTED_HEIGHT, default=length_default(0.0, hass)
+                ): length_selector(hass, min_m=0.0, max_m=50, metric_step=0.01)
+            }
+        )
+    return schema
+
 
 # Module-level constant for backward compatibility with test imports that
 # inspect schema keys / call the schema as a validator. Built without hass
-# (== metric labels), identical to the historical schema.
-GEOMETRY_VERTICAL_SCHEMA = geometry_vertical_schema()
+# (== metric labels), including the optional protected-plane height.
+GEOMETRY_VERTICAL_SCHEMA = geometry_vertical_schema(include_protected_height=True)
 
 
 class BlindPolicy(CoverTypePolicy, register=True):
@@ -160,11 +173,11 @@ class BlindPolicy(CoverTypePolicy, register=True):
         """
         if hass is None:
             return GEOMETRY_VERTICAL_SCHEMA
-        return geometry_vertical_schema(hass)
+        return geometry_vertical_schema(hass, include_protected_height=True)
 
     def geometry_length_keys(self) -> tuple[str, ...]:
-        """Vertical blinds store four window dimensions in canonical metres."""
-        return VERTICAL_LENGTH_KEYS
+        """Store window dimensions and protected height in canonical metres."""
+        return (*VERTICAL_LENGTH_KEYS, CONF_PROTECTED_HEIGHT)
 
     def entity_selector_filter(self) -> selector.EntityFilterSelectorConfig:
         """Plain ``cover`` domain — no extra capability requirement."""

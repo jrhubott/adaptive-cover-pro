@@ -142,6 +142,7 @@ from .const import (
     CONF_PRESENCE_TEMPLATE,
     CONF_PRESENCE_TEMPLATE_MODE,
     CONF_RETURN_SUNSET,
+    CONF_PROTECTED_HEIGHT,
     CONF_SILL_HEIGHT,
     CONF_START_ENTITY,
     CONF_START_TIME,
@@ -1976,6 +1977,13 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_WINDOW_DEPTH,
+    ),
+    FieldSpec(
+        CONF_PROTECTED_HEIGHT,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_PROTECTED_HEIGHT,
+        default=0.0,
     ),
     FieldSpec(
         CONF_SILL_HEIGHT,

@@ -1314,6 +1314,16 @@ set_geometry:
           step: 0.01
           mode: slider
           unit_of_measurement: m
+    protected_height:
+      name: Protected height
+      description: "Height above the floor where shaded distance is measured, in metres (0–50 m). Vertical blinds only. Zero preserves floor-level protection. Glare zones keep their own heights."
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 0.01
+          mode: box
+          unit_of_measurement: m
     sill_height:
       name: Sill height
       description: "Window sill height from floor in metres (0–50 m, canonical metric regardless of HA locale). Vertical blind only."

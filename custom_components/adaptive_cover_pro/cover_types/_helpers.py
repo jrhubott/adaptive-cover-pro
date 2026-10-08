@@ -7,6 +7,7 @@ from typing import Any
 from ..const import (
     CONF_DISTANCE,
     CONF_HEIGHT_WIN,
+    CONF_PROTECTED_HEIGHT,
     CONF_SILL_HEIGHT,
     CONF_TILT_ANGLE_0,
     CONF_TILT_ANGLE_100,
@@ -70,6 +71,11 @@ def window_dimensions_lines(
     if d is not None:
         dim_parts.append(L["geometry.window.blocking_glass"].format(d=d))
     extras: list[str] = []
+    protected_height = config.get(CONF_PROTECTED_HEIGHT) or 0
+    if protected_height > 0:
+        extras.append(
+            L["geometry.window.protected_height"].format(height=protected_height)
+        )
     if depth > 0:
         extras.append(L["geometry.window.reveal"].format(depth=depth))
     if sill > 0:
