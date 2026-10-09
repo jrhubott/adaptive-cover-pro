@@ -1,7 +1,9 @@
 {
   "domain": "adaptive_cover_pro",
   "name": "Adaptive Cover Pro",
-  "codeowners": ["@jrhubott"],
+  "codeowners": [
+    "@jrhubott"
+  ],
   "config_flow": true,
   "dependencies": [
     "sun",
@@ -14,6 +16,8 @@
   "documentation": "https://github.com/jrhubott/adaptive-cover-pro",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/jrhubott/adaptive-cover-pro/issues",
-  "requirements": ["pandas"],
-  "version": "2026.10.0"
+  "requirements": [
+    "pandas"
+  ],
+  "version": "2026.10.1-alpha.202610091528"
 }
