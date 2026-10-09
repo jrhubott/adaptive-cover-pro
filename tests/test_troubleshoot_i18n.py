@@ -1,7 +1,7 @@
 """Tests for the troubleshoot-finding i18n bundle (issue #970, Phase 1).
 
 Mirrors ``test_reason_i18n.py``: the ``_TRIAGE_TEMPLATES_EN`` code defaults, the
-shipped ``troubleshoot_i18n/{en,de,fr}.json`` bundle, its three parity locks
+shipped ``troubleshoot_i18n/{en,de,fr,pt-PT}.json`` bundle, its three parity locks
 (via the shared ``tests/_helpers/i18n_parity`` helper), the English-fallback
 loader, and a real ``Finding`` rendered through ``reason_i18n.render``.
 """
@@ -111,9 +111,9 @@ def test_troubleshoot_en_matches_code_defaults() -> None:
     i18n_parity.assert_en_matches_defaults(TROUBLESHOOT_I18N_DIR, _TRIAGE_TEMPLATES_EN)
 
 
-def test_troubleshoot_key_parity_de_fr() -> None:
+def test_troubleshoot_key_parity_all_languages() -> None:
     i18n_parity.assert_key_parity(TROUBLESHOOT_I18N_DIR)
 
 
-def test_troubleshoot_placeholder_parity_de_fr() -> None:
+def test_troubleshoot_placeholder_parity_all_languages() -> None:
     i18n_parity.assert_placeholder_parity(TROUBLESHOOT_I18N_DIR)

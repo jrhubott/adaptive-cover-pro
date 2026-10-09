@@ -3,7 +3,7 @@
 Each Repair id maps to an ``issues.<id>`` entry with a title and a description,
 and the description must carry every placeholder token the coordinator passes so
 HA renders them (a description whose placeholder set differs from the code's is
-dropped by HA). en.json is the source of truth; DE/FR parity is enforced
+dropped by HA). en.json is the source of truth; translation parity is enforced
 separately by ``tests/test_translations.py``.
 """
 

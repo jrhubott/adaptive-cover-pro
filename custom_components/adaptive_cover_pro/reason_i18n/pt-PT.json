@@ -1,0 +1,127 @@
+{
+  "fragment": {
+    "sunset_position": "posição do pôr do sol",
+    "default_position": "posição predefinida",
+    "cloudy_position": "posição para céu nublado",
+    "coverage_step": " (passo de cobertura, máx. {steps})",
+    "z_adjusted": " (ajustado por Z)",
+    "bypass_note": " [ignora o controlo automático]",
+    "season_extreme_heat": "calor extremo",
+    "season_tracking_off": "predefinição: seguimento desativado nesta estação",
+    "season_summer": "verão",
+    "season_winter": "inverno",
+    "season_glare_low_light": "controlo de encandeamento (pouca luz)",
+    "season_glare": "controlo de encandeamento",
+    "trigger_not_sunny": "meteorologia não está soalheira",
+    "trigger_lux_below": "lux abaixo do limiar",
+    "trigger_irradiance_below": "irradiância abaixo do limiar",
+    "trigger_cloud_above": "cobertura de nuvens acima do limiar",
+    "trigger_smoothing_hold": "retenção de suavização",
+    "trigger_template": "modelo",
+    "trigger_fallback": "acionador",
+    "axis_position": "posição",
+    "axis_tilt": "inclinação"
+  },
+  "solar": {
+    "tracking": "sol dentro do ângulo de aceitação — posição {position}%{suffix}"
+  },
+  "manual": {
+    "holding_solar": "substituição manual ativa — a manter {held}% (posição que o controlo solar aplicaria: {position}%)",
+    "solar_only": "substituição manual ativa — posição que o controlo solar aplicaria: {position}%",
+    "holding_label": "substituição manual ativa — a manter {held}% (a posição de {pos_label} seria {position}%)",
+    "label_only": "substituição manual ativa — {pos_label} {position}%"
+  },
+  "occupancy": {
+    "holding": "tempo limite de ocupação — a manter a posição {held}% (sol dentro do ângulo de aceitação)",
+    "label": "tempo limite de ocupação ativo — {pos_label} {position}%"
+  },
+  "climate": {
+    "active": "modo climático ativo ({season}) — posição {position}%"
+  },
+  "glare": {
+    "protection": "proteção da zona de encandeamento ({zones}) — distância efetiva {distance:.2f}m{z_suffix} → posição {position}%"
+  },
+  "cloud": {
+    "suppression": "supressão por nuvens/pouca luz — {triggers} → {pos_label} {position}%"
+  },
+  "weather": {
+    "active": "substituição meteorológica ativa — posição {position}%{bypass_note}"
+  },
+  "custom": {
+    "head_named": "{name} ativo",
+    "head_slot": "posição personalizada n.º {slot} ativa ({trigger})",
+    "use_my": "{head} — utilizar a minha posição ({position}%){bypass_note}",
+    "position": "{head} — posição {position}%{bypass_note}"
+  },
+  "default": {
+    "sunset_use_my": "posição do pôr do sol — utilizar a minha posição ({position}%)",
+    "no_condition": "nenhuma condição ativa — {pos_label} {position}%"
+  },
+  "group": {
+    "lock": "bloqueio do grupo do grupo {group_id} — a manter {position}%",
+    "scene": "cena do grupo «{scene}» do grupo {group_id} → {position}%"
+  },
+  "registry": {
+    "outprioritized": "suplantado por {handler}",
+    "floor_raised": "limite mínimo vencedor aumentado de {from_pos}% para {to_pos}% por {label}",
+    "floor_inactive": "limite mínimo {floor_pos}% inativo (vencedor {winner_pos}% acima do limite)",
+    "tilt_applied": "apenas inclinação: ângulo da lâmina fixo em {tilt}% por {label}; posição controlada por {handler}",
+    "tilt_deferred": "inclinação de apenas {tilt}% adiada — {handler} já definiu a inclinação como {winner_tilt}%",
+    "ceiling_lowered": "limite máximo vencedor reduzido de {from_pos}% para {to_pos}% por {label}",
+    "ceiling_inactive": "limite máximo {ceiling_pos}% inativo (posição resolvida {to_pos}% igual ou inferior ao limite)",
+    "ceiling_overridden": "limite máximo {ceiling_pos}% substituído — um limite mínimo elevou a cobertura para {to_pos}%",
+    "floor_overrides_ceiling": "limite mínimo aumentado para {to_pos}% acima do limite máximo {ceiling_pos}% por {label} (o vencedor era {from_pos}%)",
+    "bound_yielded_to_hold": "limite {low_label}–{high_label} ({axis}) de {label} cedido — a prioridade {priority} não supera {holder} ({holder_priority})",
+    "hold_position_carried": "a limitação da inclinação comanda a cobertura — posição mantida em {position}% (e não nos {shadow_pos}% que seriam aplicados)",
+    "tilt_bound_active": "limite de inclinação {low_label}–{high_label} ativo por {label}; a aguardar a inclinação resolvida",
+    "tilt_bound_inactive": "limite de inclinação {low_label}–{high_label} inativo por {label}; a inclinação resolvida {tilt}% já está dentro dos limites",
+    "tilt_clamped": "inclinação limitada de {from_tilt}% para {to_tilt}% por {label}",
+    "constraint_outside_window": "limite {low_label}–{high_label} ({axis}) de {label} não aplicado — fora do intervalo horário, onde só se aplicam as restrições mín./máx. configuradas para permanecer ativas",
+    "tilt_bound_enforced": "limite de inclinação {low_label}–{high_label} imposto a {tilt}% por {label} (nada definiu uma inclinação neste ciclo)"
+  },
+  "builder": {
+    "unknown": "Desconhecido",
+    "control_occupancy_timeout": "Tempo limite de ocupação",
+    "control_manual_override": "Substituição manual",
+    "control_tracking_off_season": "Predefinição: seguimento desativado nesta estação",
+    "control_tilt_fixed": "{reason} — inclinação fixa pela posição personalizada n.º {slot}",
+    "outside_window": "Fora do intervalo horário → {pos_label} {pos}% (comandos pausados)",
+    "manual_divergence": "substituição manual ativa — a manter a cobertura em {held}% (posição solar seria {raw}%)",
+    "tilt_fixed": "inclinação fixa em {tilt}% pela posição personalizada n.º {slot}",
+    "interpolated": "interpolada → {final}%",
+    "inversed": "invertida → {final}%"
+  },
+  "engine": {
+    "direct_sun": "Sol direto",
+    "default_sunset_offset": "Predefinição: desfasamento do pôr do sol",
+    "default_elevation_limit": "Predefinição: limite de elevação",
+    "default_acceptance_angle_exit": "Predefinição: saída do ângulo de aceitação",
+    "default_sun_behind_plane": "Predefinição: sol atrás do plano",
+    "default_blind_spot": "Predefinição: zona cega",
+    "default": "Predefinição"
+  },
+  "skip": {
+    "outside_window": "fora do intervalo horário",
+    "sun_outside": "sol fora do ângulo de aceitação ou dos limites de elevação",
+    "sun_tracking_gate": "limite do seguimento solar fechado",
+    "sun_tracking_off": "seguimento solar desativado",
+    "manual_not_active": "substituição manual não ativa",
+    "occupancy_disabled": "deteção de ocupação desativada",
+    "occupancy_not_active": "tempo limite de ocupação não ativo",
+    "climate_mode_off": "modo climático não ativado",
+    "climate_readings_unavailable": "leituras ou opções climáticas indisponíveis",
+    "climate_deferred": "controlo de encandeamento adiado para os gestores solar/encandeamento",
+    "no_glare_zones": "nenhuma zona de encandeamento ativa ou sol fora do ângulo de aceitação",
+    "cloud_skipped": "supressão por nuvens ignorada (sol fora do ângulo de aceitação)",
+    "cloud_inactive": "supressão por nuvens inativa (há sol direto ou a funcionalidade está desativada)",
+    "cloud_deferred_extreme_heat": "supressão por nuvens adiada — a retenção por calor extremo tem prioridade",
+    "weather_not_active": "substituição meteorológica não ativa",
+    "custom_not_active": "posição personalizada n.º {slot} não ativa",
+    "always_matches": "corresponde sempre",
+    "group_scene_not_lock": "a intenção do grupo é uma cena, não um bloqueio",
+    "no_group_lock": "nenhuma intenção de bloqueio do grupo",
+    "group_lock_not_scene": "a intenção do grupo é um bloqueio, não uma cena",
+    "no_group_scene": "nenhuma intenção de cena do grupo",
+    "not_active": "não ativo"
+  }
+}

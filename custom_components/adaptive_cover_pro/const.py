@@ -2242,8 +2242,8 @@ class ReasonCode(StrEnum):
     FRAGMENT_TRIGGER_FALLBACK = "fragment.trigger_fallback"
     # Axis names for the yielded-bound reason (#1170). A slot can bound BOTH
     # axes and yield on both, which without this renders two identical trace
-    # lines. Fragments rather than a raw English word so DE/FR localize them,
-    # matching how ``pos_label`` is threaded.
+    # lines. Fragments rather than a raw English word so translations can
+    # localize them, matching how ``pos_label`` is threaded.
     FRAGMENT_AXIS_POSITION = "fragment.axis_position"
     FRAGMENT_AXIS_TILT = "fragment.axis_tilt"
 

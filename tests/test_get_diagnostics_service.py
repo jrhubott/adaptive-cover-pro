@@ -412,7 +412,7 @@ async def test_entry_key_contract_locked_for_healthy_and_degraded():
 
 
 def test_translations_contain_get_diagnostics_key():
-    """en.json, de.json, and fr.json all contain the services.get_diagnostics key."""
+    """Every shipped translation contains the services.get_diagnostics key."""
     import json
     from pathlib import Path
 
@@ -422,7 +422,7 @@ def test_translations_contain_get_diagnostics_key():
         / "adaptive_cover_pro"
         / "translations"
     )
-    for lang in ("en", "de", "fr"):
+    for lang in ("en", "de", "fr", "pt-PT"):
         data = json.loads((translations_dir / f"{lang}.json").read_text())
         assert "get_diagnostics" in data.get(
             "services", {}

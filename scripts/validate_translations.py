@@ -6,8 +6,8 @@ Usage:
     ./scripts/validate_translations.py de         # Show detailed report for one language
     ./scripts/validate_translations.py --ci       # CI mode: exit 1 if any language has missing/extra keys
 
-Shipped languages: en (source), de, fr. All sections including `services` must be
-present in every language file.
+Shipped languages: en (source), de, fr, pt-PT. All sections including `services`
+must be present in every language file.
 
 STATUS LEGEND:
   ✅ Complete     — key structure matches en.json, no untranslated strings
@@ -34,7 +34,7 @@ TRANSLATIONS_DIR = (
 )
 EN_FILE = TRANSLATIONS_DIR / "en.json"
 
-LANGUAGES = ["de", "fr"]
+LANGUAGES = ["de", "fr", "pt-PT"]
 
 EN_ONLY_SECTIONS: tuple[str, ...] = ()
 
@@ -45,14 +45,16 @@ PLACEHOLDER_PATTERN = re.compile(r"^\{[^}]+\}$")  # pure placeholder e.g. {summa
 # "Word N" labels (e.g. "Sensor 1", "Zone 2") are technical labels, not prose.
 WORD_NUMBER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z\s]* \d+$")
 
-# Dotpath keys whose values are deliberately language-universal (proper nouns,
-# single words that are identical in all shipped languages, etc.).
+# Dotpath keys whose English value is also a legitimate translation in one or
+# more shipped languages (proper nouns, cognates, or language-universal terms).
 UNIVERSAL_KEYS: set[str] = {
     "title",  # product name "Adaptive Cover Pro"
     "config.step.create_new.data.name",  # "Name" — same in DE/FR
     "config.step.duplicate_configure.data.name",  # "Name" — same in DE/FR
     "config.step.create_building_profile.data.name",  # "Name" — same in DE/FR
     "entity.sensor.decision_trace.state.winter",  # "Winter" — same in DE/FR
+    # "Solar" is also the natural Portuguese label.
+    "entity.sensor.decision_trace.state.solar",
     "entity.sensor.group_climate_mode.state.winter_mode",  # "Winter" — same in DE
     "services.set_custom_position.fields.slot.name",  # "Slot" — HA service parameter, language-universal
     "services.set_custom_position.fields.position.name",  # "Position" — HA service parameter, language-universal
@@ -130,7 +132,7 @@ def is_likely_untranslated(key: str, en_value: str, target_value: str) -> bool:
 
 
 def _strip_en_only_sections(en_flat: dict[str, str]) -> dict[str, str]:
-    """Return en_flat with top-level sections that DE/FR intentionally omit removed."""
+    """Return en_flat without sections intentionally omitted by translations."""
     return {
         k: v
         for k, v in en_flat.items()

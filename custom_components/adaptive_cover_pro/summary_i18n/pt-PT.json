@@ -1,0 +1,353 @@
+{
+  "banner": {
+    "dry_run": "⚠️ **O modo de simulação está ATIVO** — as posições são calculadas e registadas, mas não são enviados comandos e as coberturas NÃO se movem."
+  },
+  "headers": {
+    "your_cover": "**A sua cobertura**",
+    "cover_warnings": "**Avisos da cobertura**",
+    "how_it_decides": "**Como decide** (é aplicada a primeira regra correspondente)",
+    "position_limits": "**Limites de posição**",
+    "proxy_enabled": "**Cobertura proxy**: ativada",
+    "proxy_disabled": "**Cobertura proxy**: desativada",
+    "decision_priority": "**Prioridade da decisão** (vence a mais elevada, ✅ ativa ❌ não configurada)"
+  },
+  "cover": {
+    "type_with_entities": "{type_label} a controlar {entity_str}",
+    "building_profile": "🏢 Associada ao perfil do edifício: {name}"
+  },
+  "words": {
+    "sensor_singular": "sensor",
+    "sensor_plural": "sensores",
+    "source_singular": "origem",
+    "source_plural": "origens"
+  },
+  "fragments": {
+    "as_minimum": " (como mínimo)",
+    "as_maximum": " (no máximo {max}%)",
+    "safety": " 🔒 segurança: também atua fora do intervalo horário",
+    "template_value": "[modelo]"
+  },
+  "rules": {
+    "weather": "🌧️ Proteção meteorológica: se {wx_condition} → as coberturas recolhem para {weather_pos}%{weather_min}{weather_tilt}{delay}{bypass}",
+    "manual": "✋ Substituição manual: pausa o controlo automático quando move a cobertura{detail}",
+    "custom_tilt_only": "🎯 {label}: se {trigger} estiver ativo → apenas inclinação (lâmina fixa em {slat}%; posição controlada pelo seguimento solar)",
+    "custom": "🎯 {label}: se {trigger} estiver ativo → {target}{cp_min}{tilt_note} — ignora os limites de variação e o controlo automático{safety}",
+    "motion": "🚶 Ocupação: sem ocupação durante {motion_timeout}s ({sources}) → {action}",
+    "cloud": "☁️ Supressão por nuvens: ignora o seguimento solar{cloud} → {fallback}",
+    "climate": "🌡️ Modo climático: ajusta a estratégia de aquecimento/arrefecimento{detail}",
+    "glare": "🔆 Zonas de encandeamento: baixa mais o estore para proteger o chão do encandeamento{detail}",
+    "solar": "☀️ Segue o sol{sun_desc} e calcula a posição para bloquear a luz solar direta{today}",
+    "solar_disabled": "☀️ Seguimento solar desativado — as coberturas mantêm a posição; o modo climático, a substituição manual, as posições personalizadas e outras substituições continuam ativos",
+    "default": "🌙 Predefinição (nenhuma regra corresponde) → {default_pos}%"
+  },
+  "weather": {
+    "wind": "vento > {thresh}",
+    "wind_dir": " a partir da janela ±{tol}°",
+    "rain": "chuva > {thresh}",
+    "is_raining": "está a chover",
+    "is_windy": "está vento",
+    "severe": "{count} sensor(es) meteorológico(s) de condições severas",
+    "condition_default": "condição meteorológica",
+    "condition_join": " ou ",
+    "delay": " (aguarda {delay}s após terminar)",
+    "bypass": " ⚠️ suspende toda a automatização enquanto estiver ativo",
+    "disabled_warning": "🌧️ Proteção meteorológica: ⚠️ sensores configurados, mas a funcionalidade está DESATIVADA — as substituições meteorológicas são ignoradas"
+  },
+  "manual": {
+    "pauses_for": "faz uma pausa de {duration}",
+    "until_sunset": "mantém até ao próximo pôr do sol",
+    "until_sunrise": "mantém até ao próximo nascer do sol",
+    "until_next_sun_event": "mantém até ao próximo nascer ou pôr do sol",
+    "until_window_end": "mantém até ao fim do intervalo horário",
+    "until_window_end_no_window": "⚠️ A substituição manual está configurada para se manter até ao fim do intervalo horário, mas não está configurada uma hora de fim — será utilizada a duração configurada",
+    "threshold": "limiar {threshold}%",
+    "resets_on_move": "repõe no próximo movimento",
+    "ignore_intermediate": "ignora posições intermédias",
+    "ignore_external": "apenas ACP (ignora movimentos externos)",
+    "input_entities": "substituição por sensor de entrada: {count} sensor(es)",
+    "transit_timeout": "tempo limite de deslocação: {seconds}s"
+  },
+  "custom": {
+    "tilt_note": ", inclinação {tilt}%",
+    "trigger_sensors": "qualquer um de {n} sensores",
+    "trigger_template": "modelo",
+    "trigger_join": " ou ",
+    "tilt_bound_min": ", inclinação de pelo menos {min}%",
+    "tilt_bound_max": ", inclinação de, no máximo, {max}%",
+    "tilt_bound_range": ", inclinação {min}–{max}%",
+    "no_position_claim": "a posição calculada",
+    "outside_window": "🕗 {label}: as restrições mín./máx. mantêm-se ativas fora do intervalo horário (a posição da regra não é aplicada fora dele).",
+    "scope_to_window": "🕗 {label}: só se aplica dentro do intervalo horário — quando este termina, a regra deixa de atuar e aplica-se a posição de fim do intervalo.",
+    "slot_label_default": "Personalizada n.º {slot}"
+  },
+  "warnings": {
+    "custom_position_bound_conflict": "⚠️ {label}: o máximo ({max}%) é inferior ao mínimo ({min}%) — prevalece o mínimo e o máximo é ignorado.",
+    "custom_tilt_only_conflict": "⚠️ {label}: apenas inclinação está ativo — Utilizar como mínimo / Utilizar a minha posição são ignorados para esta regra.",
+    "custom_tilt_only_bounds_discarded": "⚠️ {label}: lâmina fixa em {slat}% — os limites de inclinação configurados são ignorados para esta regra.",
+    "custom_tilt_only_no_effect": "⚠️ {label}: apenas inclinação está ativo, sem ângulo de lâmina nem limites de inclinação configurados — esta regra não tem efeito.",
+    "custom_outside_window_no_bounds": "⚠️ {label}: a opção para manter as restrições ativas fora do intervalo horário está ativa, mas esta regra não configura um mínimo nem um máximo — a definição não tem efeito. Apenas os limites mín./máx. continuam ativos fora desse intervalo; uma posição exata nunca o faz.",
+    "custom_outside_window_redundant": "⚠️ {label}: a opção para manter as restrições ativas fora do intervalo horário está ativa, mas a prioridade 100 já atua fora do intervalo (e prevalece sobre o controlo automático e os limites de variação) — esta definição não altera nada.",
+    "custom_scope_to_window_no_fixed_claim": "⚠️ {label}: a opção para aplicar apenas dentro do intervalo horário está ativa, mas esta regra não define uma posição exata nem utiliza A minha posição — a definição não tem efeito. Só limita a posição exata; a permanência de um limite mín./máx. fora do intervalo depende da opção para manter as restrições ativas fora do intervalo horário.",
+    "custom_scope_to_window_safety_ignored": "⚠️ {label}: a opção para aplicar apenas dentro do intervalo horário está ativa, mas a prioridade 100 é de segurança — essa prioridade implica atuar fora do intervalo, pelo que a definição é ignorada.",
+    "custom_scope_to_window_needs_return": "⚠️ {label}: a opção «Mover as coberturas para a posição predefinida atual ao atingir a hora de fim» está DESATIVADA — a regra deixa de atuar à hora de fim, mas a cobertura não muda de posição e permanece onde a regra a deixou. Ative essa opção.",
+    "motion_hold_no_sensors": "⚠️ O modo hold_position está definido, mas não estão configuradas origens de ocupação — a definição não tem efeito até ser adicionada uma origem de ocupação",
+    "cloudy_pos_ignored": "⚠️ Foi configurada a posição para céu nublado ({pos}%), mas a supressão por nuvens está desativada — o valor será ignorado.",
+    "sun_track_min_below_floor": "⚠️ Mínimo do seguimento solar {sun_min}% < posição mínima {min_pos}% — o limite mínimo sempre ativo prevalece; o mínimo do seguimento solar será aumentado para {min_pos}%.",
+    "mode2_min_position": "⚠️ Inclinação MODE2 + posição mínima {min_pos}% — no MODE2, o ângulo de lâmina aberta (horizontal) É 50%; por isso, qualquer posição mínima ≥ 50 reduz todas as decisões de controlo climático/encandeamento ao limite mínimo e a cobertura deixa de bloquear o calor.",
+    "somfy_my_unset": "⚠️ A predefinição Somfy My está ativada para um ou mais destinos, mas o valor da predefinição My não está definido — será utilizada a percentagem configurada.",
+    "proxy_no_min": "⚠️ A cobertura proxy está ativada, mas nenhuma regra de posição personalizada tem a opção Utilizar como mínimo ativa — a cobertura gerida não será limitada.",
+    "custom_and_no_sensors": "⚠️ {label}: o modo de combinação AND está definido, mas não há sensores de ativação configurados — só o modelo ativa a regra.",
+    "group_empty": "⚠️ Este grupo não tem membros — não enviará comandos.",
+    "forecast_source_no_weather_entity": "⚠️ A origem da temperatura exterior é baseada na previsão, mas não está configurada nenhuma entidade meteorológica — será utilizada silenciosamente a leitura em tempo real. Configure uma entidade meteorológica em Meteorologia, luz e nuvens.",
+    "travel_time_unmeasurable": "⚠️ {entities} indicam um estado presumido, pelo que não é possível medir o tempo de deslocação e não foi introduzido nenhum valor — os painéis não mostrarão que estão em movimento. Introduza um tempo em Calibração → Tempo de deslocação.",
+    "weather_window_scoped": "⚠️ A proteção meteorológica só atua dentro do intervalo horário — fora dele, a cobertura segue a posição de fim do intervalo/pôr do sol e a meteorologia não a protegerá durante a noite.",
+    "weather_tilt_min_mode": "⚠️ Está definida uma inclinação de segurança meteorológica, mas o modo de posição mínima está ativo — neste modo, a meteorologia apenas aumenta o limite de posição para outra regra o cumprir e nunca define as lâminas; por isso, a inclinação é ignorada."
+  },
+  "motion": {
+    "template_source": "modelo de ocupação",
+    "action_hold": "as coberturas mantêm a posição atual (regressam à predefinição quando o sol sai do ângulo de aceitação solar)",
+    "action_return": "as coberturas regressam à predefinição ({default_pos}%)"
+  },
+  "cloud": {
+    "is_sunny": "is_sunny={value}",
+    "lux": "lux < {thresh} lx",
+    "lux_no_thresh": "lux ({entity})",
+    "irradiance": "irradiância < {thresh} W/m²",
+    "irradiance_no_thresh": "irradiância ({entity})",
+    "coverage": "nuvens > {thresh}%",
+    "coverage_no_thresh": "nuvens ({entity})",
+    "weather_in": "estado meteorológico não está em {{{states}}}",
+    "weather_fallback": " (usa {weather} como alternativa)",
+    "when": " quando {parts}",
+    "fallback_cloudy": "posição para céu nublado {pos}%",
+    "fallback_default": "predefinição ({default_pos}%)",
+    "hold_time": " · retenção de suavização {secs}s",
+    "release": " · libertação quando {parts}",
+    "lux_release": "lux ≥ {release} lx",
+    "irradiance_release": "irradiância ≥ {release} W/m²",
+    "coverage_release": "nuvens ≤ {release}%"
+  },
+  "info": {
+    "light_sensors_off": "📊 Sensores de luz configurados ({names}), mas a supressão por nuvens está desativada.",
+    "light_lux": "lux",
+    "light_irradiance": "irradiância",
+    "light_cloud_coverage": "cobertura de nuvens"
+  },
+  "climate": {
+    "comfort_range": "intervalo de conforto {lo}–{hi}°C",
+    "using": "a utilizar {entity}",
+    "using_area": "a utilizar sensor de temperatura da área",
+    "outside_thresh": "exterior: {entity} > {thresh}°C",
+    "outside": "exterior: {entity}",
+    "weather": "meteorologia: {entity}",
+    "presence": "presença: {entity}",
+    "transparent": "estore transparente",
+    "winter_close": "fecha totalmente no inverno para isolamento",
+    "summer_full_close": "fecha totalmente durante o calor de verão",
+    "extreme_heat": "mantém {pos}% durante todo o dia quando a temperatura exterior excede {thresh}°C",
+    "hold_time": " · retenção de suavização {secs}s",
+    "release": " · libertação quando {parts}",
+    "temp_low_release": "inverno ≥ {release}°",
+    "temp_high_release": "verão ≤ {release}°",
+    "outside_release": "exterior ≤ {release}°",
+    "extreme_heat_release": "calor extremo ≤ {release}°"
+  },
+  "glare": {
+    "zones": "zonas: {names}",
+    "window": "janela de {width:.2f}m",
+    "z_height": "altura Z: {values}",
+    "z_value": "{z:.2f}m"
+  },
+  "solar": {
+    "azimuth": "azimute {azimuth}°",
+    "fov": "±{fov_l}°/{fov_r}° ângulo de aceitação solar",
+    "elev_above": "acima de {elev}°",
+    "elev_below": "abaixo de {elev}°",
+    "elevation": "elevação {parts}",
+    "elev_join": " e ",
+    "today_window": " (hoje: sol dentro do intervalo {start} → {end})",
+    "today_no_window": " (hoje: o sol não entra no intervalo)",
+    "minimize_one_step": "move diretamente para a cobertura total e mantém a posição (1 passo)",
+    "minimize_steps": "atinge a cobertura total em até {steps} passos",
+    "minimize": "{indent}🪟 Minimizar movimentos — {detail}, arredondando para maior cobertura para reduzir os movimentos do motor.",
+    "gate_sensors": "{indent}🚦 Limite do seguimento solar: {sensors} determinam se o seguimento solar é ativado.",
+    "gate_template": "{indent}🚦 Limite do seguimento solar: um modelo determina se o seguimento solar é ativado.",
+    "gate_both": "{indent}🚦 Limite do seguimento solar: {sensors} e um modelo ({mode}) determinam se o seguimento solar é ativado.",
+    "gate_explainer": "{indent}Enquanto o limite indicar falso, o posicionamento solar é ignorado e a cobertura passa para a posição predefinida. O modo climático, o movimento e a substituição manual não são afetados, e o intervalo de funcionamento mantém-se aberto — ao contrário do limite diurno, que fecha o intervalo e os desativa. As zonas de encandeamento continuam ativas, mas deixam de aplicar os limites exclusivos do seguimento solar, pois estes só se aplicam quando o seguimento está ativo."
+  },
+  "timing": {
+    "from_entity": "a partir de {entity}",
+    "from_time": "a partir de {time}",
+    "from_sunrise": "a partir do nascer do sol",
+    "until_entity": "até {entity}",
+    "until_time": "até {time}",
+    "active_daylight": "Ativo durante o dia",
+    "line": "{indent}🕒 {timing}.",
+    "sunrise_gates_start": "{indent}🌄 Aguarda pelo nascer do sol antes de começar — o intervalo abre à hora de início ou ao nascer do sol, consoante o que ocorrer mais tarde.",
+    "ann_via": "através de {entity}",
+    "ann_today": "hoje ~{time}",
+    "offset_plus": "+{minutes} min",
+    "offset_minus": "{minutes} min",
+    "after_end_to_default": "{indent}🔚 Após a hora de fim → {default_pos}%.",
+    "after_sunset": "{indent}🌅 Após o pôr do sol{ann} → {target}.",
+    "after_label": "{indent}🌅 Após {label}{ann} → {target}.",
+    "label_end_or_sunset": "hora de fim/pôr do sol",
+    "label_sunset": "pôr do sol",
+    "after_sunrise": "{indent}🌄 Após o nascer do sol{ann} → {default_pos}% (o seguimento é retomado).",
+    "return_sunset": "{indent}🔚 Mover para a posição predefinida à hora de fim: ativado",
+    "end_of_window": "{indent}🔚 Posição de fim do intervalo → {target} desde a hora de fim até ao pôr do sol (depois aplica-se a posição do pôr do sol, se definida).",
+    "end_of_window_needs_return": "{indent}⚠️ Está definida uma posição de fim do intervalo, mas «Mover as coberturas ao atingir a hora de fim» está DESATIVADO — a posição não será aplicada. Ative essa opção.",
+    "gate_sensors": "{indent}🌗 Limite diurno: {sensors} determinam se é dia ou escuro.",
+    "gate_template": "{indent}🌗 Limite diurno: um modelo determina se é dia ou escuro.",
+    "gate_both": "{indent}🌗 Limite diurno: {sensors} e um modelo ({mode}) determinam se é dia ou escuro.",
+    "gate_explainer": "{indent}Quando o limite indica dia, o ACP segue o sol; quando indica escuro, aplica a posição do pôr do sol. O limite substitui a fronteira astronómica do pôr/nascer do sol; as horas de início/fim continuam a limitar o intervalo.",
+    "gate_offset_ignored": "{indent}⚠️ O desfasamento do pôr/nascer do sol é ignorado quando está definido um limite diurno — é o limite, não o relógio, que determina a fronteira."
+  },
+  "blind_spot": {
+    "line": "🟥 Zona cega do estore: ignora o sol em {bs} (gama a partir da normal da janela — p. ex., árvore ou beiral do telhado).",
+    "range": "{left}°–{right}°",
+    "elevation": "até {elev}° de elevação",
+    "elevation_above": "acima de {elev}° de elevação"
+  },
+  "default": {
+    "tilt": "  ↳ Inclinação predefinida: {tilt}% (utilizada sempre que a posição volta à predefinição)",
+    "sunset_tilt": "  ↳ Inclinação ao pôr do sol: {tilt}% (utilizada sempre que a posição volta à predefinição, durante o pôr do sol)"
+  },
+  "limits": {
+    "range": "Intervalo: {lo}–{hi}{qualifier}",
+    "qualifier_both": " (apenas durante o seguimento solar)",
+    "qualifier_min": " (mín. apenas durante o seguimento solar)",
+    "qualifier_max": " (máx. apenas durante o seguimento solar)",
+    "default": "Predefinição: {pos}%",
+    "min_change": "Variação mínima: {delta}%",
+    "min_interval": "Intervalo mínimo: {delta} min",
+    "position_tolerance": "Tolerância de posição: {tol}%",
+    "position_matching_on": "📍 Correspondência de posição ativada (reenviada até a cobertura atingir o destino)",
+    "position_matching_off": "📍 Correspondência de posição desativada (envia o comando uma vez; ultrapassar a tolerância ao estabilizar passa a ser uma substituição manual)",
+    "inverse_state": "Inverter estado",
+    "open_close_threshold": "Limiar de abertura/fecho: {thresh}%",
+    "calibration": "Calibração {lo}→{hi}",
+    "calibration_on": "Calibração da posição ativada",
+    "sun_tracking_min": "Mínimo do seguimento solar: {pos}%",
+    "separator": " · ",
+    "travel_time": "Tempo de deslocação: {done}/{total} coberturas",
+    "travel_time_manual": "Tempo de deslocação: {done}/{total} coberturas ({manual} introduzidas manualmente)"
+  },
+  "movement": {
+    "queue": "🚦 Comandos serializados na fila «{queue}» (intervalo de {gap}s)"
+  },
+  "my": {
+    "entities_enabled": "🎛️ Entidades da predefinição My: ativadas",
+    "entities_disabled": "🎛️ Entidades da predefinição My: desativadas",
+    "somfy_preset": "🎛️ Predefinição Somfy My: {pos}% (utilizada onde está ativada acima)",
+    "label_my_set": "My ({pos}%)",
+    "label_my_unset": "My (não definida → {pct}%)",
+    "label_plain": "{pct}%"
+  },
+  "cover_types": {
+    "blind": "Estore vertical",
+    "awning": "Toldo horizontal",
+    "tilt": "Estore veneziano / de inclinação",
+    "oscillating_awning": "Toldo oscilante",
+    "venetian": "Estore veneziano (eixo duplo)",
+    "roof_window": "Janela de telhado",
+    "sliding_curtain": "Cortina de correr",
+    "louvered_roof": "Cobertura de lâminas",
+    "day_night_shade": "Estore dia/noite",
+    "dual_panel": "Estore de painel duplo"
+  },
+  "axes": {
+    "position": "Posição",
+    "tilt": "Inclinação"
+  },
+  "geometry": {
+    "window": {
+      "tall": "janela com {h}m de altura",
+      "blocking_glass": "a bloquear o sol a {d}m do vidro",
+      "reveal": "reentrância de {depth}m",
+      "sill": "peitoril a {sill}m",
+      "height": "altura da janela: {v}m"
+    },
+    "awning": {
+      "length": "toldo de {v}m",
+      "angle": "inclinado a {v}°",
+      "shade_mode_window": "sombrear o vidro da janela",
+      "shade_mode_area": "sombrear a área à frente (pátio)",
+      "blocking_wall": "a bloquear o sol a {v}m da parede"
+    },
+    "slat": {
+      "depth": "profundidade da lâmina {v}cm",
+      "spacing": "espaçamento {v}cm",
+      "mode": "modo: {v}",
+      "angle_0": "ângulo a 0%: {v}°",
+      "angle_100": "ângulo a 100%: {v}°",
+      "horizontal_percent": "horizontal a {v}%"
+    },
+    "oscillating": {
+      "arm": "braço de {v}m",
+      "sweep": "varrimento {lo}°–{hi}°",
+      "housing_offset": "desvio da estrutura {v}m",
+      "pivot_offset": "desvio do pivô {v}m"
+    },
+    "roof": {
+      "pitch": "inclinação do telhado {v}° em relação à horizontal",
+      "height_above": "telhado {v}m acima da janela (limite da cumeeira)",
+      "max_slat_angle": "ângulo máx. da lâmina {v}°"
+    },
+    "sliding": {
+      "slide": "deslizamento: {v}",
+      "dir_left": "simples (esquerda)",
+      "dir_right": "simples (direita)",
+      "dir_bi_part": "abertura ao centro",
+      "width": "largura da janela: {v}m",
+      "shade_area": "área sombreada ({x1}, {y1})–({x2}, {y2}) m",
+      "binary": "abertura/fecho binário (sem área sombreada)"
+    },
+    "venetian": {
+      "skip_tilt": "ignorar inclinação quando a posição > {skip_above}%",
+      "skip_tilt_suppress": "suprimir inclinação em/ acima de {skip_above}% (sem envio para neutro)",
+      "mode_position_and_tilt": "posição e inclinação",
+      "mode_tilt_only": "apenas inclinação",
+      "tilt_only_scope_solar": "só prevalece o seguimento solar",
+      "inverse_tilt": "Inverter inclinação",
+      "max_tilt": "inclinação máx. {max_tilt}%",
+      "min_tilt": "inclinação mín. {min_tilt}%",
+      "tilt_safety_margin": "margem de segurança da inclinação {pct}%",
+      "tilt_transform": "remapeamento proporcional da inclinação para o intervalo mín.–máx.",
+      "post_settle_hold": "retenção após estabilização {hold}s",
+      "backrotate_lag": "atraso de publicação da rotação inversa {lag}s",
+      "drift_reset": "reposição da deriva a cada {threshold}% de inclinação acumulada (através de {direction})",
+      "drift_reset_scope_solar": "apenas comandos de seguimento solar"
+    },
+    "day_night": {
+      "model_position_tilt": "posição e inclinação (eixo duplo)",
+      "model_split_range": "intervalo dividido (eixo simples)",
+      "model_dual_entity": "duas entidades de calha (entidade dupla)",
+      "rail_travel": "deslocação das calhas: {v}",
+      "rail_travel_concurrent": "ambas as calhas movem-se em simultâneo depois de a calha dianteira começar a mover-se",
+      "rail_travel_serialized": "as calhas movem-se uma de cada vez — a seguinte aguarda até ficar totalmente desimpedida",
+      "rail_interlock": "interbloqueio das calhas: {v}",
+      "rail_interlock_on": "⚠️ um comando que uma calha não consegue executar é concluído movendo primeiro a outra calha — o ACP pode mover a calha que não comandou",
+      "rail_interlock_off": "um comando que uma calha não consegue executar não é aplicado"
+    },
+    "dual_panel": {
+      "front_entity": "painel dianteiro (transparente): {v}",
+      "triggers": "o painel opaco é acionado por: {v}",
+      "none": "sem acionadores"
+    },
+    "fov": {
+      "computed": "Ângulo de aceitação calculado ≈ {deg}°/{deg}° (largura de {w} m, profundidade da reentrância de {d} m)"
+    }
+  },
+  "group": {
+    "header": "**Grupo de coberturas**",
+    "members": "Controla {acp_count} membro(s) ACP + {generic_count} cobertura(s) genérica(s)",
+    "member_acp": "- 🪟 {title} (ACP)",
+    "member_generic": "- 🪟 {entity} (genérica)",
+    "scene_priority": "As cenas do grupo são aplicadas com prioridade {scene_priority} (acima da substituição manual, abaixo da segurança meteorológica)",
+    "lock": "🔒 Bloqueio do grupo com prioridade {lock_priority} — mantém os membros imóveis; a segurança própria de um membro prevalece em caso de empate",
+    "stagger": "Os comandos aos membros são espaçados por {stagger}s",
+    "cover_entity": "Entidade de cobertura agregada exposta — arrastá-la envia comandos a todos os membros",
+    "area": "A associação acompanha a área «{area}» — as coberturas aí presentes são adicionadas automaticamente"
+  }
+}

@@ -1,6 +1,6 @@
 ---
 name: acp-translate
-description: Sync DE/FR translations with en.json, add a new language, drop a language, or check translation status for the Adaptive Cover Pro integration. Triggers on phrases like "sync translations", "update translations", "add [language]", "drop [language]", "translate", "translation status", "retranslate".
+description: Sync translations with en.json, add a new language, drop a language, or check translation status for the Adaptive Cover Pro integration. Triggers on phrases like "sync translations", "update translations", "add [language]", "drop [language]", "translate", "translation status", "retranslate".
 ---
 
 # ACP Translate
@@ -8,13 +8,13 @@ description: Sync DE/FR translations with en.json, add a new language, drop a la
 Maintains **four parallel translation bundles**, each with `en.json` as the single source of truth and every other language matching its structure exactly:
 
 1. **`custom_components/adaptive_cover_pro/translations/`** — the standard HA translation files (`title`, `config`, `options`, `entity`, `selector`, `services`). Validated by hassfest against HA's strict schema.
-2. **`custom_components/adaptive_cover_pro/summary_i18n/`** — the config-summary label bundle (`en.json` / `de.json` / `fr.json`), a nested tree of dotted-key → template strings consumed by `_build_config_summary` in `config_flow.py`. This lives **outside** `translations/` on purpose: it is a custom `config_summary` category that hassfest's schema forbids as a top-level key in `translations/en.json`, so it is loaded directly by `_load_summary_labels` instead of via `async_get_translations`.
-3. **`custom_components/adaptive_cover_pro/reason_i18n/`** — the pipeline-reason label bundle (`en.json` / `de.json` / `fr.json`), a nested tree of dotted reason-code → Python `str.format` template strings consumed by the pure `reason_i18n.py` resolver to localize pipeline decision-trace reasons, position explanations, and control-state reasons on `sensor.*` attributes and for the companion Lovelace card. This also lives **outside** `translations/` on purpose: it is not an HA translation category, so it is loaded directly by `reason_i18n.py`'s resolver instead of via `async_get_translations`.
-4. **`custom_components/adaptive_cover_pro/troubleshoot_i18n/`** — the diagnostics-triage finding bundle (`en.json` / `de.json` / `fr.json`), a nested tree of dotted `TriageCode` → `str.format` template strings consumed by `troubleshoot_i18n.py` to render `TRIAGE_RULES` findings in the config-flow Troubleshoot step, the config summary, and `scripts/triage_json.py`. Same rationale as the two above: not an HA translation category, loaded directly by its own resolver. **Every new triage rule adds a leaf here**, so this bundle changes whenever `diagnostics/triage.py` gains a row.
+2. **`custom_components/adaptive_cover_pro/summary_i18n/`** — the config-summary label bundle, a nested tree of dotted-key → template strings consumed by `_build_config_summary` in `config_flow.py`. This lives **outside** `translations/` on purpose: it is a custom `config_summary` category that hassfest's schema forbids as a top-level key in `translations/en.json`, so it is loaded directly by `_load_summary_labels` instead of via `async_get_translations`.
+3. **`custom_components/adaptive_cover_pro/reason_i18n/`** — the pipeline-reason label bundle, a nested tree of dotted reason-code → Python `str.format` template strings consumed by the pure `reason_i18n.py` resolver to localize pipeline decision-trace reasons, position explanations, and control-state reasons on `sensor.*` attributes and for the companion Lovelace card. This also lives **outside** `translations/` on purpose: it is not an HA translation category, so it is loaded directly by `reason_i18n.py`'s resolver instead of via `async_get_translations`.
+4. **`custom_components/adaptive_cover_pro/troubleshoot_i18n/`** — the diagnostics-triage finding bundle, a nested tree of dotted `TriageCode` → `str.format` template strings consumed by `troubleshoot_i18n.py` to render `TRIAGE_RULES` findings in the config-flow Troubleshoot step, the config summary, and `scripts/triage_json.py`. Same rationale as the two above: not an HA translation category, loaded directly by its own resolver. **Every new triage rule adds a leaf here**, so this bundle changes whenever `diagnostics/triage.py` gains a row.
 
-⚠️ **Every operation below applies to ALL FOUR directories.** When syncing, adding, or dropping a language, process `translations/<lang>.json`, `summary_i18n/<lang>.json`, `reason_i18n/<lang>.json`, _and_ `troubleshoot_i18n/<lang>.json`. The `summary_i18n/en.json` source of truth must stay byte-identical (flattened) to the code-owned `_SUMMARY_LABELS_EN` (config_flow.py) + `COVER_TYPE_LABELS_EN` / `GEOMETRY_LABELS_EN` (cover_types/\_summary_labels.py) dicts — a drift guard in `tests/test_config_flow_summary_i18n.py` / `tests/test_policy_summary_i18n.py` enforces this. Likewise, the `reason_i18n/en.json` source of truth must stay byte-identical (flattened) to the code-owned `_REASON_TEMPLATES_EN` dict (`reason_i18n.py`) — a drift guard in `tests/test_reason_i18n.py` enforces this, and `troubleshoot_i18n/en.json` has the identical relationship to `_TRIAGE_TEMPLATES_EN` (`troubleshoot_i18n.py`), guarded by `tests/test_troubleshoot_i18n.py`. If you change those code dicts, regenerate the matching `en.json` first, then sync de/fr.
+⚠️ **Every operation below applies to ALL FOUR directories.** When syncing, adding, or dropping a language, process `translations/<lang>.json`, `summary_i18n/<lang>.json`, `reason_i18n/<lang>.json`, _and_ `troubleshoot_i18n/<lang>.json`. The `summary_i18n/en.json` source of truth must stay byte-identical (flattened) to the code-owned `_SUMMARY_LABELS_EN` (config_flow.py) + `COVER_TYPE_LABELS_EN` / `GEOMETRY_LABELS_EN` (cover_types/\_summary_labels.py) dicts — a drift guard in `tests/test_config_flow_summary_i18n.py` / `tests/test_policy_summary_i18n.py` enforces this. Likewise, the `reason_i18n/en.json` source of truth must stay byte-identical (flattened) to the code-owned `_REASON_TEMPLATES_EN` dict (`reason_i18n.py`) — a drift guard in `tests/test_reason_i18n.py` enforces this, and `troubleshoot_i18n/en.json` has the identical relationship to `_TRIAGE_TEMPLATES_EN` (`troubleshoot_i18n.py`), guarded by `tests/test_troubleshoot_i18n.py`. If you change those code dicts, regenerate the matching `en.json` first, then sync every shipped language.
 
-Officially shipped languages: **en, de, fr**. Any new language is added only on explicit maintainer request via this skill.
+Officially shipped languages: **en, de, fr, pt-PT**. Any new language is added only on explicit maintainer request via this skill.
 
 ## Picking the Operation
 
@@ -54,7 +54,7 @@ Everything else stays with Haiku output.
 
 ## Operation 1 — Sync
 
-Use when `translations/en.json` has changed and DE/FR need to catch up.
+Use when an English translation source has changed and shipped languages need to catch up.
 
 ### Steps
 
@@ -66,7 +66,7 @@ Use when `translations/en.json` has changed and DE/FR need to catch up.
    - `removed`: keys in target but not in en
    - `changed`: keys where the en value text changed since the target was last generated. Detect by heuristic: if `target[k]` looks like an obvious placeholder (equals `en[k]` verbatim, or is a short English phrase when the rest of the file is clearly in the target language), treat it as changed. When unsure, retranslate — cost of a re-translation is negligible.
 
-2. **If nothing to do**, report "DE/FR already in sync with en.json" and exit.
+2. **If nothing to do**, report all shipped languages are already in sync with the English sources and exit.
 
 3. **Dispatch one subagent per language in parallel** (single message, two `Agent` tool calls). Each subagent handles all FOUR of that language's files (`translations/<lang>.json`, `summary_i18n/<lang>.json`, `reason_i18n/<lang>.json`, and `troubleshoot_i18n/<lang>.json`) and receives:
 
@@ -90,7 +90,7 @@ Use when `translations/en.json` has changed and DE/FR need to catch up.
 
 ## Operation 2 — Add Language
 
-Use to rebuild DE/FR from scratch **or** to add a brand-new language.
+Use to rebuild a shipped language from scratch **or** to add a brand-new language.
 
 ### Steps
 
@@ -126,10 +126,10 @@ Use to rebuild DE/FR from scratch **or** to add a brand-new language.
 
 ## Operation 3 — Drop Language
 
-1. Confirm the language is not `en`, `de`, or `fr`. If the user asks to drop one of the core three, explicitly confirm with them before proceeding (this changes the officially supported set).
+1. Confirm the language is not one of the officially supported core languages (`en`, `de`, `fr`, `pt-PT`). If the user asks to drop a core language, explicitly confirm with them before proceeding (this changes the officially supported set).
 2. Delete ALL FOUR of `translations/<lang>.json`, `summary_i18n/<lang>.json`, `reason_i18n/<lang>.json`, and `troubleshoot_i18n/<lang>.json`.
 3. Remove the code from `scripts/validate_translations.py` `LANGUAGES` list.
-4. Remove any language-specific expectations from `tests/test_translations.py`.
+4. Remove the language from `SHIPPED_LANGUAGES`, i18n parity helper defaults, and explicit locale lists in tests.
 5. Run `venv/bin/python -m pytest tests/test_translations.py tests/test_config_flow_summary_i18n.py tests/test_policy_summary_i18n.py tests/test_reason_i18n.py tests/test_troubleshoot_i18n.py -q` to confirm.
 6. Report what was removed.
 
@@ -145,7 +145,7 @@ Use to rebuild DE/FR from scratch **or** to add a brand-new language.
 
 ## Reading Translation Files
 
-⚠️ **The `translations/` JSON files exceed the Read tool's 25,000-token limit. Never use the Read tool directly on `translations/en.json`, `de.json`, or `fr.json`.** Use Bash+Python instead. The `summary_i18n/`, `reason_i18n/` and `troubleshoot_i18n/` files are smaller (~10 KB) and Read-safe, but use the same Bash+Python flatten/merge flow for consistency and to keep the write format identical (2-space indent, `ensure_ascii=False`, trailing newline).
+⚠️ **The `translations/` JSON files exceed the Read tool's 25,000-token limit. Never use the Read tool directly on `translations/*.json`.** Use Bash+Python instead. The `summary_i18n/`, `reason_i18n/` and `troubleshoot_i18n/` files are smaller (~10 KB) and Read-safe, but use the same Bash+Python flatten/merge flow for consistency and to keep the write format identical (2-space indent, `ensure_ascii=False`, trailing newline).
 
 **Extract specific dotpath values from en.json (Sync):**
 
@@ -334,7 +334,7 @@ Non-EN files (in ALL FOUR of `translations/`, `summary_i18n/`, `reason_i18n/`, a
 - Be valid JSON, 2-space indent.
 - Use `ensure_ascii=False` (keep accented characters as-is, not `\uXXXX`).
 - End with exactly one trailing newline.
-- Preserve the matching en.json's nested structure exactly — for `translations/` every top-level section including `services`; for `summary_i18n/` the full nested label tree (`rules`, `weather`, `cover_types`, `geometry`, …); for `reason_i18n/` the full nested reason-code tree (`solar`, `manual`, `fragment`, `engine`, …).
+- Preserve the matching en.json's nested structure exactly — for `translations/` every top-level section including `services`; for `summary_i18n/` the full nested label tree (`rules`, `weather`, `cover_types`, `geometry`, …); for `reason_i18n/` the full nested reason-code tree (`solar`, `manual`, `fragment`, `engine`, …); and for `troubleshoot_i18n/` the full nested triage-code tree.
 - Contain no `mdi:` icon references, no zero-width characters, no empty string values.
 
 ⚠️ **Placeholder parity is critical for `summary_i18n/` and `reason_i18n/`.** Each label is a Python `str.format` template; the translated value must carry the IDENTICAL set of `{field}` placeholders — including any format specs, e.g. `{distance:.2f}` — and escaped literal `{{`/`}}` as the English source, or the consuming code raises at render time (`_build_config_summary` for `summary_i18n/`; the `reason_i18n.py` resolver for `reason_i18n/`). `tests/test_config_flow_summary_i18n.py` enforces this per key for `summary_i18n/`; `tests/test_reason_i18n.py` (`test_reason_placeholder_parity_de_fr`) enforces it for `reason_i18n/`.

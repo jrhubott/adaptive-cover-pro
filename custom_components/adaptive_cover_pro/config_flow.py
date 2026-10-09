@@ -1680,10 +1680,10 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     # ``{weather_tilt}`` (#1297) is filled with ``custom.tilt_note`` — the same
     # ", tilt {tilt}%" fragment the custom-position line uses, because it says
     # exactly the same thing about the same axis. Reused rather than duplicated
-    # so the two lines cannot drift, and so DE/FR gain nothing new to translate
-    # for the fragment itself. Widening this key's placeholder set is the one
-    # thing ``test_config_summary_placeholder_parity_de_fr`` guards, so the DE
-    # and FR bundles must carry ``{weather_tilt}`` too.
+    # so the two lines cannot drift, and so there is no new fragment key to
+    # translate. Widening this key's placeholder set is the one
+    # thing ``test_config_summary_placeholder_parity_all_languages`` guards, so
+    # every locale bundle must carry ``{weather_tilt}`` too.
     "rules.weather": (
         "🌧️ Weather safety: if {wx_condition} → covers retract to "
         "{weather_pos}%{weather_min}{weather_tilt}{delay}{bypass}"
@@ -1703,8 +1703,8 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "turned OFF — weather overrides are ignored"
     ),
     # A NEW key rather than a ``{}`` placeholder appended to ``rules.weather``:
-    # widening an existing key's placeholder set across three languages is what
-    # ``test_config_summary_placeholder_parity_de_fr`` exists to catch.
+    # widening an existing key's placeholder set across locales is what
+    # ``test_config_summary_placeholder_parity_all_languages`` exists to catch.
     "warnings.weather_window_scoped": (
         "⚠️ Weather safety only acts inside the time window — outside it the "
         "cover follows the end-of-window / sunset position instead, and "

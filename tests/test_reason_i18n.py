@@ -8,7 +8,7 @@ files stay green.
 
 This file covers the foundation only (plan steps 1 & 2): the ``ReasonCode``
 vocabulary, the ``_REASON_TEMPLATES_EN`` map, the ``Reason`` payload + render
-helpers, the shipped ``reason_i18n/{en,de,fr}.json`` bundles + parity locks,
+helpers, the shipped ``reason_i18n/{en,de,fr,pt-PT}.json`` bundles + parity locks,
 and the shared ``i18n_bundle`` loader. No handler/builder/engine emitter is
 migrated yet.
 """
@@ -606,11 +606,11 @@ def test_reason_i18n_en_matches_code_defaults() -> None:
     i18n_parity.assert_en_matches_defaults(REASON_I18N_DIR, _REASON_TEMPLATES_EN)
 
 
-def test_reason_i18n_key_parity_de_fr() -> None:
+def test_reason_i18n_key_parity_all_languages() -> None:
     i18n_parity.assert_key_parity(REASON_I18N_DIR)
 
 
-def test_reason_placeholder_parity_de_fr() -> None:
+def test_reason_placeholder_parity_all_languages() -> None:
     i18n_parity.assert_placeholder_parity(REASON_I18N_DIR)
 
 
@@ -660,9 +660,9 @@ def test_load_reason_labels_missing_language_falls_back_to_english() -> None:
     assert load_reason_labels("zz") == _REASON_TEMPLATES_EN
 
 
-def test_load_reason_labels_de_fr_are_translated() -> None:
-    """DE/FR ship real translations: they cover every code but diverge from EN."""
-    for lang in ("de", "fr"):
+def test_load_reason_labels_supported_languages_are_translated() -> None:
+    """Shipped languages cover every code and diverge from EN."""
+    for lang in ("de", "fr", "pt-PT"):
         labels = load_reason_labels(lang)
         assert set(labels) == set(_REASON_TEMPLATES_EN)
         assert labels != _REASON_TEMPLATES_EN

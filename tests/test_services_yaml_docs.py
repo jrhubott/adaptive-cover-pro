@@ -290,7 +290,7 @@ def test_set_geometry_does_not_expose_venetian_tilt_skip_above():
 # cleanup lands.
 #
 # To remove an entry: make the two files agree on that field (add the missing
-# services.yaml field, add the missing en.json name+description and sync DE/FR
+# services.yaml field, add the missing en.json name+description and sync translations
 # via the acp-translate skill, or delete the field if the service's handler
 # section does not accept it), then delete the line. Deleting is not optional —
 # test_known_field_drift_entries_are_still_drifting fails on a stale entry.
@@ -301,7 +301,7 @@ def test_set_geometry_does_not_expose_venetian_tilt_skip_above():
 KNOWN_FIELD_DRIFT: frozenset[tuple[str, str]] = frozenset(
     {
         # set_custom_position — 4 fields in services.yaml with no en.json entry
-        # (#943 axis constraints, #1318 window scope). Needs EN/DE/FR authoring.
+        # (#943 axis constraints, #1318 window scope). Needs translation authoring.
         ("set_custom_position", "outside_window"),
         ("set_custom_position", "position_max"),
         ("set_custom_position", "tilt_max"),
@@ -343,7 +343,7 @@ def test_services_yaml_en_json_field_parity(service: str) -> None:
         f"translations/en.json documents 'services.{service}' but services.yaml "
         f"has no '{service}' service — the translation block is orphaned: no "
         "action stands behind it, so nothing ever renders it. Delete the en.json "
-        "block (and its DE/FR mirrors, via the acp-translate skill), or add the "
+        "block (and its translation mirrors, via the acp-translate skill), or add the "
         "missing services.yaml service if the action was meant to exist."
     )
     suppressed = {f for (s, f) in KNOWN_FIELD_DRIFT if s == service}
@@ -354,7 +354,7 @@ def test_services_yaml_en_json_field_parity(service: str) -> None:
     assert not only_yaml and not only_en, (
         f"services.yaml and translations/en.json disagree on '{service}' fields.\n"
         "  only in services.yaml (no translation — the Actions UI shows raw "
-        f"English even in DE/FR): {sorted(only_yaml)}\n"
+        f"English in translated UIs): {sorted(only_yaml)}\n"
         "  only in en.json (no yaml field — the option is invisible in the "
         f"Actions UI): {sorted(only_en)}\n"
         "Fix: add the missing entry to the other file — or, if the field is not "

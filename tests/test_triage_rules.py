@@ -1828,7 +1828,7 @@ def test_an_axis_less_cover_with_a_preset_g_still_quotes_the_comparison() -> Non
     assert render(findings[0].reason, load_troubleshoot_labels("en")) == _PRESET_TEXT_EN
 
 
-@pytest.mark.parametrize("language", ["de", "fr"])
+@pytest.mark.parametrize("language", ["de", "fr", "pt-PT"])
 def test_the_hand_entered_variant_drops_the_comparison_in_every_language(
     language: str,
 ) -> None:

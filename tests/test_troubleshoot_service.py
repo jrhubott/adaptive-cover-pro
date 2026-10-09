@@ -520,7 +520,7 @@ async def test_response_is_json_serializable_in_every_shape():
 
 
 def test_translations_contain_get_troubleshooting_key():
-    """en.json, de.json, and fr.json all contain the services.get_troubleshooting key."""
+    """Every shipped translation contains the services.get_troubleshooting key."""
     import json
     from pathlib import Path
 
@@ -530,7 +530,7 @@ def test_translations_contain_get_troubleshooting_key():
         / "adaptive_cover_pro"
         / "translations"
     )
-    for lang in ("en", "de", "fr"):
+    for lang in ("en", "de", "fr", "pt-PT"):
         data = json.loads((translations_dir / f"{lang}.json").read_text())
         assert "get_troubleshooting" in data.get(
             "services", {}

@@ -5,10 +5,10 @@ output must stay byte-identical to the pre-i18n strings — those regression
 locks live in ``tests/test_config_flow_summary.py``. This file covers the new
 machinery: the ``labels`` override param on ``_build_config_summary``, the
 shared ``_load_summary_labels`` helper, per-user-language selection, and
-placeholder parity between en/de/fr.
+placeholder parity between en/de/fr/pt-PT.
 
 The translated label bundles live in the integration's ``summary_i18n/``
-directory (``en.json`` / ``de.json`` / ``fr.json``) rather than under
+directory (``en.json`` / ``de.json`` / ``fr.json`` / ``pt-PT.json``) rather than under
 ``translations/`` — hassfest rejects a custom ``config_summary`` top-level
 category in the HA translation schema, so the data is loaded directly.
 """
@@ -186,7 +186,7 @@ def test_resolve_summary_language_falls_back_to_english_when_nothing_available()
 
 # ---------------------------------------------------------------------------
 # Step 8: placeholder parity — every label key has identical {field} set
-# across en/de/fr, else HA silently drops the translated key.
+# across all shipped languages, else HA silently drops the translated key.
 # ---------------------------------------------------------------------------
 
 
@@ -198,8 +198,8 @@ _SUMMARY_CODE_DEFAULTS = {
 }
 
 
-def test_summary_i18n_key_parity_de_fr() -> None:
-    """de/fr bundles must expose the IDENTICAL key set as en — else a summary
+def test_summary_i18n_key_parity_all_languages() -> None:
+    """Every bundle must expose the IDENTICAL key set as en — else a summary
     line silently falls back to English.
     """
     i18n_parity.assert_key_parity(SUMMARY_I18N_DIR)
@@ -215,8 +215,8 @@ def test_summary_i18n_en_matches_code_defaults() -> None:
     i18n_parity.assert_en_matches_defaults(SUMMARY_I18N_DIR, _SUMMARY_CODE_DEFAULTS)
 
 
-def test_config_summary_placeholder_parity_de_fr() -> None:
-    """For every label key, de/fr must expose the IDENTICAL set of {field}
+def test_config_summary_placeholder_parity_all_languages() -> None:
+    """Every translation must expose the IDENTICAL set of {field}
     placeholders as en — else HA silently drops the translated key.
     """
     i18n_parity.assert_placeholder_parity(SUMMARY_I18N_DIR)

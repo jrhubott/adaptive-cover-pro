@@ -54,5 +54,5 @@ def test_every_geometry_field_has_translation(flow: str, block: str) -> None:
     assert not missing, (
         f"{flow}.step.geometry.{block} is missing entries for geometry schema "
         f"fields {missing} — they render as raw keys in the UI. Add them to "
-        "translations/en.json, then run `acp-translate` to sync DE/FR."
+        "translations/en.json, then run `acp-translate` to sync supported languages."
     )

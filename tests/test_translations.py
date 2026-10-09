@@ -1,8 +1,8 @@
 """Tests for translation files — structural parity with en.json + content hygiene.
 
-The integration ships English, German, and French. `en.json` is the single
-source of truth. DE/FR must match en.json exactly for every section including
-`services`.
+The integration ships English, German, French, and European Portuguese.
+`en.json` is the single source of truth. Every translation must match en.json
+exactly for every section including `services`.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ TRANSLATIONS_DIR = (
     / "translations"
 )
 
-SHIPPED_LANGUAGES = {"en", "de", "fr"}
+SHIPPED_LANGUAGES = {"en", "de", "fr", "pt-PT"}
 
 EN_ONLY_SECTIONS: tuple[str, ...] = ()
 
@@ -85,7 +85,7 @@ def _strip_en_only(keys: set[str]) -> set[str]:
 
 
 def test_shipped_translation_files_exist() -> None:
-    """Exactly en, de, fr are present in translations/."""
+    """Exactly en, de, fr, and pt-PT are present in translations/."""
     actual = {f.stem for f in TRANSLATION_FILES}
     assert actual == SHIPPED_LANGUAGES, (
         f"Translation file mismatch. "

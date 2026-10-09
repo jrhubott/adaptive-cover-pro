@@ -70,7 +70,7 @@ def assert_en_matches_defaults(
 
 
 def assert_key_parity(
-    bundle_dir: Path | str, langs: tuple[str, ...] = ("de", "fr")
+    bundle_dir: Path | str, langs: tuple[str, ...] = ("de", "fr", "pt-PT")
 ) -> None:
     """Assert each ``<lang>.json`` exposes the identical key set as ``en.json``."""
     en = flatten(load_bundle(bundle_dir, "en.json"))
@@ -85,7 +85,7 @@ def assert_key_parity(
 
 
 def assert_placeholder_parity(
-    bundle_dir: Path | str, langs: tuple[str, ...] = ("de", "fr")
+    bundle_dir: Path | str, langs: tuple[str, ...] = ("de", "fr", "pt-PT")
 ) -> None:
     """Assert each key's placeholder set matches ``en.json`` across ``langs``."""
     en = flatten(load_bundle(bundle_dir, "en.json"))
