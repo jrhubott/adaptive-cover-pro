@@ -39,6 +39,7 @@ from ..const import (
     CONF_MIN_POSITION,
     CONF_MIN_POSITION_SUN_TRACKING,
     CONF_SENSOR_TYPE,
+    CONF_PROTECTED_HEIGHT,
     CONF_SILL_HEIGHT,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
@@ -125,6 +126,7 @@ async def async_handle_export(call: ServiceCall) -> dict:
             CONF_HEIGHT_WIN: options.get(CONF_HEIGHT_WIN),
             CONF_WINDOW_DEPTH: options.get(CONF_WINDOW_DEPTH, 0.0),
             CONF_SILL_HEIGHT: options.get(CONF_SILL_HEIGHT) or 0.0,
+            CONF_PROTECTED_HEIGHT: options.get(CONF_PROTECTED_HEIGHT) or 0.0,
         },
         "horizontal": {
             CONF_LENGTH_AWNING: options.get(CONF_LENGTH_AWNING),

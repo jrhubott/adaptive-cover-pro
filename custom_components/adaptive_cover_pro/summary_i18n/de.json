@@ -265,6 +265,7 @@
       "tall": "{h}m hohes Fenster",
       "blocking_glass": "Sonne {d}m vor dem Glas blockiert",
       "reveal": "Laibung {depth}m",
+      "protected_height": "Sonnengrenze {height}m über dem Boden gemessen",
       "sill": "Fensterbank {sill}m",
       "height": "{v}m Fensterhöhe"
     },

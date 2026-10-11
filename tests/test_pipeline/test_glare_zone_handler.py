@@ -44,6 +44,7 @@ def _make_vertical_cover(
     cover = MagicMock(spec=AdaptiveVerticalCover)
     cover.direct_sun_valid = direct_sun_valid
     cover.distance = distance
+    cover.tracking_distance = distance
     cover.gamma = gamma
     cover.sol_elev = sol_elev
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)

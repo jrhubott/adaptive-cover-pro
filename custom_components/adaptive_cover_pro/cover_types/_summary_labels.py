@@ -64,6 +64,7 @@ COVER_TYPE_LABELS_EN: dict[str, str] = {
 # shared (slat depth/spacing/mode → tilt + venetian; window height → awning +
 # oscillating; window dims → blind + venetian via the shared helper).
 GEOMETRY_LABELS_EN: dict[str, str] = {
+    "geometry.window.protected_height": "sun boundary measured {height}m above floor",
     # Window-dimensions block (blind + venetian, via window_dimensions_lines).
     "geometry.window.tall": "{h}m tall window",
     "geometry.window.blocking_glass": "blocking sun {d}m from the glass",

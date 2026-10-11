@@ -272,6 +272,7 @@
       "tall": "{h}m tall window",
       "blocking_glass": "blocking sun {d}m from the glass",
       "reveal": "reveal {depth}m",
+      "protected_height": "sun boundary measured {height}m above floor",
       "sill": "sill {sill}m",
       "height": "{v}m window height"
     },

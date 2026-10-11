@@ -211,6 +211,7 @@ CONF_AZIMUTH = "set_azimuth"  # window azimuth, degrees 0-359 (south=180)
 CONF_HEIGHT_WIN = "window_height"  # window height, metres (0.1-50.0)
 CONF_WINDOW_WIDTH = "window_width"  # window width, metres (0.1-50.0)
 CONF_WINDOW_DEPTH = "window_depth"  # window recess depth, metres (0.0-5.0)
+CONF_PROTECTED_HEIGHT = "protected_height"  # protected plane above floor, metres
 CONF_SILL_HEIGHT = "sill_height"  # sill height above floor, metres (0.0-50.0)
 CONF_DISTANCE = "distance_shaded_area"  # blind→shaded distance, m (0.0-50.0)
 # Roof / skylight window geometry (#212). A roof window is a vertical-style
@@ -2694,6 +2695,7 @@ MIN_COS_GAMMA_CLAMP = 0.01
 _RANGE_HEIGHT_WIN = (0.1, 50.0)  # CONF_HEIGHT_WIN, metres
 _RANGE_WINDOW_WIDTH = (0.1, 50.0)  # CONF_WINDOW_WIDTH, metres
 _RANGE_WINDOW_DEPTH = (0.0, 5.0)  # CONF_WINDOW_DEPTH, metres
+_RANGE_PROTECTED_HEIGHT = (0.0, 50.0)  # CONF_PROTECTED_HEIGHT, metres
 _RANGE_SILL_HEIGHT = (0.0, 50.0)  # CONF_SILL_HEIGHT, metres
 
 # Glare zones — per-zone X/Y/Radius/Z bounds. Mirror the selector ranges in

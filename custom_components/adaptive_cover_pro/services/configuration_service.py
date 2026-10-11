@@ -32,6 +32,7 @@ from ..const import (
     CONF_MIN_TILT_SUN_ONLY,
     CONF_TILT_ANGLE_0,
     CONF_TILT_ANGLE_100,
+    CONF_PROTECTED_HEIGHT,
     CONF_SILL_HEIGHT,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
@@ -117,6 +118,7 @@ class ConfigurationService:
             h_win=_raw_h_win if _raw_h_win is not None else DEFAULT_WINDOW_HEIGHT,
             window_depth=options.get(CONF_WINDOW_DEPTH)
             or 0.0,  # Default 0.0; handle None for non-vertical covers
+            protected_height=options.get(CONF_PROTECTED_HEIGHT) or 0.0,
             sill_height=options.get(CONF_SILL_HEIGHT)
             or 0.0,  # Default 0.0; handle None for non-vertical covers
         )

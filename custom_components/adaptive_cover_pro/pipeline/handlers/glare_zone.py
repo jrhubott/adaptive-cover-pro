@@ -82,7 +82,7 @@ class GlareZoneHandler(OverrideHandler):
             return None
         cover = snapshot.cover
         window_half_width = snapshot.glare_zones.window_width / 2.0
-        base_distance = cover.distance
+        base_distance = cover.tracking_distance
 
         zones_by_name = {z.name: z for z in snapshot.glare_zones.zones}
         zone_results: list[tuple[str, float]] = []

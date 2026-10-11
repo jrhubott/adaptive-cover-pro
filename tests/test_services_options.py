@@ -2151,6 +2151,16 @@ class TestSetInterpolation:
 class TestSetGeometry:
     """Integration tests for set_geometry service."""
 
+    async def test_updates_protected_height_for_blind(self, hass: HomeAssistant):
+        """The live geometry service saves the canonical protected height."""
+        await _setup(hass, entry_id="geo_protected", cover_type=CoverType.BLIND)
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_geometry", {"protected_height": 0.6096})
+        assert mock_update.call_args[1]["options"]["protected_height"] == 0.6096
+
     async def test_updates_window_height_for_blind(self, hass: HomeAssistant):
         await _setup(hass, entry_id="geo_01", cover_type=CoverType.BLIND)
         with (

@@ -162,6 +162,20 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         """Get sill height from vert_config."""
         return self.vert_config.sill_height
 
+    @property
+    def protected_height(self) -> float:
+        """Height above the floor of the room-wide protected plane."""
+        return self.vert_config.protected_height
+
+    @property
+    def tracking_distance(self) -> float:
+        """Floor-equivalent distance for ordinary tracking, before sill adjustment."""
+        if self.protected_height <= 0:
+            return self.distance
+        return self.distance + _elevation_offset(
+            self.protected_height, self.sol_elev, self.gamma
+        )
+
     def _handle_edge_cases(self) -> tuple[bool, float]:
         """Handle extreme angles with safe fallbacks.
 
@@ -203,7 +217,7 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         (``DiagnosticsBuilder``), never here. ``glare_zones_active`` is left
         empty; the GlareZoneHandler populates it downstream via diagnostics.
         """
-        return {
+        details = {
             TRACE_KEY_SOL_ELEV_DEG: float(self.sol_elev),
             TRACE_KEY_GAMMA_DEG: float(self.gamma),
             TRACE_KEY_POSITION_PCT: PositionConverter.to_percentage(result, self.h_win),
@@ -221,6 +235,11 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             "adjusted_height_m": adjusted_height,
             "clamped_to_window": bool(clamped_to_window),
         }
+        if self.protected_height > 0:
+            details["protected_height_m"] = (
+                self.protected_height if effective_distance_source == "base" else 0.0
+            )
+        return details
 
     def _project_drop(
         self, effective_distance: float
@@ -297,7 +316,7 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             effective_distance_base = effective_distance_override
             effective_distance_source = "glare_zone"
         else:
-            effective_distance_base = self.distance
+            effective_distance_base = self.tracking_distance
             effective_distance_source = "base"
 
         effective_distance = effective_distance_base
@@ -308,43 +327,17 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             sill_offset = _elevation_offset(self.sill_height, self.sol_elev, self.gamma)
             effective_distance -= sill_offset
 
-        # ── Sill geometry — why negative effective_distance means FULLY CLOSED ────────
-        # "Position" = exposed glass from the bottom (0 = fully closed, h_win = open).
-        # Window plane at y=0 (the glass), room interior at y>0. A ray enters the
-        # glass at height H above the FLOOR (H = sill_height + position — the top of
-        # the exposed band) at surface-solar-azimuth γ and elevation θ. The ray's
-        # horizontal PATH before it reaches the floor is L = H / tan(θ); only the
-        # component of that path NORMAL to the window counts as perpendicular
-        # penetration into the room: y = L·cos(γ) = H·cos(γ) / tan(θ).
-        #
-        # Contract: the ray must not penetrate past shaded_distance (D), i.e. y ≤ D:
-        #   H·cos(γ) / tan(θ) ≤ D  ⟺  H ≤ D·tan(θ) / cos(γ)
-        #
-        # With H = sill_height + position, solving for position and clipping to the
-        # physical window range gives
-        #   position = clip(D·tan(θ)/cos(γ) − sill_height, 0, h_win)
-        #
-        # `_elevation_offset` returns the PERPENDICULAR sill offset
-        # (sill_height·cos(γ)/tan(θ)) — the same units as `distance` — so
-        #   effective_distance = distance − sill_offset          (perpendicular − perpendicular)
-        #   position           = effective_distance·tan(θ) / cos(γ)   (via _project_drop)
-        # is algebraically identical to the formula above for EVERY γ, not only γ = 0 —
-        # PROVIDED θ is above the sill division's own clamp. `_elevation_offset` divides
-        # by tan(θ) floored at MIN_TAN_ELEVATION_CLAMP (0.05, θ ≈ 2.9°), while
-        # `_project_drop` multiplies by the raw, unclamped tan(θ); below ≈2.9° elevation
-        # the two no longer use the same tan(θ), so the cancellation is inexact there.
-        # This asymmetry predates #1283's fix and is unrelated to it.
-        # (Before #1283's fix, `_elevation_offset` returned a ray PATH LENGTH instead of
-        # a perpendicular offset, so this same-looking pair of lines silently
-        # over-subtracted the sill by a factor of 1/cos(γ) at every γ != 0.)
-        #
-        # When effective_distance ≤ 0, even the LOWEST glass entry (H = sill_height,
-        # i.e. position = 0) already violates the contract above. Every higher entry
-        # is worse. The blind must be FULLY CLOSED (position=0).
-        #
-        # Issue #304 short-circuited here with `return h_win` (fully open), which is
-        # the geometric inverse of the correct answer. Issue #358 restores the clamp so
-        # the normal path below naturally produces position=0 when effective_distance=0.
+        # Position is exposed glass measured from the sill. For room-wide
+        # tracking, distance D is measured on the horizontal plane at height Z:
+        #   position = clip(D*tan(elev)/cos(gamma) + Z - sill_height, 0, h_win).
+        # tracking_distance adds the floor-equivalent Z offset before the sill
+        # offset is subtracted. Glare-zone overrides already include their own
+        # target Z, so they bypass tracking_distance (no double counting).
+        # Both offsets use the same cosine and low-elevation divisor guards.
+        # Below ~2.9 degrees their height contribution remains conservative;
+        # the existing very-low-sun fully-closed fallback is unchanged.
+        # A negative effective distance means even the lowest glass entry
+        # violates the boundary: clamp to fully closed, never fully open.
         if effective_distance < 0:
             effective_distance = 0.0
 
