@@ -54,6 +54,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_TRACKING_SEASONS,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
+    DEFAULT_WEATHER_STATE,
     ClimateStrategy,
     TrackingSeason,
 )
@@ -196,6 +197,27 @@ class TestClimateStateWiring:
         coord._read_climate_state(options)
         _, kwargs = coord._climate_provider.read.call_args
         assert kwargs.get("weather_condition") == ["sunny", "partlycloudy"]
+
+    @pytest.mark.unit
+    def test_weather_condition_defaults_when_never_saved(self):
+        """A missing CONF_WEATHER_STATE must fall back to DEFAULT_WEATHER_STATE.
+
+        The options flow pre-fills the default, but an entry whose weather page
+        was never saved has no key; passing None made is_sunny() always True,
+        so rain or clouds never triggered low-light/cloud suppression.
+        """
+        coord = _make_coordinator()
+        coord._read_climate_state({CONF_WEATHER_ENTITY: "weather.home"})
+        _, kwargs = coord._climate_provider.read.call_args
+        assert kwargs.get("weather_condition") == DEFAULT_WEATHER_STATE
+
+    @pytest.mark.unit
+    def test_weather_condition_explicit_empty_list_preserved(self):
+        """An explicitly saved empty list is a user choice, not a missing key."""
+        coord = _make_coordinator()
+        coord._read_climate_state({CONF_WEATHER_STATE: []})
+        _, kwargs = coord._climate_provider.read.call_args
+        assert kwargs.get("weather_condition") == []
 
     @pytest.mark.unit
     def test_lux_entity_forwarded_when_toggle_on(self):
