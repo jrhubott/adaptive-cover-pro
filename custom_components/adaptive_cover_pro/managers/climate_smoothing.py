@@ -138,6 +138,14 @@ class ClimateSmoothingManager:
             self._reset()
             return None
 
+        if not self._debouncer.is_seeded and not readings.season_temperature_available:
+            # The season-driving temperature has no value yet (typically a
+            # cloud sensor still unavailable right after an HA restart). Its
+            # crossings fail to "no season"; seeding on that would make the
+            # first real reading a change and delay it by a full hold-time.
+            # Keep the seed for the first reading that has a temperature.
+            return None
+
         self._update_latches(readings)
         instantaneous = ClimateTempFlags(
             winter=self._winter_latched,

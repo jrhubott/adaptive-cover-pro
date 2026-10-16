@@ -87,6 +87,11 @@ class HoldDebouncer:
         """Return True when a hold-time debounce timer is pending."""
         return self._timer.is_running
 
+    @property
+    def is_seeded(self) -> bool:
+        """Return True once the first observation has been committed."""
+        return self._seeded
+
     def evaluate(self, instantaneous: Any, hold_time: int) -> str | None:
         """Fold this cycle's instantaneous value into the debounce.
 

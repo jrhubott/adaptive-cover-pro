@@ -89,6 +89,13 @@ class ClimateReadings:
     outside_release_cleared: bool = False
     outside_above_extreme_heat: bool = False
     extreme_heat_release_cleared: bool = True
+    # Whether the season-driving temperature (inside, or outside with
+    # temp_switch) had a numeric value this cycle. False right after an HA
+    # restart while a cloud sensor is still unavailable: the crossings above
+    # then fail to "no season", which ClimateSmoothingManager must not take as
+    # its startup seed. Default True so a snapshot built without it is
+    # unaffected.
+    season_temperature_available: bool = True
     # Effective indoor temperature entity actually read, and its provenance
     # (issue #786): "explicit" (configured), "area" (auto-resolved from the
     # cover's HA area), or "none". ``inside_temperature_area_id`` is set only
@@ -274,6 +281,10 @@ class ClimateProvider:
     ) -> dict[str, bool]:
         """Compute the four temperature crossings (issue #917).
 
+        Also reports ``season_temperature_available`` (False when the
+        season-driving temperature is missing), so the smoothing manager can
+        tell "no season" from "no reading".
+
         Resolves the season-driving current temperature FIRST (same
         outside/inside/temp_switch logic as ``ClimateCoverData``), then delegates
         each crossing to the pure ``engine.climate_crossings`` helpers so the
@@ -305,6 +316,7 @@ class ClimateProvider:
             "outside_release_cleared": outside_cleared,
             "outside_above_extreme_heat": extreme,
             "extreme_heat_release_cleared": extreme_cleared,
+            "season_temperature_available": current_temp is not None,
         }
 
     # ------------------------------------------------------------------

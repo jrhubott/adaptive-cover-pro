@@ -47,6 +47,7 @@ def _readings(
     outside_cleared: bool | None = None,
     extreme: bool = False,
     extreme_cleared: bool | None = None,
+    temperature_available: bool = True,
 ) -> ClimateReadings:
     """Build ClimateReadings; blank-release defaults mirror ``not activate``."""
     return ClimateReadings(
@@ -73,6 +74,7 @@ def _readings(
         extreme_heat_release_cleared=(
             (not extreme) if extreme_cleared is None else extreme_cleared
         ),
+        season_temperature_available=temperature_available,
     )
 
 
@@ -287,6 +289,38 @@ class TestUnseededStartup:
         assert signal is None
         assert m.resolved_flags.winter is True
         assert m.is_timeout_running is False
+
+    def test_unavailable_first_reading_does_not_consume_the_seed(self, logger):
+        """A restart while the temperature sensor is still unavailable.
+
+        The first cycles see no season-driving temperature, so every crossing
+        fails to "no season". Seeding on that would make the first real
+        (winter) reading a change and hold it for the full hold-time, leaving
+        the cover sun-tracking meanwhile. The seed must wait for a reading.
+        """
+        m = ClimateSmoothingManager(logger=logger)
+        m.update_config(enabled=True, hold_time_seconds=300)
+
+        assert m.evaluate(_readings(temperature_available=False)) is None
+        assert m.evaluate(_readings(temperature_available=False)) is None
+        assert m.resolved_flags.winter is False
+        assert m.is_timeout_running is False
+
+        # The sensor comes back cold: the world as found, committed in-line.
+        assert m.evaluate(_readings(winter=True)) is None
+        assert m.resolved_flags.winter is True
+        assert m.is_timeout_running is False
+
+    def test_unavailable_reading_after_seed_still_debounces(self, logger):
+        """Once seeded, a missing temperature is an ordinary change again."""
+        m = ClimateSmoothingManager(logger=logger)
+        m.update_config(enabled=True, hold_time_seconds=300)
+        assert m.evaluate(_readings(winter=True)) is None
+        assert m.resolved_flags.winter is True
+
+        signal = m.evaluate(_readings(temperature_available=False))
+        assert signal == "should_start_timeout"
+        assert m.resolved_flags.winter is True
 
 
 # ---------------------------------------------------------------------------

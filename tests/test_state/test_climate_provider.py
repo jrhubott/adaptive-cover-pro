@@ -122,6 +122,20 @@ class TestTemperatureCrossings:
         assert r.temp_low_release_cleared is False  # blank release → not activate
 
     @pytest.mark.unit
+    def test_season_temperature_available_flag(self, provider, mock_hass):
+        """The flag follows the season-driving temperature, not just any input."""
+        self._states(mock_hass, {"sensor.out": _mock_state("sensor.out", "18")})
+        r = provider.read(outside_entity="sensor.out", temp_switch=True, temp_low=21)
+        assert r.season_temperature_available is True
+
+        self._states(
+            mock_hass, {"sensor.out": _mock_state("sensor.out", "unavailable")}
+        )
+        r = provider.read(outside_entity="sensor.out", temp_switch=True, temp_low=21)
+        assert r.season_temperature_available is False
+        assert r.temp_below_low_threshold is False
+
+    @pytest.mark.unit
     def test_outside_high_activate(self, provider, mock_hass):
         self._states(mock_hass, {"sensor.out": _mock_state("sensor.out", "33")})
         r = provider.read(outside_entity="sensor.out", outside_threshold=32)
