@@ -21,6 +21,7 @@ from .const import (
     BLIND_SPOT_SLOTS,
     DEFAULT_AWNING_SHADE_MODE,
     GLARE_ZONE_SLOT_NUMBERS,
+    GLARE_ZONE_SLOTS,
     CONF_AWNING_SHADE_MODE,
     CONF_BUILDING_PROFILE_ID,
     CONF_CLOUD_COVERAGE_ENTITY,
@@ -1183,6 +1184,12 @@ _RUNTIME_APPLICABLE_OPTIONS: dict[str, str] = {
     # a calibration run rewrites it mid-pass, and a reload there would tear down
     # the run that produced it.
     CONF_TRAVEL_TIME_CALIBRATION: "async_apply_travel_calibration_update",
+    # Zone heights can follow a moving target (a sit/stand desk). Zones are rebuilt
+    # from the live options on every refresh, so a refresh is all they need.
+    **{
+        GLARE_ZONE_SLOTS[slot]["z"]: "async_apply_sun_tracking_update"
+        for slot in GLARE_ZONE_SLOT_NUMBERS
+    },
 }
 
 
