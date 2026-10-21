@@ -246,16 +246,27 @@ class TestGlareZoneGeometry:
         )
         assert dist == pytest.approx(3.00, abs=1e-6)
 
-    def test_zone_offset_negative_gamma(self):
-        """Zone offset left, sun from right (negative gamma): ray misses narrow window."""
-        # Zone at x=-1.0, y=2.0, r=0; gamma=-30 (sun from right)
-        # nearest_x = -1.0 + 0*sin(-30) = -1.0
-        # nearest_y = 2.0 - 0*cos(-30) = 2.0
-        # x_at_window = -1.0 + 2.0*tan(-30) ≈ -1.0 - 1.1547 = -2.1547
-        # abs(-2.1547) > 1.5 → None (ray exits left of window)
+    def test_zone_offset_left_is_reached_by_sun_from_the_right(self):
+        """Zone left of centre, sun from the right (negative gamma): the ray reaches it.
+
+        A sun on the right sends light to the left, so the ray lands left of where it
+        entered: x_at_window = -1.0 + 2.0*tan(30) ≈ +0.1547, inside the window.
+        """
         zone = GlareZone(name="Z", x=-1.0, y=2.0, radius=0.0)
         dist = _glare_zone_effective_distance(
             zone, gamma=-30.0, sol_elev=45.0, window_half_width=1.5
+        )
+        assert dist == pytest.approx(2.0, abs=1e-6)
+
+    def test_zone_offset_left_is_missed_by_sun_from_the_left(self):
+        """Zone left of centre, sun from the left (positive gamma): the ray misses.
+
+        The light goes right, so it would have entered at
+        x_at_window = -1.0 - 2.0*tan(30) ≈ -2.1547, outside a 1.5 m half-window.
+        """
+        zone = GlareZone(name="Z", x=-1.0, y=2.0, radius=0.0)
+        dist = _glare_zone_effective_distance(
+            zone, gamma=30.0, sol_elev=45.0, window_half_width=1.5
         )
         assert dist is None
 

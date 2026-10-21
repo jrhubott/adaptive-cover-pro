@@ -102,11 +102,15 @@ def glare_zone_effective_distance(
 
     Args:
         zone: The glare zone definition (x, y, radius, z — all in metres).
-        gamma: Surface solar azimuth in degrees (positive = sun to the right).
+        gamma: Surface solar azimuth in degrees, as ``SunGeometry.gamma``
+            (positive = sun to the left, looking out).
         sol_elev: Sun elevation in degrees (used only when zone.z > 0).
         window_half_width: Half the window width in metres.
 
     """
+    # Zone X is positive to the right, looking out, but gamma is positive for a sun on
+    # the left. Flip it so the projection below sees a sun on the right as positive.
+    gamma = -gamma
     gamma_rad = rad(gamma)
 
     # First-hit point on the zone circle: the point facing the incoming sun.
