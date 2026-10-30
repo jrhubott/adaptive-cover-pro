@@ -292,11 +292,11 @@ async def test_last_update_success_time_attribute_exists(hass: HomeAssistant) ->
         "build_diagnostic_data() will crash every update cycle"
     )
     # Value is None (no successful cycle yet) or a UTC datetime — both valid.
-    import datetime as _dt
+    import datetime as dt
 
     val = coordinator._last_update_success_time
     assert val is None or isinstance(
-        val, _dt.datetime
+        val, dt.datetime
     ), f"_last_update_success_time must be None or datetime, got {type(val)}"
 
 

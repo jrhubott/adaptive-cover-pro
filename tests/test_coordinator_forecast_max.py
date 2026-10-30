@@ -195,9 +195,9 @@ class TestForecastMaxScheduler:
         assert coord._forecast_max_unsub is not None
 
         # Tick fires another background task.
-        import datetime as _dt
+        import datetime as dt
 
-        cb(_dt.datetime.now(_dt.UTC))
+        cb(dt.datetime.now(dt.UTC))
         assert coord.config_entry.async_create_background_task.call_count == 2
 
     @pytest.mark.asyncio

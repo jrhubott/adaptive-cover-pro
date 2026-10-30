@@ -2123,12 +2123,11 @@ async def test_force_apply_bypasses_time_delta_gate(svc, mock_hass):
     Regression: force_override and weather_override commands were being blocked
     by the time_delta gate even though force=True should skip all gates.
     """
-    import datetime as _dt
 
     # Use current=50 so cover is far from target=0 (|50-0|=50 > tolerance=3)
     # ensuring the same-position band doesn't interfere.
     _patch_position(svc, 50)
-    recent = _dt.datetime.now(_dt.UTC) - _dt.timedelta(seconds=30)  # 0.5 min ago
+    recent = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=30)  # 0.5 min ago
     with (
         _patch_caps(),
         patch(

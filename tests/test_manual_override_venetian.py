@@ -630,7 +630,6 @@ async def test_premature_stall_does_not_start_publish_lag_clock_early() -> None:
     profile and asserts the stamp lands AFTER the startup-grace window
     has elapsed.
     """
-    import datetime as _dt
 
     from custom_components.adaptive_cover_pro.cover_types.venetian.sequencer import (
         DualAxisSequencer,
@@ -665,7 +664,7 @@ async def test_premature_stall_does_not_start_publish_lag_clock_early() -> None:
     seq_mod.VENETIAN_POSITION_SETTLE_POLL_SECONDS = 0.01
     seq_mod.VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS = 0.05
     try:
-        t0 = _dt.datetime.now(_dt.UTC)
+        t0 = dt.datetime.now(dt.UTC)
         await seq.run_sequence(
             "cover.x", position_target=9, tilt_target=60, reason="solar"
         )
@@ -695,11 +694,10 @@ def _make_policy_with_grace(
     The sequencer is wired for real via attach() so the suppression path
     runs exactly as it does in production.
     """
-    import datetime as _dt
 
     grace_mgr = GracePeriodManager(logger=MagicMock())
     # Stamp the entity directly — avoids asyncio.create_task() in unit-test context.
-    grace_mgr._command_timestamps[entity_id] = _dt.datetime.now().timestamp()
+    grace_mgr._command_timestamps[entity_id] = dt.datetime.now().timestamp()
 
     policy = VenetianPolicy()
     policy.attach(

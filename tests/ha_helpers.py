@@ -10,7 +10,7 @@ pytest-homeassistant-custom-component.
 from __future__ import annotations
 
 import asyncio
-import datetime
+import datetime as dt
 from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import Any
@@ -198,8 +198,8 @@ async def setup_integration(
             "azimuth": 180.0,
             "elevation": 45.0,
             "rising": True,
-            "next_rising": datetime.datetime.now(datetime.UTC).isoformat(),
-            "next_setting": datetime.datetime.now(datetime.UTC).isoformat(),
+            "next_rising": dt.datetime.now(dt.UTC).isoformat(),
+            "next_setting": dt.datetime.now(dt.UTC).isoformat(),
         },
     )
     hass.states.async_set(

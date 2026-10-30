@@ -10,7 +10,7 @@ snapshot (stickiness across evening refreshes).
 
 from __future__ import annotations
 
-import datetime as _dt
+import datetime as dt
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.const import (
@@ -56,11 +56,11 @@ def _coord_with_window(
     coord._time_mgr = time_mgr
 
     sun_data = MagicMock()
-    today = _dt.date.today()
-    sun_data.sunset.return_value = _dt.datetime(
+    today = dt.date.today()
+    sun_data.sunset.return_value = dt.datetime(
         today.year, today.month, today.day, sunset_hour, 0, 0
     )
-    sun_data.sunrise.return_value = _dt.datetime(
+    sun_data.sunrise.return_value = dt.datetime(
         today.year, today.month, today.day, sunrise_hour, 0, 0
     )
     cover_data = MagicMock()
@@ -80,9 +80,9 @@ class TestCoordinatorSeamReadsEndOfWindow:
             CONF_SUNSET_POS: 20,
             CONF_END_OF_WINDOW_POS: 0,
         }
-        today = _dt.date.today()
+        today = dt.date.today()
         # 19:30 — after the window end but before astral sunset (20:00).
-        now = _dt.datetime(today.year, today.month, today.day, 19, 30, 0)
+        now = dt.datetime(today.year, today.month, today.day, 19, 30, 0)
         with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
         assert eff == 0
@@ -96,8 +96,8 @@ class TestCoordinatorSeamReadsEndOfWindow:
             CONF_SUNSET_POS: 20,
             CONF_END_OF_WINDOW_POS: 0,
         }
-        today = _dt.date.today()
-        now = _dt.datetime(today.year, today.month, today.day, 12, 0, 0)
+        today = dt.date.today()
+        now = dt.datetime(today.year, today.month, today.day, 12, 0, 0)
         with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
         assert eff == 80
@@ -111,8 +111,8 @@ class TestCoordinatorSeamReadsEndOfWindow:
             CONF_SUNSET_POS: 20,
             CONF_END_OF_WINDOW_POS: 0,
         }
-        today = _dt.date.today()
-        now = _dt.datetime(today.year, today.month, today.day, 21, 0, 0)
+        today = dt.date.today()
+        now = dt.datetime(today.year, today.month, today.day, 21, 0, 0)
         with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
         assert eff == 20
@@ -126,8 +126,8 @@ class TestCoordinatorSeamReadsEndOfWindow:
             CONF_SUNSET_POS: None,
             CONF_END_OF_WINDOW_POS: 0,
         }
-        today = _dt.date.today()
-        now = _dt.datetime(today.year, today.month, today.day, 22, 0, 0)
+        today = dt.date.today()
+        now = dt.datetime(today.year, today.month, today.day, 22, 0, 0)
         with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
         assert eff == 0
@@ -140,8 +140,8 @@ class TestCoordinatorSeamReadsEndOfWindow:
             CONF_DEFAULT_HEIGHT: 80,
             CONF_SUNSET_POS: 20,
         }
-        today = _dt.date.today()
-        now = _dt.datetime(today.year, today.month, today.day, 19, 30, 0)
+        today = dt.date.today()
+        now = dt.datetime(today.year, today.month, today.day, 19, 30, 0)
         with freeze_helpers_now(now):
             eff, is_sunset = coord._compute_current_effective_default(options)
         assert eff == 80
@@ -190,12 +190,12 @@ class TestSunsetBoundaryPredicateIsNotIsSunsetActive:
         time_mgr.window_explicitly_started = False
         time_mgr.before_end_time = False  # window already clock-closed
 
-        today = _dt.date.today()
+        today = dt.date.today()
         sun_data = MagicMock()
-        sun_data.sunset.return_value = _dt.datetime(
+        sun_data.sunset.return_value = dt.datetime(
             today.year, today.month, today.day, 21, 4, 0
         )
-        sun_data.sunrise.return_value = _dt.datetime(
+        sun_data.sunrise.return_value = dt.datetime(
             today.year, today.month, today.day, 6, 0, 0
         )
         return hass, time_mgr, sun_data
@@ -213,8 +213,8 @@ class TestSunsetBoundaryPredicateIsNotIsSunsetActive:
             CONF_END_OF_WINDOW_POS: 60,
             CONF_SUNSET_OFFSET: 60,
         }
-        today = _dt.date.today()
-        now = _dt.datetime(today.year, today.month, today.day, 19, 30, 0)
+        today = dt.date.today()
+        now = dt.datetime(today.year, today.month, today.day, 19, 30, 0)
 
         coord = _coord_with_window(before_end_time=False)
         coord.hass = hass
@@ -245,8 +245,8 @@ class TestSunsetBoundaryPredicateIsNotIsSunsetActive:
             CONF_END_OF_WINDOW_POS: 60,
             CONF_SUNSET_OFFSET: 60,
         }
-        today = _dt.date.today()
-        now = _dt.datetime(today.year, today.month, today.day, 22, 5, 0)
+        today = dt.date.today()
+        now = dt.datetime(today.year, today.month, today.day, 22, 5, 0)
 
         coord = _coord_with_window(before_end_time=False)
         coord.hass = hass

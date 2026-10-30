@@ -243,13 +243,13 @@ def _coord_with_gate(*, gate_is_dark: bool, gate_is_configured: bool):
 
     # get_blind_data returns an object whose sun_data is a controllable mock.
     sun_data = MagicMock()
-    import datetime as _dt
+    import datetime as dt
 
-    today = _dt.date.today()
-    sun_data.sunset.return_value = _dt.datetime(
+    today = dt.date.today()
+    sun_data.sunset.return_value = dt.datetime(
         today.year, today.month, today.day, 20, 0, 0
     )
-    sun_data.sunrise.return_value = _dt.datetime(
+    sun_data.sunrise.return_value = dt.datetime(
         today.year, today.month, today.day, 6, 0, 0
     )
     cover_data = MagicMock()

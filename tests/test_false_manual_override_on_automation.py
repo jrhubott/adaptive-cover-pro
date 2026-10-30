@@ -544,12 +544,12 @@ def test_position_change_inside_command_grace_is_not_override():
     from custom_components.adaptive_cover_pro.managers.grace_period import (
         GracePeriodManager,
     )
-    import datetime as _dt
+    import datetime as dt
 
     entity_id = "cover.test"
     grace_mgr = GracePeriodManager(logger=MagicMock())
     # Stamp grace directly to avoid asyncio.create_task in unit-test context.
-    grace_mgr._command_timestamps[entity_id] = _dt.datetime.now().timestamp()
+    grace_mgr._command_timestamps[entity_id] = dt.datetime.now().timestamp()
 
     manager = _make_manager()
     state_data = _make_state_change_data(
@@ -583,12 +583,12 @@ def test_position_change_after_grace_expired_trips_override():
     from custom_components.adaptive_cover_pro.managers.grace_period import (
         GracePeriodManager,
     )
-    import datetime as _dt
+    import datetime as dt
 
     entity_id = "cover.test"
     grace_mgr = GracePeriodManager(logger=MagicMock())
     # Backdate the timestamp so grace has already expired (10 s > 5 s window).
-    grace_mgr._command_timestamps[entity_id] = _dt.datetime.now().timestamp() - 10
+    grace_mgr._command_timestamps[entity_id] = dt.datetime.now().timestamp() - 10
 
     manager = _make_manager()
     state_data = _make_state_change_data(

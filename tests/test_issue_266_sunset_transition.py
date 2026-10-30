@@ -8,7 +8,7 @@ the transition and dispatch the sunset position.
 
 from __future__ import annotations
 
-import datetime as _dt
+import datetime as dt
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -202,12 +202,12 @@ def _make_boundary_test_coord(
 
     coord._build_position_context = _fake_build_ctx
 
-    today = _dt.date.today()
+    today = dt.date.today()
     sun_data = MagicMock()
-    sun_data.sunset.return_value = _dt.datetime(
+    sun_data.sunset.return_value = dt.datetime(
         today.year, today.month, today.day, sunset_hour, sunset_minute, 0
     )
-    sun_data.sunrise.return_value = _dt.datetime(
+    sun_data.sunrise.return_value = dt.datetime(
         today.year, today.month, today.day, 6, 0, 0
     )
     cover_data = MagicMock()
@@ -474,15 +474,15 @@ async def test_no_dispatch_at_end_time_when_end_of_window_position_holds():
         sunset_minute=4,
         sunset_offset=60,
     )
-    today = _dt.date.today()
+    today = dt.date.today()
 
     coord._time_mgr.before_end_time = True
-    now = _dt.datetime(today.year, today.month, today.day, 18, 59, 0)
+    now = dt.datetime(today.year, today.month, today.day, 18, 59, 0)
     with freeze_helpers_now(now):
         await coord._check_sunset_window_transition()
 
     coord._time_mgr.before_end_time = False
-    now = _dt.datetime(today.year, today.month, today.day, 19, 0, 0)
+    now = dt.datetime(today.year, today.month, today.day, 19, 0, 0)
     with freeze_helpers_now(now):
         await coord._check_sunset_window_transition()
 
@@ -513,11 +513,11 @@ async def test_dispatch_at_configured_sunset_boundary_after_end_of_window_hold()
         sunset_minute=4,
         sunset_offset=60,
     )
-    today = _dt.date.today()
+    today = dt.date.today()
     coord._time_mgr.before_end_time = False  # window already clock-closed
 
     for hour, minute in ((19, 0), (21, 0)):
-        now = _dt.datetime(today.year, today.month, today.day, hour, minute, 0)
+        now = dt.datetime(today.year, today.month, today.day, hour, minute, 0)
         with freeze_helpers_now(now):
             await coord._check_sunset_window_transition()
 
@@ -526,7 +526,7 @@ async def test_dispatch_at_configured_sunset_boundary_after_end_of_window_hold()
     # 22:05 tick below would otherwise mask it by bringing the total back to 1.
     coord._cmd_svc.apply_position.assert_not_called()
 
-    now = _dt.datetime(today.year, today.month, today.day, 22, 5, 0)
+    now = dt.datetime(today.year, today.month, today.day, 22, 5, 0)
     with freeze_helpers_now(now):
         await coord._check_sunset_window_transition()
 

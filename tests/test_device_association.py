@@ -1,6 +1,6 @@
 """Tests for optional device association feature."""
 
-import datetime
+import datetime as dt
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -328,7 +328,7 @@ def test_options_device_step_removal_clears_device_id():
 
 def _seed_cover_states(hass) -> None:
     """Seed the ``sun.sun`` / ``cover.test_blind`` states setup reads."""
-    now = datetime.datetime.now(datetime.UTC).isoformat()
+    now = dt.datetime.now(dt.UTC).isoformat()
     hass.states.async_set(
         "sun.sun",
         "above_horizon",

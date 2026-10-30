@@ -109,7 +109,7 @@ async def _setup_entry(
     entry_id: str = "change_type_01",
 ) -> MockConfigEntry:
     """Register + set up an entry whose covers are position-capable."""
-    import datetime
+    import datetime as dt
 
     entities = entities or ["cover.test_blind"]
     hass.states.async_set(
@@ -119,8 +119,8 @@ async def _setup_entry(
             "azimuth": 180.0,
             "elevation": 45.0,
             "rising": True,
-            "next_rising": datetime.datetime.now(datetime.UTC).isoformat(),
-            "next_setting": datetime.datetime.now(datetime.UTC).isoformat(),
+            "next_rising": dt.datetime.now(dt.UTC).isoformat(),
+            "next_setting": dt.datetime.now(dt.UTC).isoformat(),
         },
     )
     for eid in entities:
