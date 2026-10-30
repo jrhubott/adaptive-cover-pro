@@ -593,6 +593,97 @@ class TestImportConfig:
         assert result["id-1"] == "updated"
         assert entry.options["max_slat_angle"] == 45
 
+    async def _import_one(self, tmp_path, current: dict, imported: dict):
+        """Import *imported* over an entry holding *current*; return (result, entry)."""
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Blind A", current)
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(export_path, [{"entry_id": "id-1", "options": imported}])
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        return await async_handle_import_config(call), entry
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            # Every TEMPLATABLE_KEYS member that also has an OPTION_RANGES
+            # entry — the ones the bare float() check used to reject.
+            "temp_extreme_heat",
+            "temp_low",
+            "temp_high",
+            "outside_threshold",
+            "weather_rain_threshold",
+            "weather_wind_speed_threshold",
+            "weather_wind_direction_tolerance",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_template_on_templatable_key_imports_cleanly(self, tmp_path, key):
+        """Issue #1382: a template accepted by set_option round-trips via import."""
+        template = "{{ 30 if states('sensor.outdoor_7d_avg_temp') | float(0) >= 25 }}"
+
+        result, entry = await self._import_one(tmp_path, {key: 20}, {key: template})
+
+        assert result["id-1"] == "updated"
+        assert entry.options[key] == template
+
+    @pytest.mark.asyncio
+    async def test_invalid_template_syntax_recorded_as_error(self, tmp_path):
+        """Issue #1382: a template is syntax-checked, not accepted blindly."""
+        result, entry = await self._import_one(
+            tmp_path, {"temp_extreme_heat": 30}, {"temp_extreme_heat": "{{ 30 if }"}
+        )
+
+        assert result["id-1"].startswith("error:")
+        assert "temp_extreme_heat" in result["id-1"]
+        assert "Invalid template" in result["id-1"]
+        assert entry.options["temp_extreme_heat"] == 30
+
+    @pytest.mark.asyncio
+    async def test_non_template_string_on_templatable_key_still_rejected(
+        self, tmp_path
+    ):
+        """Issue #1382: only template strings bypass the numeric check."""
+        result, entry = await self._import_one(
+            tmp_path, {"temp_extreme_heat": 30}, {"temp_extreme_heat": "hot"}
+        )
+
+        assert result["id-1"].startswith("error:")
+        assert "is not a valid number" in result["id-1"]
+        assert entry.options["temp_extreme_heat"] == 30
+
+    @pytest.mark.asyncio
+    async def test_out_of_range_number_on_templatable_key_still_rejected(
+        self, tmp_path
+    ):
+        """Issue #1382: a plain number on a templatable key keeps its range check."""
+        result, entry = await self._import_one(
+            tmp_path, {"temp_extreme_heat": 30}, {"temp_extreme_heat": 9999}
+        )
+
+        assert result["id-1"].startswith("error:")
+        assert "out of range" in result["id-1"]
+        assert entry.options["temp_extreme_heat"] == 30
+
+    @pytest.mark.asyncio
+    async def test_template_on_non_templatable_key_still_rejected(self, tmp_path):
+        """Issue #1382: the template bypass is limited to TEMPLATABLE_KEYS."""
+        result, entry = await self._import_one(
+            tmp_path, {"set_azimuth": 90}, {"set_azimuth": "{{ 180 }}"}
+        )
+
+        assert result["id-1"].startswith("error:")
+        assert "is not a valid number" in result["id-1"]
+        assert entry.options["set_azimuth"] == 90
+
     @pytest.mark.parametrize("time_key", ["start_time", "end_time"])
     @pytest.mark.parametrize(("raw", "expected"), _RESCUABLE_TIMES)
     @pytest.mark.asyncio

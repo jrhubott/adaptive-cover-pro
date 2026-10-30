@@ -14,6 +14,7 @@ from homeassistant.exceptions import ServiceValidationError
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
 
+from ..config_fields import TEMPLATABLE_KEYS
 from ..const import (
     CONF_MAX_SLAT_ANGLE,
     DOMAIN,
@@ -22,6 +23,7 @@ from ..const import (
     TIME_STRING_RE,
 )
 from ..helpers import normalize_time_string
+from ..templates import is_template_string
 from .export_service import DEFAULT_EXPORT_PATH
 from .options_service import FIELD_VALIDATORS
 
@@ -60,7 +62,10 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
     ``"error: ..."`` for that entry in the result dict without aborting the
     rest of the import. ``CONF_MAX_SLAT_ANGLE`` is special-cased to route
     through ``FIELD_VALIDATORS`` instead (issue #1105) so its sub-degree dead
-    zone is rejected the same way here as in ``set_option``.
+    zone is rejected the same way here as in ``set_option``. A Jinja2 template
+    on a ``TEMPLATABLE_KEYS`` threshold (e.g. ``temp_extreme_heat``) is
+    syntax-checked through its ``FIELD_VALIDATORS`` entry instead of the
+    numeric range check, matching what ``set_option`` accepts (issue #1382).
 
     Time keys (``TIME_OPTION_KEYS``) are **canonicalised, not rejected**, and
     this deliberately differs from ``set_options``: a value that parses is
@@ -166,9 +171,8 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
                     # routing every OPTION_RANGES key through FIELD_VALIDATORS
                     # generically — several other keys (e.g.
                     # CONF_OUTSIDE_THRESHOLD) also accept a Jinja2 template via
-                    # a *different* bespoke validator, and swapping those over
-                    # would flip values import_config currently rejects
-                    # outright to silently passing.
+                    # a *different* bespoke validator — those are handled by
+                    # the template branch below, only for template strings.
                     try:
                         FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](value)
                     except vol.MultipleInvalid:
@@ -189,6 +193,15 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
                         # The dead-zone branch (naming the ``0`` sentinel) and
                         # a bad type (via ``vol.Coerce``) both raise directly
                         # with an already-informative message — keep it as-is.
+                        validation_errors.append(f"{key}={value!r}: {exc.msg}")
+                elif key in TEMPLATABLE_KEYS and is_template_string(value):
+                    # Templatable threshold holding a template (#1382): an
+                    # export round-trips whatever set_option accepted, so
+                    # apply the same syntax check rather than float(). Plain
+                    # numbers on these keys still take the range check below.
+                    try:
+                        FIELD_VALIDATORS[key](value)
+                    except vol.Invalid as exc:
                         validation_errors.append(f"{key}={value!r}: {exc.msg}")
                 elif key in OPTION_RANGES:
                     lo, hi = OPTION_RANGES[key]
