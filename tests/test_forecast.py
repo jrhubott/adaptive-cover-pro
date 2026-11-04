@@ -1332,6 +1332,7 @@ async def test_start_forecast_scheduler_kicks_off_initial_background_task(monkey
     coord = MagicMock(spec=coord_mod.AdaptiveDataUpdateCoordinator)
     coord.hass = MagicMock()
     coord.config_entry = MagicMock()
+    coord.config_entry.entry_id = "entry_abc"
     coord._forecast_unsub = None
 
     # Capture background tasks instead of running them.  Close the coroutine
@@ -1362,15 +1363,17 @@ async def test_start_forecast_scheduler_kicks_off_initial_background_task(monkey
     assert coord.config_entry.async_create_background_task.call_count == 1
     # One wall-clock timer registered.
     assert len(track_calls) == 1
-    # Schedule fires at :00, :05, :10, …, :55 — the cron-style equivalent
-    # of */5 so every entry's forecast updates in lockstep.
+    # Schedule fires once per FORECAST_RECOMPUTE_INTERVAL_MIN at a per-entry
+    # offset (entries are staggered, not aligned on :00/:05/...).
     from custom_components.adaptive_cover_pro.const import (
         FORECAST_RECOMPUTE_INTERVAL_MIN,
     )
 
     _, _, kwargs = track_calls[0]
-    assert list(kwargs["minute"]) == list(range(0, 60, FORECAST_RECOMPUTE_INTERVAL_MIN))
-    assert kwargs["second"] == 0
+    minutes = list(kwargs["minute"])
+    assert len(minutes) == 60 // FORECAST_RECOMPUTE_INTERVAL_MIN
+    assert minutes[0] < FORECAST_RECOMPUTE_INTERVAL_MIN
+    assert 0 <= kwargs["second"] < 60
     # Unsub handle stored.
     assert coord._forecast_unsub is not None
 
