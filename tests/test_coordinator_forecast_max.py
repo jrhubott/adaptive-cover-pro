@@ -42,6 +42,7 @@ def _make_coordinator(*, options: dict, forecast_response=None, raises=None):
         return forecast_response
 
     coord.hass = MagicMock()
+    coord.hass.data = {}
     coord.hass.services.async_call = AsyncMock(side_effect=_async_call)
     return coord
 
@@ -157,6 +158,7 @@ class TestForecastMaxScheduler:
         coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
         coord.hass = MagicMock()
         coord.config_entry = MagicMock()
+        coord.config_entry.entry_id = "entry_abc"
         coord._forecast_max_unsub = None
 
         def _capture_bg(_hass, coro, name=None):  # noqa: ARG001
@@ -187,10 +189,8 @@ class TestForecastMaxScheduler:
         )
 
         cb, kwargs = track_calls[0]
-        assert list(kwargs["minute"]) == list(
-            range(0, 60, FORECAST_RECOMPUTE_INTERVAL_MIN)
-        )
-        assert kwargs["second"] == 0
+        assert len(list(kwargs["minute"])) == 60 // FORECAST_RECOMPUTE_INTERVAL_MIN
+        assert 0 <= kwargs["second"] < 60
         assert getattr(cb, "_hass_callback", False) is True
         assert coord._forecast_max_unsub is not None
 
@@ -218,3 +218,164 @@ class TestForecastMaxScheduler:
 
         assert coord.config_entry.async_create_background_task.call_count == 0
         assert track_mock.call_count == 0
+
+
+class TestForecastTickStagger:
+    """Per-entry staggering of the periodic forecast timers."""
+
+    def test_schedule_is_deterministic(self):
+        """The same entry_id always yields the same offset (restart-stable)."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            _forecast_tick_schedule,
+        )
+
+        a = _forecast_tick_schedule("01HABCDEF")
+        b = _forecast_tick_schedule("01HABCDEF")
+        assert list(a["minute"]) == list(b["minute"])
+        assert a["second"] == b["second"]
+
+    def test_schedule_known_value_is_stable_across_processes(self):
+        """CRC-32 based, so the value must not depend on PYTHONHASHSEED."""
+        import zlib
+
+        from custom_components.adaptive_cover_pro.coordinator import (
+            _forecast_tick_schedule,
+        )
+
+        slot = zlib.crc32(b"entry_abc") % 300
+        sched = _forecast_tick_schedule("entry_abc")
+        assert list(sched["minute"])[0] == slot // 60
+        assert sched["second"] == slot % 60
+
+    def test_schedule_stays_inside_interval(self):
+        """Offsets are valid time-change args and cover the whole hour."""
+        from custom_components.adaptive_cover_pro.const import (
+            FORECAST_RECOMPUTE_INTERVAL_MIN,
+        )
+        from custom_components.adaptive_cover_pro.coordinator import (
+            _forecast_tick_schedule,
+        )
+
+        for i in range(200):
+            for phase in (0.0, 0.5):
+                s = _forecast_tick_schedule(f"entry_{i}", phase)
+                minutes = list(s["minute"])
+                assert 0 <= minutes[0] < FORECAST_RECOMPUTE_INTERVAL_MIN
+                assert len(minutes) == 60 // FORECAST_RECOMPUTE_INTERVAL_MIN
+                assert all(0 <= m < 60 for m in minutes)
+                assert 0 <= s["second"] < 60
+
+    def test_entries_are_spread(self):
+        """Many entry_ids do not all land on the same second."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            _forecast_tick_schedule,
+        )
+
+        slots = {
+            (list(s["minute"])[0], s["second"])
+            for s in (_forecast_tick_schedule(f"entry_{i}") for i in range(50))
+        }
+        assert len(slots) > 25
+
+    def test_max_tick_offset_half_interval_from_position_tick(self):
+        """The forecast-max tick sits half an interval from the position tick."""
+        from custom_components.adaptive_cover_pro.const import (
+            FORECAST_RECOMPUTE_INTERVAL_MIN,
+        )
+        from custom_components.adaptive_cover_pro.coordinator import (
+            _forecast_tick_schedule,
+        )
+
+        interval_s = FORECAST_RECOMPUTE_INTERVAL_MIN * 60
+        for i in range(20):
+            p = _forecast_tick_schedule(f"entry_{i}")
+            m = _forecast_tick_schedule(f"entry_{i}", phase=0.5)
+            ps = list(p["minute"])[0] * 60 + p["second"]
+            ms = list(m["minute"])[0] * 60 + m["second"]
+            assert (ms - ps) % interval_s == interval_s // 2
+
+
+class TestSharedDailyForecastCache:
+    """Entries on the same weather entity share one get_forecasts call."""
+
+    @pytest.mark.asyncio
+    async def test_two_entries_same_weather_one_service_call(self):
+        """Second entry within the TTL reuses the first entry's result."""
+        resp = {"weather.home": {"forecast": [{"temperature": 26.0}]}}
+        opts = {
+            CONF_OUTSIDE_TEMP_SOURCE: "forecast_max",
+            CONF_WEATHER_ENTITY: "weather.home",
+        }
+        first = _make_coordinator(options=opts, forecast_response=resp)
+        second = _make_coordinator(options=opts, forecast_response=resp)
+        second.hass = first.hass  # same hass, same cache
+        await _run(first)
+        await _run(second)
+        assert first._forecast_max_outside == 26.0
+        assert second._forecast_max_outside == 26.0
+        first.hass.services.async_call.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_different_weather_entities_not_shared(self):
+        """The cache is keyed by weather entity."""
+        resp = {
+            "weather.a": {"forecast": [{"temperature": 20.0}]},
+            "weather.b": {"forecast": [{"temperature": 30.0}]},
+        }
+        a = _make_coordinator(
+            options={
+                CONF_OUTSIDE_TEMP_SOURCE: "forecast_max",
+                CONF_WEATHER_ENTITY: "weather.a",
+            },
+            forecast_response=resp,
+        )
+        b = _make_coordinator(
+            options={
+                CONF_OUTSIDE_TEMP_SOURCE: "forecast_max",
+                CONF_WEATHER_ENTITY: "weather.b",
+            },
+            forecast_response=resp,
+        )
+        b.hass = a.hass
+        await _run(a)
+        await _run(b)
+        assert a._forecast_max_outside == 20.0
+        assert b._forecast_max_outside == 30.0
+        assert a.hass.services.async_call.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_cache_expires_after_ttl(self, monkeypatch):
+        """After the TTL a new service call is made."""
+        from custom_components.adaptive_cover_pro import coordinator as coord_mod
+        from custom_components.adaptive_cover_pro.const import (
+            FORECAST_DAILY_CACHE_TTL_SECONDS,
+        )
+
+        now = [1000.0]
+        monkeypatch.setattr(coord_mod.time, "monotonic", lambda: now[0])
+        coord = _make_coordinator(
+            options={
+                CONF_OUTSIDE_TEMP_SOURCE: "forecast_max",
+                CONF_WEATHER_ENTITY: "weather.home",
+            },
+            forecast_response={"weather.home": {"forecast": [{"temperature": 26.0}]}},
+        )
+        await _run(coord)
+        now[0] += FORECAST_DAILY_CACHE_TTL_SECONDS + 1
+        await _run(coord)
+        assert coord.hass.services.async_call.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_errors_are_not_cached(self):
+        """A failed fetch leaves no cache entry, so the next call retries."""
+        coord = _make_coordinator(
+            options={
+                CONF_OUTSIDE_TEMP_SOURCE: "forecast_max",
+                CONF_WEATHER_ENTITY: "weather.home",
+            },
+            raises=RuntimeError("boom"),
+        )
+        await _run(coord)
+        await _run(coord)
+        assert coord.hass.services.async_call.await_count == 2
+        assert coord._forecast_max_outside is None

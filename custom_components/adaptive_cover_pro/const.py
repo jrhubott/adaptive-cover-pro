@@ -1684,6 +1684,12 @@ STARTUP_GRACE_PERIOD_SECONDS = 30.0  # disable manual-override after HA startup
 # transitions promptly, cheap enough that even on a Pi 4 the executor job
 # completes in well under a second.
 FORECAST_RECOMPUTE_INTERVAL_MIN = 5
+# Shared TTL (seconds) for the daily ``weather.get_forecasts`` result used by
+# the forecast-max refresher.  Entries are staggered across the recompute
+# interval, so the TTL is a little shorter than the interval: the first entry
+# of each cycle fetches, the rest reuse it.  A daily high moves slowly, so a
+# few minutes of staleness is irrelevant.
+FORECAST_DAILY_CACHE_TTL_SECONDS = 240
 # Physical step between consecutive SunData timeline entries (seconds).
 # Matches the "5min" freq passed to pd.date_range in sun.py.
 SUN_DATA_STEP_SECONDS: int = 300

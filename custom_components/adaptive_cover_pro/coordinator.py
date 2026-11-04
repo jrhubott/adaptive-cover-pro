@@ -7,6 +7,8 @@ import datetime as dt
 import dataclasses
 import json
 import pathlib
+import time
+import zlib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
@@ -228,6 +230,62 @@ _EXTERNAL_POSITION_SERVICES: dict[str, int | None] = {
 _EXTERNAL_COVER_SERVICES: frozenset[str] = frozenset(
     {SERVICE_STOP_COVER, *_EXTERNAL_POSITION_SERVICES}
 )
+
+
+_FORECAST_DAILY_CACHE_KEY = "adaptive_cover_pro_daily_forecast_cache"
+
+
+def _forecast_tick_schedule(entry_id: str, phase: float = 0.0) -> dict[str, Any]:
+    """Return ``async_track_time_change`` kwargs for a staggered forecast tick.
+
+    Every config entry used to fire its forecast timers at the same wall-clock
+    instant (:00, :05, ...), so N entries meant N CPU-bound executor jobs and N
+    identical weather service calls in the same second.  The offset within the
+    recompute interval is derived from ``entry_id`` with CRC-32 (stable across
+    restarts, unlike the per-process-salted built-in ``hash()``) and spread at
+    one-second resolution.  ``phase`` (0..1) shifts the slot by a fraction of
+    the interval so a second timer of the same entry lands away from the first.
+    """
+    from .const import FORECAST_RECOMPUTE_INTERVAL_MIN
+
+    interval_s = FORECAST_RECOMPUTE_INTERVAL_MIN * 60
+    slot = (zlib.crc32(str(entry_id).encode()) + int(phase * interval_s)) % interval_s
+    minute_offset, second = divmod(slot, 60)
+    return {
+        "minute": range(minute_offset, 60, FORECAST_RECOMPUTE_INTERVAL_MIN),
+        "second": second,
+    }
+
+
+async def _async_get_daily_forecast(hass: HomeAssistant, weather_entity: str) -> list:
+    """Return the daily forecast list for ``weather_entity``, shared across entries.
+
+    Several config entries commonly point at the same weather entity.  The
+    result is cached on ``hass.data`` for a short TTL so they cause one
+    ``weather.get_forecasts`` call per window instead of one each.  Errors are
+    not cached and propagate to the caller.
+    """
+    from .const import FORECAST_DAILY_CACHE_TTL_SECONDS
+
+    cache: dict[str, tuple[float, list]] = hass.data.setdefault(
+        _FORECAST_DAILY_CACHE_KEY, {}
+    )
+    hit = cache.get(weather_entity)
+    now = time.monotonic()
+    if hit is not None and now - hit[0] < FORECAST_DAILY_CACHE_TTL_SECONDS:
+        return hit[1]
+
+    response = await hass.services.async_call(
+        "weather",
+        "get_forecasts",
+        {"type": "daily"},
+        target={"entity_id": weather_entity},
+        blocking=True,
+        return_response=True,
+    )
+    forecasts = (response or {}).get(weather_entity, {}).get("forecast") or []
+    cache[weather_entity] = (now, forecasts)
+    return forecasts
 
 
 @dataclass
@@ -1104,8 +1162,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         from homeassistant.helpers.event import async_track_time_change
 
-        from .const import FORECAST_RECOMPUTE_INTERVAL_MIN
-
         if self._forecast_unsub is not None:
             return  # already scheduled
 
@@ -1123,13 +1179,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             name="acp_initial_forecast",
         )
 
-        # Periodic recompute aligned to wall-clock 5-minute boundaries
-        # (:00, :05, :10, …) so every entry's forecast attribute updates
-        # in lockstep — the dashboard sees one synchronised refresh
-        # instead of staggered per-entry ticks.  The forecast is a
-        # 12-hour outlook, so refreshing more often than every few
-        # minutes adds no information.  The timer fires a background
-        # task each tick to keep the event loop free.
+        # Periodic recompute every FORECAST_RECOMPUTE_INTERVAL_MIN minutes,
+        # at a per-entry offset derived from the entry_id so N entries do
+        # not run N CPU-bound executor jobs in the same second.  The
+        # forecast is a 12-hour outlook, so a few seconds of skew between
+        # entries is invisible.  The timer fires a background task each
+        # tick to keep the event loop free.
         #
         # ``@callback`` is required: without it HA classifies the plain
         # ``def`` as ``HassJobType.Executor`` and dispatches the tick to
@@ -1147,8 +1202,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._forecast_unsub = async_track_time_change(
             self.hass,
             _tick,
-            minute=range(0, 60, FORECAST_RECOMPUTE_INTERVAL_MIN),
-            second=0,
+            **_forecast_tick_schedule(self.config_entry.entry_id),
         )
 
     def _start_forecast_max_scheduler(self) -> None:
@@ -1162,8 +1216,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         existing unsubscribe handle if already scheduled.
         """
         from homeassistant.helpers.event import async_track_time_change
-
-        from .const import FORECAST_RECOMPUTE_INTERVAL_MIN
 
         if self._forecast_max_unsub is not None:
             return  # already scheduled
@@ -1185,8 +1237,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._forecast_max_unsub = async_track_time_change(
             self.hass,
             _tick_forecast_max,
-            minute=range(0, 60, FORECAST_RECOMPUTE_INTERVAL_MIN),
-            second=0,
+            # Half an interval away from this entry's position tick.
+            **_forecast_tick_schedule(self.config_entry.entry_id, phase=0.5),
         )
 
     async def async_recompute_forecast(self) -> None:
@@ -1244,15 +1296,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return
 
         try:
-            response = await self.hass.services.async_call(
-                "weather",
-                "get_forecasts",
-                {"type": "daily"},
-                target={"entity_id": weather_entity},
-                blocking=True,
-                return_response=True,
-            )
-            forecasts = (response or {}).get(weather_entity, {}).get("forecast") or []
+            forecasts = await _async_get_daily_forecast(self.hass, weather_entity)
             today_high = float(forecasts[0]["temperature"])
         except Exception:  # noqa: BLE001 — any service/parse failure degrades to live
             self._forecast_max_outside = None
